@@ -158,6 +158,11 @@
     border: 0.5px dashed var(--border-mid); vertical-align: middle; margin-left: 6px;
   }
   .soon-dim { opacity: 0.55; }
+  /* Incomplete features: dashed "placeholder" treatment, no fake data */
+  .placeholder { border: 1px dashed var(--border-mid) !important; background: transparent !important; }
+  .ph-av { background: transparent !important; border: 1px dashed var(--border-mid); color: var(--text-tertiary) !important; }
+  .ph-text { color: var(--text-tertiary) !important; }
+  .ph-caption { font-size: 12px; color: var(--text-tertiary); padding: 10px 0 2px; }
   /* Brand logo — monochrome PNG with transparency; invert for dark mode */
   .logo-img { object-fit: contain; display: block; }
   @media (prefers-color-scheme: dark) { .logo-img { filter: invert(1) brightness(1.75); } }
@@ -471,26 +476,19 @@
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-label">Active leads</div><div class="stat-val" id="stat-active">0</div><div class="stat-sub">in your pipeline</div></div>
       <div class="stat-card"><div class="stat-label">Booked</div><div class="stat-val" id="stat-booked">0</div><div class="stat-sub">marked won</div></div>
-      <div class="stat-card soon-dim"><div class="stat-label">Collective wins</div><div class="stat-val">—</div><div class="stat-sub">coming soon</div></div>
+      <div class="stat-card placeholder"><div class="stat-label">Collective wins</div><div class="stat-val">—</div><div class="stat-sub">coming soon</div></div>
     </div>
     <div class="section-label">Collective activity <span class="soon">feature incomplete: coming soon</span></div>
-    <div class="card card-flush soon-dim">
+    <div class="card placeholder">
       <div class="feed-item">
-        <div class="feed-av" style="background:#EAF3DE;color:#3B6D11">SJ</div>
-        <div><div class="feed-name">Sammy J <span class="feed-action">booked Delta Sky Club IAH — $450 flat</span></div><div class="feed-time">2h ago · Houston TX</div></div>
+        <div class="feed-av ph-av">—</div>
+        <div><div class="feed-name ph-text">Artist name <span class="feed-action">— recent activity</span></div><div class="feed-time">Market · time</div></div>
       </div>
       <div class="feed-item">
-        <div class="feed-av" style="background:#E6F1FB;color:#185FA5">DL</div>
-        <div><div class="feed-name">Derick L <span class="feed-action">added new contact at Antone's Record Shop</span></div><div class="feed-time">Yesterday · Austin TX</div></div>
+        <div class="feed-av ph-av">—</div>
+        <div><div class="feed-name ph-text">Artist name <span class="feed-action">— recent activity</span></div><div class="feed-time">Market · time</div></div>
       </div>
-      <div class="feed-item">
-        <div class="feed-av" style="background:#F1EFE8;color:#5F5E5A">AC</div>
-        <div><div class="feed-name">Aaron C <span class="feed-action">updated pay rate — Dosey Doe raised to $500</span></div><div class="feed-time">2 days ago · Houston TX</div></div>
-      </div>
-      <div class="feed-item">
-        <div class="feed-av" style="background:#FAEEDA;color:#633806">LR</div>
-        <div><div class="feed-name">Luc R <span class="feed-action">moved Revention Music Center to follow-up</span></div><div class="feed-time">3 days ago · Houston TX</div></div>
-      </div>
+      <div class="ph-caption">When your roster joins, their venue wins and new contacts show up here.</div>
     </div>
   </div>
 
@@ -645,14 +643,18 @@
 
     <!-- Roster -->
     <div class="section-label">The collective <span class="soon">feature incomplete: coming soon</span></div>
-    <div class="card card-flush soon-dim" style="margin-bottom:12px">
-      <div class="roster-item"><div class="roster-av" style="background:#FAEEDA;color:#633806">NR</div><div><div class="roster-name">Nick Rains <span style="font-size:11px;background:#FAEEDA;color:#633806;padding:2px 7px;border-radius:10px;margin-left:4px">you</span></div><div class="roster-markets">Houston · Austin · Nashville</div></div><div class="roster-stat"><strong>6</strong>booked this yr</div></div>
-      <div class="roster-item"><div class="roster-av" style="background:#EAF3DE;color:#3B6D11">SJ</div><div><div class="roster-name">Sammy J</div><div class="roster-markets">Houston · DFW</div></div><div class="roster-stat"><strong>8</strong>booked this yr</div></div>
-      <div class="roster-item"><div class="roster-av" style="background:#F1EFE8;color:#5F5E5A">AC</div><div><div class="roster-name">Aaron Cook</div><div class="roster-markets">Houston · Austin</div></div><div class="roster-stat"><strong>4</strong>booked this yr</div></div>
-      <div class="roster-item"><div class="roster-av" style="background:#E6F1FB;color:#185FA5">DL</div><div><div class="roster-name">Derick Leduke</div><div class="roster-markets">DFW · Nashville</div></div><div class="roster-stat"><strong>3</strong>booked this yr</div></div>
-      <div class="roster-item"><div class="roster-av" style="background:#FBEAF0;color:#993556">CV</div><div><div class="roster-name">Cody Voyer</div><div class="roster-markets">Nashville · Austin</div></div><div class="roster-stat"><strong>5</strong>booked this yr</div></div>
-      <div class="roster-item"><div class="roster-av" style="background:#E1F5EE;color:#0F6E56">LN</div><div><div class="roster-name">Logan Nafratil</div><div class="roster-markets">Houston</div></div><div class="roster-stat"><strong>2</strong>booked this yr</div></div>
-      <div class="roster-item"><div class="roster-av" style="background:#EEEDFE;color:#3C3489">LR</div><div><div class="roster-name">Luc Roach</div><div class="roster-markets">Houston · Austin</div></div><div class="roster-stat"><strong>4</strong>booked this yr</div></div>
+    <div class="card placeholder" style="margin-bottom:12px">
+      <div class="roster-item">
+        <div class="roster-av ph-av">—</div>
+        <div><div class="roster-name ph-text">Artist name</div><div class="roster-markets">Markets</div></div>
+        <div class="roster-stat"><strong>—</strong>booked</div>
+      </div>
+      <div class="roster-item">
+        <div class="roster-av ph-av">—</div>
+        <div><div class="roster-name ph-text">Artist name</div><div class="roster-markets">Markets</div></div>
+        <div class="roster-stat"><strong>—</strong>booked</div>
+      </div>
+      <div class="ph-caption">Your bandmates appear here once they join the collective.</div>
     </div>
 
     <!-- Settings -->
@@ -1076,12 +1078,13 @@ function sendMagicLink(){
   var email = (document.getElementById('gate-email').value||'').trim();
   if(!email){ gateMsg('Enter your email first.'); return; }
   gateMsg('Sending…', true);
-  sb.auth.signInWithOtp({ email: email, options:{ emailRedirectTo: window.location.href } }).then(function(r){
-    if(r.error) gateMsg(r.error.message); else gateMsg('Check your inbox — tap the link to sign in.', true);
+  sb.auth.signInWithOtp({ email: email, options:{ emailRedirectTo: window.location.origin + '/', shouldCreateUser: true } }).then(function(r){
+    if(r.error) gateMsg(r.error.message);
+    else gateMsg('Sent. Open the NEWEST link in your inbox (check spam). Links are one-time use.', true);
   });
 }
 function signInGoogle(){
-  sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: window.location.href } }).then(function(r){
+  sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: window.location.origin + '/' } }).then(function(r){
     if(r.error) gateMsg(r.error.message);
   });
 }
@@ -1253,6 +1256,13 @@ function wizSubmit(ticket){
 if(!window.GIG_CONFIG || !window.GIG_CONFIG.SUPABASE_URL || window.GIG_CONFIG.SUPABASE_URL.indexOf('PASTE')>-1){
   gateMsg('config.js is not set up yet.');
 } else {
+  // Surface auth redirect errors (expired/used link, bad redirect) instead of a silent dead gate.
+  try {
+    var hp = new URLSearchParams((window.location.hash||'').replace(/^#/,''));
+    var sp = new URLSearchParams(window.location.search||'');
+    var authErr = hp.get('error_description') || sp.get('error_description') || hp.get('error') || sp.get('error');
+    if (authErr) gateMsg(decodeURIComponent(authErr).replace(/\+/g,' '));
+  } catch(e){}
   sb.auth.getSession().then(function(r){ if(r.data && r.data.session) showApp(r.data.session); });
   sb.auth.onAuthStateChange(function(_event, session){ if(session) showApp(session); });
 }
