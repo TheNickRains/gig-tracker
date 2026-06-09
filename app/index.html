@@ -1,0 +1,1257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gig Collective</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  /* ── Reset & base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f5f4f0;
+    --bg-tertiary: #eeece7;
+    --text-primary: #1a1917;
+    --text-secondary: #6b6a66;
+    --text-tertiary: #a09f9b;
+    --border-light: rgba(0,0,0,0.08);
+    --border-mid: rgba(0,0,0,0.14);
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    /* Amber accent */
+    --amber-50: #FAEEDA;
+    --amber-100: #FAC775;
+    --amber-400: #EF9F27;
+    --amber-600: #854F0B;
+    --amber-800: #633806;
+    --amber-900: #412402;
+    /* Status */
+    --won-bg: #EAF3DE; --won-text: #3B6D11;
+    --followup-bg: #FAEEDA; --followup-text: #854F0B;
+    --waiting-bg: #E6F1FB; --waiting-text: #185FA5;
+    --outreach-bg: #F1EFE8; --outreach-text: #5F5E5A;
+    --dead-bg: #FCEBEB; --dead-text: #A32D2D;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg-primary: #1e1d1b;
+      --bg-secondary: #272624;
+      --bg-tertiary: #141413;
+      --text-primary: #f0ede8;
+      --text-secondary: #9b9890;
+      --text-tertiary: #6b6a66;
+      --border-light: rgba(255,255,255,0.07);
+      --border-mid: rgba(255,255,255,0.13);
+    }
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg-tertiary);
+    min-height: 100vh;
+    color: var(--text-primary);
+    font-size: 15px;
+  }
+
+  /* ── App shell ── */
+  .app { max-width: 480px; margin: 0 auto; min-height: 100vh; background: var(--bg-tertiary); position: relative; }
+
+  /* ── Nav ── */
+  .nav {
+    background: var(--bg-primary);
+    border-bottom: 0.5px solid var(--border-light);
+    height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .nav-brand { display: flex; align-items: center; gap: 8px; }
+  .nav-mark {
+    width: 30px; height: 30px; border-radius: 7px;
+    background: var(--amber-50); color: var(--amber-800);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .nav-mark i { font-size: 16px; }
+  .nav-name { font-size: 15px; font-weight: 500; }
+  .nav-right { display: flex; align-items: center; gap: 8px; }
+  .nav-avatar {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--amber-50); color: var(--amber-800);
+    font-size: 11px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; border: 1.5px solid transparent; transition: border-color 0.15s;
+  }
+  .nav-avatar:hover, .nav-avatar.active { border-color: var(--amber-400); }
+  .nav-hamburger {
+    width: 34px; height: 34px; border-radius: var(--radius-md);
+    background: none; border: 0.5px solid var(--border-mid);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--text-secondary);
+  }
+  .nav-hamburger:hover { background: var(--bg-secondary); }
+
+  /* ── Dropdown ── */
+  .nav-dropdown {
+    position: absolute; top: 54px; right: 12px;
+    background: var(--bg-primary); border: 0.5px solid var(--border-mid);
+    border-radius: var(--radius-lg); width: 210px; padding: 6px;
+    display: none; z-index: 200;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.10);
+  }
+  .nav-dropdown.open { display: block; }
+  .dd-item {
+    width: 100%; text-align: left; background: none; border: none;
+    padding: 10px 12px; border-radius: var(--radius-md);
+    font-size: 14px; color: var(--text-primary); cursor: pointer; display: block;
+  }
+  .dd-item:hover { background: var(--bg-secondary); }
+  .dd-item.active { background: var(--amber-50); color: var(--amber-800); font-weight: 500; }
+  .dd-divider { height: 0.5px; background: var(--border-light); margin: 4px 0; }
+  .dd-add { color: var(--amber-800); font-weight: 500; }
+  .dd-add:hover { background: var(--amber-50); }
+
+  /* ── Screens ── */
+  .screen { display: none; padding: 20px 16px; }
+  .screen.active { display: block; }
+
+  /* ── Typography ── */
+  .page-title { font-size: 20px; font-weight: 500; margin-bottom: 4px; }
+  .page-sub { font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; }
+  .section-label {
+    font-size: 11px; font-weight: 500; color: var(--text-secondary);
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px;
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--bg-primary); border: 0.5px solid var(--border-light);
+    border-radius: var(--radius-lg); padding: 14px 16px; margin-bottom: 12px;
+  }
+  .card-flush { padding: 0 16px; }
+
+  /* ── Badges ── */
+  .badge {
+    display: inline-flex; align-items: center; padding: 3px 9px;
+    border-radius: 20px; font-size: 11px; font-weight: 500;
+  }
+  .badge-won { background: var(--won-bg); color: var(--won-text); }
+  .badge-followup { background: var(--followup-bg); color: var(--followup-text); }
+  .badge-waiting { background: var(--waiting-bg); color: var(--waiting-text); }
+  .badge-outreach { background: var(--outreach-bg); color: var(--outreach-text); }
+  .badge-dead { background: var(--dead-bg); color: var(--dead-text); }
+  .badge-hard { background: var(--waiting-bg); color: var(--waiting-text); }
+  .badge-soft { background: var(--outreach-bg); color: var(--outreach-text); }
+  /* "coming soon" marker for features we'll build by using the app */
+  .soon {
+    display: inline-block; font-size: 10px; font-weight: 500;
+    text-transform: none; letter-spacing: 0; padding: 2px 7px; border-radius: 10px;
+    background: var(--bg-secondary); color: var(--text-tertiary);
+    border: 0.5px dashed var(--border-mid); vertical-align: middle; margin-left: 6px;
+  }
+  .soon-dim { opacity: 0.55; }
+
+  /* ── Buttons ── */
+  .btn-primary {
+    background: var(--amber-800); color: var(--amber-50); border: none;
+    border-radius: var(--radius-md); padding: 10px 20px;
+    font-size: 14px; font-weight: 500; cursor: pointer; display: inline-flex;
+    align-items: center; gap: 6px;
+  }
+  .btn-primary:hover { background: var(--amber-600); }
+  .btn-secondary {
+    background: var(--bg-secondary); color: var(--text-primary);
+    border: 0.5px solid var(--border-mid); border-radius: var(--radius-md);
+    padding: 10px 20px; font-size: 14px; cursor: pointer; display: inline-flex;
+    align-items: center; gap: 6px;
+  }
+  .btn-secondary:hover { border-color: var(--amber-400); color: var(--amber-800); }
+  .btn-full { width: 100%; justify-content: center; margin-top: 6px; }
+  .btn-sm { padding: 7px 14px; font-size: 13px; }
+  .btn-icon {
+    width: 30px; height: 30px; border-radius: var(--radius-md);
+    background: var(--bg-secondary); border: 0.5px solid var(--border-light);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--text-secondary);
+  }
+  .btn-icon:hover { background: var(--amber-50); color: var(--amber-800); border-color: var(--amber-400); }
+  .btn-icon i { font-size: 15px; }
+
+  /* ── Form elements ── */
+  .form-field { margin-bottom: 14px; }
+  .form-label { font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 5px; }
+  .form-input, .form-select, .form-textarea {
+    width: 100%; font-size: 14px; padding: 9px 11px;
+    border: 0.5px solid var(--border-mid); border-radius: var(--radius-md);
+    background: var(--bg-primary); color: var(--text-primary);
+    font-family: inherit;
+  }
+  .form-input:focus, .form-select:focus, .form-textarea:focus {
+    outline: none; border-color: var(--amber-400);
+  }
+  .form-textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+  .form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* ── HOME ── */
+  .attn-strip {
+    background: var(--amber-50); border-radius: var(--radius-md);
+    padding: 12px 14px; display: flex; align-items: center; gap: 10px;
+    margin-bottom: 20px; cursor: pointer;
+  }
+  .attn-strip i { font-size: 18px; color: var(--amber-800); }
+  .attn-text { font-size: 13px; color: var(--amber-800); font-weight: 500; flex: 1; }
+  .attn-text span { font-weight: 400; color: var(--amber-600); }
+  .stat-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 20px; }
+  .stat-card { background: var(--bg-secondary); border-radius: var(--radius-md); padding: 12px 14px; }
+  .stat-label { font-size: 11px; color: var(--text-secondary); margin-bottom: 3px; }
+  .stat-val { font-size: 22px; font-weight: 500; }
+  .stat-sub { font-size: 11px; color: var(--text-secondary); margin-top: 1px; }
+
+  /* ── Feed ── */
+  .feed-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid var(--border-light); }
+  .feed-item:last-child { border-bottom: none; }
+  .feed-av { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; flex-shrink: 0; }
+  .feed-name { font-size: 13px; font-weight: 500; }
+  .feed-action { font-weight: 400; color: var(--text-secondary); }
+  .feed-time { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+
+  /* ── DISCOVER ── */
+  .filter-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .filter-row .form-select { width: auto; font-size: 13px; padding: 6px 10px; }
+  .venue-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .venue-card {
+    background: var(--bg-primary); border: 0.5px solid var(--border-light);
+    border-radius: var(--radius-lg); padding: 14px; cursor: pointer;
+  }
+  .venue-card:hover { border-color: var(--border-mid); }
+  .venue-name { font-size: 14px; font-weight: 500; margin-bottom: 2px; }
+  .venue-loc { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+  .venue-tag { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-secondary); margin-top: 5px; }
+  .venue-tag i { font-size: 13px; }
+
+  /* ── PIPELINE ── */
+  .pipe-item { display: flex; align-items: center; gap: 12px; padding: 13px 0; border-bottom: 0.5px solid var(--border-light); cursor: pointer; }
+  .pipe-item:last-child { border-bottom: none; }
+  .pipe-item:hover .pipe-venue { color: var(--amber-800); }
+  .pipe-icon { width: 36px; height: 36px; border-radius: var(--radius-md); background: var(--bg-secondary); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .pipe-icon i { font-size: 18px; color: var(--text-secondary); }
+  .pipe-info { flex: 1; min-width: 0; }
+  .pipe-venue { font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 5px; }
+  .pipe-contact { font-size: 12px; color: var(--text-secondary); margin-top: 1px; }
+  .pipe-meta { text-align: right; flex-shrink: 0; }
+  .pipe-date { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; }
+
+  /* ── DETAIL / CRM ── */
+  .back-btn {
+    display: flex; align-items: center; gap: 6px; background: none; border: none;
+    font-size: 13px; color: var(--text-secondary); cursor: pointer; padding: 0; margin-bottom: 16px;
+  }
+  .back-btn:hover { color: var(--text-primary); }
+  .detail-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 20px; }
+  .detail-icon { width: 46px; height: 46px; border-radius: var(--radius-md); background: var(--amber-50); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .detail-icon i { font-size: 22px; color: var(--amber-800); }
+  .detail-venue { font-size: 18px; font-weight: 500; }
+  .detail-meta { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+
+  /* Stage tracker */
+  .stage-track { display: flex; align-items: flex-start; gap: 0; margin-bottom: 20px; }
+  .stage-step { flex: 1; text-align: center; position: relative; }
+  .stage-step:not(:last-child)::after {
+    content: ''; position: absolute; top: 10px; left: 50%; width: 100%; height: 1px;
+    background: var(--border-light); z-index: 0;
+  }
+  .stage-dot {
+    width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border-mid);
+    background: var(--bg-primary); margin: 0 auto 5px; position: relative; z-index: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .stage-dot.done { background: var(--amber-400); border-color: var(--amber-400); }
+  .stage-dot.done i { font-size: 10px; color: #fff; }
+  .stage-dot.current { border-color: var(--amber-800); background: var(--amber-50); }
+  .stage-dot.current::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--amber-800); position: absolute; }
+  .stage-label { font-size: 10px; color: var(--text-secondary); }
+  .stage-label.current { color: var(--amber-800); font-weight: 500; }
+
+  /* Contact card */
+  .contact-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid var(--border-light); }
+  .contact-row:last-child { border-bottom: none; }
+  .contact-av { width: 34px; height: 34px; border-radius: 50%; background: var(--bg-secondary); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: var(--text-secondary); flex-shrink: 0; }
+  .contact-name { font-size: 14px; font-weight: 500; }
+  .contact-title { font-size: 12px; color: var(--text-secondary); }
+  .contact-actions { margin-left: auto; display: flex; gap: 6px; }
+
+  /* Templates */
+  .tpl-tabs { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tpl-tab {
+    padding: 5px 12px; border-radius: 20px; font-size: 12px; cursor: pointer;
+    border: 0.5px solid var(--border-mid); background: var(--bg-secondary);
+    color: var(--text-secondary); white-space: nowrap;
+  }
+  .tpl-tab.active { background: var(--amber-50); color: var(--amber-800); border-color: var(--amber-400); font-weight: 500; }
+  .tpl-body {
+    background: var(--bg-secondary); border-radius: var(--radius-md); padding: 13px 14px;
+    font-size: 13px; line-height: 1.75; white-space: pre-wrap; min-height: 130px;
+    border: 0.5px solid var(--border-light); color: var(--text-primary);
+  }
+  .tpl-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+  /* Follow-up scheduler */
+  .followup-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .fu-chip {
+    padding: 5px 12px; border-radius: 20px; font-size: 12px; cursor: pointer;
+    border: 0.5px solid var(--border-mid); background: var(--bg-secondary); color: var(--text-secondary);
+  }
+  .fu-chip.selected { background: var(--won-bg); color: var(--won-text); border-color: #97C459; }
+  .fu-chip:hover { border-color: var(--border-mid); }
+
+  /* Activity log */
+  .activity-item { display: flex; gap: 10px; padding: 9px 0; border-bottom: 0.5px solid var(--border-light); align-items: flex-start; }
+  .activity-item:last-child { border-bottom: none; }
+  .activity-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+  .activity-text { font-size: 13px; }
+  .activity-time { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+  .note-input { width: 100%; font-size: 13px; padding: 8px 11px; border: 0.5px solid var(--border-mid); border-radius: var(--radius-md); background: var(--bg-primary); color: var(--text-primary); font-family: inherit; margin-top: 8px; }
+  .note-input:focus { outline: none; border-color: var(--amber-400); }
+
+  /* Won banner */
+  .won-banner { background: var(--won-bg); border: 0.5px solid #97C459; border-radius: var(--radius-lg); padding: 14px 16px; display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .won-banner i { font-size: 22px; color: var(--won-text); }
+  .won-banner-title { font-size: 14px; font-weight: 500; color: #27500A; }
+  .won-banner-sub { font-size: 12px; color: var(--won-text); margin-top: 2px; }
+
+  /* ── ADD VENUE WIZARD ── */
+  .wiz-header { text-align: center; margin-bottom: 24px; }
+  .wiz-step-label { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+  .wiz-title { font-size: 18px; font-weight: 500; }
+  .wiz-dots { display: flex; gap: 6px; justify-content: center; margin-bottom: 28px; }
+  .wiz-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border-mid); }
+  .wiz-dot.done { background: var(--amber-400); }
+  .wiz-dot.active { background: var(--amber-800); width: 18px; border-radius: 3px; }
+  .ticket-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 24px; }
+  .ticket-btn {
+    background: var(--bg-primary); border: 0.5px solid var(--border-mid);
+    border-radius: var(--radius-lg); padding: 20px 16px; text-align: center; cursor: pointer;
+  }
+  .ticket-btn:hover { border-color: var(--amber-400); }
+  .ticket-btn.selected { border: 2px solid var(--amber-400); background: var(--amber-50); }
+  .ticket-btn i { font-size: 26px; color: var(--text-secondary); display: block; margin-bottom: 8px; }
+  .ticket-btn.selected i { color: var(--amber-800); }
+  .ticket-name { font-size: 14px; font-weight: 500; }
+  .ticket-desc { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
+  .wiz-nav { display: flex; gap: 8px; margin-top: 8px; }
+  .wiz-nav .btn-secondary { flex: 0 0 auto; padding: 10px 16px; }
+  .wiz-nav .btn-primary { flex: 1; justify-content: center; }
+  .success-screen { text-align: center; padding: 48px 20px; }
+  .success-icon { width: 60px; height: 60px; border-radius: 50%; background: var(--won-bg); display: flex; align-items: center; justify-content: center; margin: 0 auto 18px; }
+  .success-icon i { font-size: 28px; color: var(--won-text); }
+
+  /* ── PROFILE ── */
+  .profile-hero { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  .profile-av-lg {
+    width: 56px; height: 56px; border-radius: 50%; background: var(--amber-50);
+    color: var(--amber-800); font-size: 18px; font-weight: 600; border: 2px solid var(--amber-400);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .profile-name { font-size: 18px; font-weight: 500; }
+  .profile-email { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+  .completeness-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-secondary); margin-bottom: 5px; }
+  .completeness-bar { height: 4px; background: var(--bg-secondary); border-radius: 2px; margin-bottom: 20px; overflow: hidden; }
+  .completeness-fill { height: 100%; background: var(--amber-400); border-radius: 2px; transition: width 0.4s; }
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .section-title { font-size: 13px; font-weight: 500; }
+  .section-sub { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+  .edit-btn {
+    display: flex; align-items: center; gap: 4px; background: none;
+    border: 0.5px solid var(--border-mid); border-radius: var(--radius-md);
+    padding: 4px 10px; font-size: 12px; color: var(--text-secondary); cursor: pointer;
+  }
+  .edit-btn:hover { border-color: var(--amber-400); color: var(--amber-800); }
+  .field-row { display: flex; align-items: flex-start; gap: 12px; padding: 9px 0; border-bottom: 0.5px solid var(--border-light); }
+  .field-row:last-child { border-bottom: none; }
+  .field-label { font-size: 12px; color: var(--text-secondary); min-width: 110px; padding-top: 1px; flex-shrink: 0; }
+  .field-value { font-size: 13px; flex: 1; line-height: 1.5; }
+  .field-value.empty { color: var(--text-tertiary); font-style: italic; }
+  .field-hint { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--amber-600); margin-top: 3px; }
+  .field-hint i { font-size: 12px; }
+  .market-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .market-chip { font-size: 12px; padding: 4px 10px; border-radius: 20px; background: var(--bg-secondary); color: var(--text-secondary); border: 0.5px solid var(--border-light); display: flex; align-items: center; gap: 5px; }
+  .chip-remove { cursor: pointer; color: var(--text-tertiary); font-size: 11px; }
+  .chip-remove:hover { color: var(--dead-text); }
+  .chip-add { font-size: 12px; padding: 4px 10px; border-radius: 20px; background: none; color: var(--amber-800); border: 0.5px dashed var(--amber-400); cursor: pointer; }
+  .chip-add:hover { background: var(--amber-50); }
+  .merge-tag { background: var(--amber-50); color: var(--amber-800); border-radius: 3px; padding: 1px 5px; font-size: 11px; font-weight: 500; font-family: 'Courier New', monospace; }
+  .tpl-preview { background: var(--bg-secondary); border-radius: var(--radius-md); padding: 14px; font-size: 12.5px; line-height: 1.8; white-space: pre-wrap; border: 0.5px solid var(--border-light); color: var(--text-primary); }
+  .tpl-highlight { background: var(--amber-50); color: var(--amber-800); border-radius: 3px; padding: 0 3px; }
+  .merge-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .merge-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-secondary); }
+  .roster-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid var(--border-light); }
+  .roster-item:last-child { border-bottom: none; }
+  .roster-av { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+  .roster-name { font-size: 14px; font-weight: 500; }
+  .roster-markets { font-size: 12px; color: var(--text-secondary); margin-top: 1px; }
+  .roster-stat { margin-left: auto; font-size: 12px; color: var(--text-secondary); text-align: right; }
+  .roster-stat strong { display: block; font-size: 14px; font-weight: 500; color: var(--text-primary); }
+  .setting-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 0.5px solid var(--border-light); cursor: pointer; }
+  .setting-row:last-child { border-bottom: none; }
+  .setting-icon { width: 32px; height: 32px; border-radius: var(--radius-md); background: var(--bg-secondary); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .setting-icon i { font-size: 17px; color: var(--text-secondary); }
+  .setting-label { font-size: 14px; flex: 1; }
+  .setting-value { font-size: 13px; color: var(--text-secondary); }
+  .setting-row i.ti-chevron-right { font-size: 14px; color: var(--text-tertiary); }
+  .save-row { display: flex; gap: 8px; margin-top: 12px; }
+
+  /* ── Toast ── */
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #27500A; color: #EAF3DE; padding: 9px 20px; border-radius: 20px; font-size: 13px; display: none; z-index: 999; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<!-- AUTH GATE -->
+<div id="auth-gate" style="max-width:380px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:24px">
+  <div style="text-align:center;margin-bottom:24px">
+    <div class="nav-mark" style="width:48px;height:48px;border-radius:12px;margin:0 auto 14px"><i class="ti ti-music" style="font-size:24px"></i></div>
+    <div style="font-size:22px;font-weight:500">Gig Collective</div>
+    <div style="font-size:14px;color:var(--text-secondary);margin-top:4px">Sign in to your booking pipeline</div>
+  </div>
+  <div class="card">
+    <label class="form-label">Booking email</label>
+    <input class="form-input" id="gate-email" type="email" value="booking@nickrainsmusic.com" placeholder="you@example.com">
+    <button class="btn-primary btn-full" style="margin-top:12px" onclick="sendMagicLink()"><i class="ti ti-mail"></i> Email me a login link</button>
+    <div style="text-align:center;font-size:12px;color:var(--text-tertiary);margin:14px 0">or</div>
+    <button class="btn-secondary btn-full" onclick="signInGoogle()"><i class="ti ti-brand-google"></i> Continue with Google</button>
+    <div id="gate-msg" style="font-size:12px;margin-top:12px;text-align:center;min-height:16px"></div>
+  </div>
+</div>
+
+<div class="app" id="app-shell" style="display:none">
+
+  <!-- NAV -->
+  <nav class="nav">
+    <div class="nav-brand">
+      <div class="nav-mark"><i class="ti ti-music"></i></div>
+      <span class="nav-name">Gig Collective</span>
+    </div>
+    <div class="nav-right">
+      <div class="nav-avatar" id="avatar-btn" onclick="toggleProfile()" title="Profile">NR</div>
+      <button class="nav-hamburger" id="hbtn" onclick="toggleMenu()" aria-label="Menu" aria-expanded="false">
+        <i class="ti ti-menu-2"></i>
+      </button>
+    </div>
+    <div class="nav-dropdown" id="nav-menu" role="menu">
+      <button class="dd-item" id="nav-home" onclick="go('home')" role="menuitem">Home</button>
+      <button class="dd-item" id="nav-pipeline" onclick="go('pipeline')" role="menuitem">My pipeline</button>
+      <button class="dd-item" id="nav-discover" onclick="go('discover')" role="menuitem">Discover</button>
+      <div class="dd-divider"></div>
+      <button class="dd-item dd-add" onclick="go('add')" role="menuitem">+ Add venue</button>
+    </div>
+  </nav>
+
+  <!-- HOME -->
+  <div class="screen active" id="screen-home">
+    <div style="margin-bottom:20px">
+      <div class="page-title" id="home-greeting">Welcome back</div>
+      <div style="font-size:14px;color:var(--text-secondary)" id="home-sub">Loading…</div>
+    </div>
+    <div class="attn-strip" id="attn-strip" onclick="go('pipeline')" style="display:none">
+      <i class="ti ti-alert-circle"></i>
+      <div class="attn-text"><span id="attn-text-inner"></span></div>
+      <i class="ti ti-chevron-right"></i>
+    </div>
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-label">Active leads</div><div class="stat-val" id="stat-active">0</div><div class="stat-sub">in your pipeline</div></div>
+      <div class="stat-card"><div class="stat-label">Booked</div><div class="stat-val" id="stat-booked">0</div><div class="stat-sub">marked won</div></div>
+      <div class="stat-card soon-dim"><div class="stat-label">Collective wins</div><div class="stat-val">—</div><div class="stat-sub">coming soon</div></div>
+    </div>
+    <div class="section-label">Collective activity <span class="soon">feature incomplete: coming soon</span></div>
+    <div class="card card-flush soon-dim">
+      <div class="feed-item">
+        <div class="feed-av" style="background:#EAF3DE;color:#3B6D11">SJ</div>
+        <div><div class="feed-name">Sammy J <span class="feed-action">booked Delta Sky Club IAH — $450 flat</span></div><div class="feed-time">2h ago · Houston TX</div></div>
+      </div>
+      <div class="feed-item">
+        <div class="feed-av" style="background:#E6F1FB;color:#185FA5">DL</div>
+        <div><div class="feed-name">Derick L <span class="feed-action">added new contact at Antone's Record Shop</span></div><div class="feed-time">Yesterday · Austin TX</div></div>
+      </div>
+      <div class="feed-item">
+        <div class="feed-av" style="background:#F1EFE8;color:#5F5E5A">AC</div>
+        <div><div class="feed-name">Aaron C <span class="feed-action">updated pay rate — Dosey Doe raised to $500</span></div><div class="feed-time">2 days ago · Houston TX</div></div>
+      </div>
+      <div class="feed-item">
+        <div class="feed-av" style="background:#FAEEDA;color:#633806">LR</div>
+        <div><div class="feed-name">Luc R <span class="feed-action">moved Revention Music Center to follow-up</span></div><div class="feed-time">3 days ago · Houston TX</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DISCOVER -->
+  <div class="screen" id="screen-discover">
+    <div class="page-title" style="margin-bottom:16px">Discover venues</div>
+    <div class="filter-row">
+      <select class="form-select" id="state-filter" onchange="filterCities()">
+        <option value="">All states</option>
+        <option value="TX">Texas</option>
+        <option value="TN">Tennessee</option>
+        <option value="CA">California</option>
+        <option value="CO">Colorado</option>
+      </select>
+      <select class="form-select" id="city-filter" onchange="renderDiscover()">
+        <option value="">All cities</option>
+      </select>
+      <select class="form-select" id="type-filter" onchange="renderDiscover()">
+        <option value="">All types</option>
+        <option value="hard">Hard ticket</option>
+        <option value="soft">Soft ticket</option>
+      </select>
+    </div>
+    <div class="venue-grid" id="venue-grid"></div>
+  </div>
+
+  <!-- PIPELINE LIST -->
+  <div class="screen" id="screen-pipeline">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div class="page-title" style="margin-bottom:0">My pipeline</div>
+      <span style="font-size:12px;color:var(--text-secondary)" id="pipe-count">0 venues</span>
+    </div>
+    <div class="card card-flush" id="pipe-list"></div>
+  </div>
+
+  <!-- PIPELINE DETAIL -->
+  <div class="screen" id="screen-detail">
+    <div id="detail-container"></div>
+  </div>
+
+  <!-- ADD VENUE -->
+  <div class="screen" id="screen-add">
+    <div id="wiz-container"></div>
+  </div>
+
+  <!-- PROFILE -->
+  <div class="screen" id="screen-profile">
+    <div class="profile-hero">
+      <div class="profile-av-lg">NR</div>
+      <div>
+        <div class="profile-name" id="p-display-name">Nick Rains</div>
+        <div class="profile-email">thenickrains@gmail.com</div>
+        <div style="margin-top:5px;font-size:12px;color:var(--text-secondary)">Profile powers your outreach templates</div>
+      </div>
+    </div>
+
+    <div class="completeness-label">
+      <span>Profile completeness</span>
+      <span id="pct-label">75%</span>
+    </div>
+    <div class="completeness-bar"><div class="completeness-fill" id="pct-bar" style="width:75%"></div></div>
+
+    <!-- Identity -->
+    <div class="card" id="card-identity">
+      <div class="section-header">
+        <div><div class="section-title">Artist identity</div><div class="section-sub">Used in every template as your intro</div></div>
+        <button class="edit-btn" onclick="editSection('identity')"><i class="ti ti-pencil"></i> Edit</button>
+      </div>
+      <div id="view-identity">
+        <div class="field-row"><span class="field-label">Display name</span><span class="field-value" id="fv-name">Nick Rains</span></div>
+        <div class="field-row"><span class="field-label">Genre / style</span><span class="field-value" id="fv-genre">Americana / country singer-songwriter</span></div>
+        <div class="field-row"><span class="field-label">One-liner</span><span class="field-value" id="fv-oneliner">Originals with a sound that tends to work well in listening rooms and intimate venues</span></div>
+        <div class="field-row"><span class="field-label">Phone</span><span class="field-value" id="fv-phone">(713) 555-0100</span></div>
+      </div>
+      <div id="edit-identity" style="display:none">
+        <div class="field-row"><span class="field-label">Display name</span><input class="form-input" id="fi-name" value="Nick Rains"></div>
+        <div class="field-row"><span class="field-label">Genre / style</span><input class="form-input" id="fi-genre" value="Americana / country singer-songwriter"></div>
+        <div class="field-row"><span class="field-label">One-liner</span><input class="form-input" id="fi-oneliner" value="Originals with a sound that tends to work well in listening rooms and intimate venues"></div>
+        <div class="field-row"><span class="field-label">Phone</span><input class="form-input" id="fi-phone" value="(713) 555-0100"></div>
+        <div class="save-row"><button class="btn-primary btn-sm" onclick="saveSection('identity')">Save</button><button class="btn-secondary btn-sm" onclick="cancelSection('identity')">Cancel</button></div>
+      </div>
+    </div>
+
+    <!-- Links -->
+    <div class="card" id="card-links">
+      <div class="section-header">
+        <div><div class="section-title">Links</div><div class="section-sub">Dropped into pitch and full-pitch templates</div></div>
+        <button class="edit-btn" onclick="editSection('links')"><i class="ti ti-pencil"></i> Edit</button>
+      </div>
+      <div id="view-links">
+        <div class="field-row"><span class="field-label">Website</span><span class="field-value" style="color:#185FA5" id="fv-web">nickrainsmusic.com</span></div>
+        <div class="field-row"><span class="field-label">EPK</span><span class="field-value" style="color:#185FA5" id="fv-epk">nickrainsmusic.com/epk</span></div>
+        <div class="field-row">
+          <span class="field-label">Spotify</span>
+          <div style="flex:1"><span class="field-value empty" id="fv-spotify">Not set</span>
+          <div class="field-hint"><i class="ti ti-alert-triangle"></i>Missing — adds credibility to cold outreach</div></div>
+        </div>
+      </div>
+      <div id="edit-links" style="display:none">
+        <div class="field-row"><span class="field-label">Website</span><input class="form-input" id="fi-web" value="nickrainsmusic.com"></div>
+        <div class="field-row"><span class="field-label">EPK</span><input class="form-input" id="fi-epk" value="nickrainsmusic.com/epk"></div>
+        <div class="field-row"><span class="field-label">Spotify</span><input class="form-input" id="fi-spotify" placeholder="open.spotify.com/artist/..."></div>
+        <div class="save-row"><button class="btn-primary btn-sm" onclick="saveSection('links')">Save</button><button class="btn-secondary btn-sm" onclick="cancelSection('links')">Cancel</button></div>
+      </div>
+    </div>
+
+    <!-- Markets -->
+    <div class="card">
+      <div class="section-header">
+        <div><div class="section-title">Active markets</div><div class="section-sub">Feeds "I'll be in [city] anyway" in follow-up templates</div></div>
+        <button class="edit-btn" onclick="toggleMarketEdit()"><i class="ti ti-pencil"></i> Edit</button>
+      </div>
+      <div class="market-chips" id="market-chips"></div>
+      <div id="market-add-row" style="display:none;margin-top:10px">
+        <input class="form-input" id="new-market" placeholder="e.g. Denver CO" style="width:180px;display:inline-block;margin-right:8px">
+        <button class="btn-primary btn-sm" onclick="confirmAddMarket()">Add</button>
+      </div>
+    </div>
+
+    <!-- Draw -->
+    <div class="card" id="card-draw">
+      <div class="section-header">
+        <div><div class="section-title">Draw & experience</div><div class="section-sub">Credibility signals in pitch templates</div></div>
+        <button class="edit-btn" onclick="editSection('draw')"><i class="ti ti-pencil"></i> Edit</button>
+      </div>
+      <div id="view-draw">
+        <div class="field-row"><span class="field-label">Draw claim</span><span class="field-value" id="fv-draw">Strong draw in Houston and Austin, building Nashville</span></div>
+        <div class="field-row"><span class="field-label">Typical crowd</span><span class="field-value" id="fv-crowd">35–55, seated, attentive — good fit for listening rooms</span></div>
+        <div class="field-row"><span class="field-label">Set formats</span><span class="field-value" id="fv-formats">Solo acoustic · Full band</span></div>
+        <div class="field-row">
+          <span class="field-label">Notable venues</span>
+          <div style="flex:1"><span class="field-value empty" id="fv-notable">Not set</span>
+          <div class="field-hint"><i class="ti ti-alert-triangle"></i>Missing — strong social proof signal</div></div>
+        </div>
+      </div>
+      <div id="edit-draw" style="display:none">
+        <div class="field-row"><span class="field-label">Draw claim</span><input class="form-input" id="fi-draw" value="Strong draw in Houston and Austin, building Nashville"></div>
+        <div class="field-row"><span class="field-label">Typical crowd</span><input class="form-input" id="fi-crowd" value="35–55, seated, attentive — good fit for listening rooms"></div>
+        <div class="field-row"><span class="field-label">Set formats</span><input class="form-input" id="fi-formats" value="Solo acoustic · Full band"></div>
+        <div class="field-row"><span class="field-label">Notable venues</span><input class="form-input" id="fi-notable" placeholder="e.g. 3rd & Lindsley, Continental Club"></div>
+        <div class="save-row"><button class="btn-primary btn-sm" onclick="saveSection('draw')">Save</button><button class="btn-secondary btn-sm" onclick="cancelSection('draw')">Cancel</button></div>
+      </div>
+    </div>
+
+    <!-- Live template preview -->
+    <div class="section-label">Live template preview</div>
+    <div class="card">
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Cold outreach — rendered from your profile fields</div>
+      <div class="tpl-preview" id="profile-tpl-preview"></div>
+      <div class="merge-legend" id="profile-merge-legend"></div>
+    </div>
+
+    <!-- Roster -->
+    <div class="section-label">The collective <span class="soon">feature incomplete: coming soon</span></div>
+    <div class="card card-flush soon-dim" style="margin-bottom:12px">
+      <div class="roster-item"><div class="roster-av" style="background:#FAEEDA;color:#633806">NR</div><div><div class="roster-name">Nick Rains <span style="font-size:11px;background:#FAEEDA;color:#633806;padding:2px 7px;border-radius:10px;margin-left:4px">you</span></div><div class="roster-markets">Houston · Austin · Nashville</div></div><div class="roster-stat"><strong>6</strong>booked this yr</div></div>
+      <div class="roster-item"><div class="roster-av" style="background:#EAF3DE;color:#3B6D11">SJ</div><div><div class="roster-name">Sammy J</div><div class="roster-markets">Houston · DFW</div></div><div class="roster-stat"><strong>8</strong>booked this yr</div></div>
+      <div class="roster-item"><div class="roster-av" style="background:#F1EFE8;color:#5F5E5A">AC</div><div><div class="roster-name">Aaron Cook</div><div class="roster-markets">Houston · Austin</div></div><div class="roster-stat"><strong>4</strong>booked this yr</div></div>
+      <div class="roster-item"><div class="roster-av" style="background:#E6F1FB;color:#185FA5">DL</div><div><div class="roster-name">Derick Leduke</div><div class="roster-markets">DFW · Nashville</div></div><div class="roster-stat"><strong>3</strong>booked this yr</div></div>
+      <div class="roster-item"><div class="roster-av" style="background:#FBEAF0;color:#993556">CV</div><div><div class="roster-name">Cody Voyer</div><div class="roster-markets">Nashville · Austin</div></div><div class="roster-stat"><strong>5</strong>booked this yr</div></div>
+      <div class="roster-item"><div class="roster-av" style="background:#E1F5EE;color:#0F6E56">LN</div><div><div class="roster-name">Logan Nafratil</div><div class="roster-markets">Houston</div></div><div class="roster-stat"><strong>2</strong>booked this yr</div></div>
+      <div class="roster-item"><div class="roster-av" style="background:#EEEDFE;color:#3C3489">LR</div><div><div class="roster-name">Luc Roach</div><div class="roster-markets">Houston · Austin</div></div><div class="roster-stat"><strong>4</strong>booked this yr</div></div>
+    </div>
+
+    <!-- Settings -->
+    <div class="section-label">Settings</div>
+    <div class="card card-flush" style="margin-bottom:20px">
+      <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-bell"></i></div><div class="setting-label">Notifications <span class="soon">soon</span></div><i class="ti ti-chevron-right"></i></div>
+      <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-map-pin"></i></div><div class="setting-label">Home market <span class="soon">soon</span></div><i class="ti ti-chevron-right"></i></div>
+      <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-brand-google"></i></div><div class="setting-label">Gmail auto-tracking <span class="soon">soon</span></div><i class="ti ti-chevron-right"></i></div>
+      <div class="setting-row" onclick="signOut()"><div class="setting-icon"><i class="ti ti-logout"></i></div><div class="setting-label" style="color:var(--dead-text)">Sign out</div></div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<div class="toast" id="toast"><i class="ti ti-check" style="margin-right:6px"></i>Copied to clipboard</div>
+
+<script>
+// ── State ──────────────────────────────────────────────
+var currentScreen = 'home';
+var menuOpen = false;
+
+var profile = {
+  name: 'Nick Rains', genre: 'Americana / country singer-songwriter',
+  oneliner: 'Originals with a sound that tends to work well in listening rooms and intimate venues',
+  phone: '(713) 555-0100', web: 'nickrainsmusic.com', epk: 'nickrainsmusic.com/epk',
+  spotify: '', draw: 'Strong draw in Houston and Austin, building Nashville',
+  crowd: '35–55, seated, attentive — good fit for listening rooms',
+  formats: 'Solo acoustic · Full band', notable: ''
+};
+
+var markets = [];
+var marketEditOpen = false;
+
+var venues = [];
+var cities = {};
+
+var pipeline = [];
+
+var statusLabel = {followup:'Follow up',waiting:'Waiting',outreach:'Outreach',won:'Won',dead:'Dead end'};
+var statusOrder = {followup:0,waiting:1,outreach:2,won:3,dead:4};
+var stages = ['outreach','waiting','followup','won'];
+var stageNames = ['Outreach','Waiting','Follow up','Won'];
+
+var softTypes = ['Bar / Pub','Coffee shop','Restaurant','Hotel bar','Winery / Brewery','Casino floor','Festival stage','Other'];
+var hardTypes = ['Listening room','Theater','Concert hall','Performing arts center','Music club (ticketed)','Other'];
+
+var activeTpl = {};
+var selectedFollowup = {};
+
+var templates = {
+  outreach: function(p) {
+    return 'Hi ' + p.contact.split(' ')[0] + ',\n\nMy name is ' + profile.name + ' — I\'m a ' + profile.genre + ' based in ' + (markets[0]||'Houston') + '. ' + profile.oneliner + '.\n\nI\'d love to get on your calendar for a date at ' + p.venue + '. Here\'s a quick listen: ' + profile.web + (profile.epk ? '\nEPK: ' + profile.epk : '') + '.\n\n' + (profile.draw ? profile.draw + '.\n\n' : '') + 'Are you the right person to reach for bookings?\n\nThanks,\n' + profile.name + '\n' + profile.phone;
+  },
+  followup: function(p) {
+    return 'Hi ' + p.contact.split(' ')[0] + ',\n\nCircling back on my note from ' + p.days + ' days ago. I know your inbox is full — no hard feelings if the timing isn\'t right.\n\nI\'ll be in ' + p.city + ' anyway and would love to make it work. Happy to send available dates if that\'s easier.\n\n' + profile.name + '\n' + profile.phone;
+  },
+  pitch: function(p) {
+    return 'Hi ' + p.contact.split(' ')[0] + ',\n\nQuick pitch:\n\n→ ' + profile.genre + '\n→ ' + (profile.draw || '[draw claim]') + '\n→ ' + (profile.formats || 'Solo acoustic · Full band') + '\n→ Target: ' + p.pay + '\n→ EPK: ' + (profile.epk || profile.web) + '\n\nAvailable dates: [add your dates]\n\nLet me know what you\'re thinking.\n\n' + profile.name;
+  },
+  checkin: function(p) {
+    return 'Hey ' + p.contact.split(' ')[0] + ',\n\nHope things are going well at ' + p.venue + '. Staying on your radar — I have a run of dates coming up and ' + p.city + ' is high on the list.\n\nAnything open worth exploring?\n\n' + profile.name;
+  }
+};
+var tplKeys = ['outreach','followup','pitch','checkin'];
+var tplLabels = ['Cold outreach','Follow-up','Full pitch','Check-in'];
+
+// ── Navigation ──────────────────────────────────────────
+function go(screen) {
+  closeMenu();
+  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+  document.getElementById('screen-' + screen).classList.add('active');
+  document.querySelectorAll('.dd-item').forEach(function(b){ b.classList.remove('active'); });
+  var navEl = document.getElementById('nav-' + screen);
+  if (navEl) navEl.classList.add('active');
+  document.getElementById('avatar-btn').classList.remove('active');
+  currentScreen = screen;
+  if (screen === 'discover') renderDiscover();
+  if (screen === 'pipeline') renderPipeline();
+  if (screen === 'add') renderWizard(1, null, {});
+  if (screen === 'profile') { renderMarkets(); updateProfilePreview(); updateCompleteness(); }
+}
+
+function toggleMenu() {
+  menuOpen = !menuOpen;
+  document.getElementById('nav-menu').classList.toggle('open', menuOpen);
+  document.getElementById('hbtn').setAttribute('aria-expanded', String(menuOpen));
+}
+function closeMenu() {
+  menuOpen = false;
+  document.getElementById('nav-menu').classList.remove('open');
+  document.getElementById('hbtn').setAttribute('aria-expanded', 'false');
+}
+document.addEventListener('click', function(e) {
+  if (menuOpen && !e.target.closest('.nav')) closeMenu();
+});
+
+function toggleProfile() {
+  if (currentScreen === 'profile') { go('home'); }
+  else {
+    closeMenu();
+    document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+    document.getElementById('screen-profile').classList.add('active');
+    document.querySelectorAll('.dd-item').forEach(function(b){ b.classList.remove('active'); });
+    document.getElementById('avatar-btn').classList.add('active');
+    currentScreen = 'profile';
+    renderMarkets(); updateProfilePreview(); updateCompleteness();
+  }
+}
+
+// ── Discover ────────────────────────────────────────────
+function filterCities() {
+  var state = document.getElementById('state-filter').value;
+  var sel = document.getElementById('city-filter');
+  sel.innerHTML = '<option value="">All cities</option>';
+  if (state && cities[state]) {
+    cities[state].forEach(function(c){ var o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+  }
+  renderDiscover();
+}
+function renderDiscover() {
+  var state = document.getElementById('state-filter').value;
+  var city = document.getElementById('city-filter').value;
+  var type = document.getElementById('type-filter').value;
+  var f = venues.filter(function(v){ return (!state||v.state===state)&&(!city||v.city===city)&&(!type||v.type===type); });
+  var g = document.getElementById('venue-grid');
+  if (!f.length) { g.innerHTML = '<p style="color:var(--text-secondary);font-size:14px;grid-column:1/-1">No venues match this filter.</p>'; return; }
+  g.innerHTML = f.map(function(v){
+    return '<div class="venue-card">'
+    + '<div class="venue-name">' + v.name + '</div>'
+    + '<div class="venue-loc">' + v.city + ', ' + v.state + '</div>'
+    + '<span class="badge badge-' + v.type + '">' + v.vtype + '</span>'
+    + '<div class="venue-tag"><i class="ti ti-currency-dollar"></i>' + v.pay + '</div>'
+    + '<div class="venue-tag"><i class="ti ti-user"></i>' + v.contact + '</div>'
+    + '</div>';
+  }).join('');
+}
+
+// ── Pipeline list ───────────────────────────────────────
+function renderPipeline() {
+  var pc = document.getElementById('pipe-count');
+  if (pc) pc.textContent = pipeline.length + (pipeline.length===1 ? ' venue' : ' venues');
+  if (!pipeline.length) {
+    document.getElementById('pipe-list').innerHTML = '<p style="color:var(--text-secondary);font-size:14px;padding:8px 0">No venues yet. Open the menu → <strong>Add venue</strong> to log your first business card.</p>';
+    return;
+  }
+  var sorted = pipeline.slice().sort(function(a,b){ return statusOrder[a.s]-statusOrder[b.s]; });
+  document.getElementById('pipe-list').innerHTML = sorted.map(function(p){
+    var alert = p.s==='followup' ? '<i class="ti ti-alert-circle" style="font-size:13px;color:var(--followup-text)"></i>' : '';
+    return '<div class="pipe-item" onclick="openDetail(' + p.id + ')">'
+    + '<div class="pipe-icon"><i class="ti ti-building-store"></i></div>'
+    + '<div class="pipe-info"><div class="pipe-venue">' + p.venue + alert + '</div><div class="pipe-contact">' + p.contact + ' · ' + p.city + ', ' + p.state + '</div></div>'
+    + '<div class="pipe-meta"><span class="badge badge-' + p.s + '">' + statusLabel[p.s] + '</span><div class="pipe-date">' + p.days + ' days ago</div></div>'
+    + '</div>';
+  }).join('');
+}
+
+// ── Pipeline detail ─────────────────────────────────────
+function openDetail(id) {
+  var p = pipeline[id];
+  var stageIdx = stages.indexOf(p.s);
+  var stageDots = stages.map(function(s,i){
+    var cls = i<stageIdx ? 'done' : (i===stageIdx ? 'current' : '');
+    var inner = i<stageIdx ? '<i class="ti ti-check"></i>' : '';
+    return '<div class="stage-step"><div class="stage-dot ' + cls + '">' + inner + '</div><div class="stage-label' + (i===stageIdx?' current':'') + '">' + stageNames[i] + '</div></div>';
+  }).join('');
+
+  if (!activeTpl[id]) activeTpl[id] = p.s==='outreach' ? 'outreach' : (p.s==='waiting'||p.s==='followup' ? 'followup' : 'checkin');
+
+  var tplTabsHtml = tplKeys.map(function(k,i){
+    return '<div class="tpl-tab' + (activeTpl[id]===k?' active':'') + '" onclick="switchTpl(' + id + ',\'' + k + '\')">' + tplLabels[i] + '</div>';
+  }).join('');
+
+  var actHtml = p.activity.map(function(a){
+    return '<div class="activity-item"><div class="activity-dot" style="background:' + a.dot + '"></div><div><div class="activity-text">' + a.text + '</div><div class="activity-time">' + a.time + '</div></div></div>';
+  }).join('');
+
+  var chips = ['3 days','7 days','14 days','1 month'].map(function(d){
+    return '<div class="fu-chip' + (selectedFollowup[id]===d?' selected':'') + '" onclick="selectFollowup(' + id + ',\'' + d + '\')">' + d + '</div>';
+  }).join('');
+
+  var wonBanner = p.s==='won' ? '<div class="won-banner"><i class="ti ti-trophy"></i><div><div class="won-banner-title">Booked</div><div class="won-banner-sub">' + p.venue + '</div></div></div>' : '';
+
+  var allStatuses = ['outreach','waiting','followup','won','dead'];
+  var statusActions = '<div class="section-label">Move stage</div><div class="card" style="margin-bottom:12px"><div class="followup-chips">'
+    + allStatuses.map(function(st){ return '<div class="fu-chip' + (p.s===st?' selected':'') + '" onclick="setStatus(' + id + ',\'' + st + '\')">' + statusLabel[st] + '</div>'; }).join('')
+    + '</div></div>';
+
+  var tplSection = (p.s!=='won'&&p.s!=='dead') ? (
+    '<div class="section-label" style="margin-top:4px">Outreach templates</div>'
+    + '<div class="card" style="margin-bottom:12px">'
+    + '<div class="tpl-tabs" id="tpl-tabs-' + id + '">' + tplTabsHtml + '</div>'
+    + '<div class="tpl-body" id="tpl-body-' + id + '">' + templates[activeTpl[id]](p) + '</div>'
+    + '<div class="tpl-actions">'
+    + '<button class="btn-primary btn-sm" onclick="copyTpl(' + id + ')"><i class="ti ti-copy"></i> Copy</button>'
+    + '<button class="btn-secondary btn-sm" onclick="emailTpl(' + id + ')"><i class="ti ti-mail"></i> Open in email</button>'
+    + '</div>'
+    + '<div style="border-top:0.5px solid var(--border-light);padding-top:12px;margin-top:12px">'
+    + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Schedule follow-up reminder</div>'
+    + '<div class="followup-chips" id="fu-chips-' + id + '">' + chips + '</div>'
+    + '</div></div>'
+  ) : '';
+
+  document.getElementById('detail-container').innerHTML =
+    '<button class="back-btn" onclick="go(\'pipeline\')"><i class="ti ti-arrow-left"></i> My pipeline</button>'
+    + '<div class="detail-header"><div class="detail-icon"><i class="ti ti-building-store"></i></div>'
+    + '<div><div class="detail-venue">' + p.venue + '</div><div class="detail-meta">' + p.vtype + ' · ' + p.city + ', ' + p.state + ' · ' + p.pay + '</div>'
+    + '<span class="badge badge-' + p.s + '" style="margin-top:6px">' + statusLabel[p.s] + '</span></div></div>'
+    + (p.s!=='won'&&p.s!=='dead' ? '<div class="stage-track" style="margin-bottom:20px">' + stageDots + '</div>' : '')
+    + wonBanner
+    + statusActions
+    + '<div class="section-label">Contact</div>'
+    + '<div class="card card-flush" style="margin-bottom:12px">'
+    + '<div class="contact-row"><div class="contact-av">' + p.contact.split(' ').map(function(n){return n[0];}).join('') + '</div>'
+    + '<div><div class="contact-name">' + p.contact + '</div><div class="contact-title">' + p.title + '</div></div>'
+    + '<div class="contact-actions"><div class="btn-icon" title="Email"><i class="ti ti-mail"></i></div><div class="btn-icon" title="Call"><i class="ti ti-phone"></i></div></div></div>'
+    + '<div style="padding:8px 0 4px"><div style="font-size:12px;color:var(--text-secondary);margin-bottom:2px">' + p.email + '</div><div style="font-size:12px;color:var(--text-secondary)">' + p.phone + '</div></div>'
+    + '</div>'
+    + tplSection
+    + '<div class="section-label">Activity <span class="soon">email auto-tracking: coming soon</span></div>'
+    + '<div class="card card-flush" style="margin-bottom:20px">' + actHtml
+    + '<div><input class="note-input" placeholder="Add a note… press Enter to save" onkeydown="addNote(event,' + id + ')"></div>'
+    + '</div>';
+
+  go('detail');
+}
+
+function switchTpl(id, key) {
+  activeTpl[id] = key;
+  var p = pipeline[id];
+  document.querySelectorAll('#tpl-tabs-' + id + ' .tpl-tab').forEach(function(t,i){ t.classList.toggle('active', tplKeys[i]===key); });
+  document.getElementById('tpl-body-' + id).textContent = templates[key](p);
+}
+function copyTpl(id) {
+  var txt = document.getElementById('tpl-body-' + id).textContent;
+  navigator.clipboard.writeText(txt).catch(function(){});
+  showToast();
+}
+function emailTpl(id) {
+  var p = pipeline[id];
+  var body = document.getElementById('tpl-body-' + id).textContent;
+  window.open('mailto:' + p.email + '?subject=' + encodeURIComponent(profile.name + ' — booking inquiry') + '&body=' + encodeURIComponent(body));
+}
+function selectFollowup(id, val) {
+  selectedFollowup[id] = val;
+  document.querySelectorAll('#fu-chips-' + id + ' .fu-chip').forEach(function(c){ c.classList.toggle('selected', c.textContent===val); });
+}
+function addNote(e, id) {
+  if (e.key==='Enter' && e.target.value.trim()) {
+    var text = e.target.value.trim();
+    var p = pipeline[id];
+    p.activity.unshift({dot:'#633806', text: text, time:'Just now'});
+    p.days = 0;
+    openDetail(id);
+    sb.from('activities').insert({pipeline_entry_id:p.uuid, kind:'note', body:text, source:'manual'}).then(function(r){
+      if (r.error) alert('Could not save note: ' + r.error.message);
+      else sb.from('pipeline_entries').update({last_activity_at:new Date().toISOString()}).eq('id', p.uuid);
+    });
+  }
+}
+
+// ── Add venue wizard ────────────────────────────────────
+function renderWizard(step, ticket, data) {
+  var dots = '';
+  for (var i=1; i<=4; i++) dots += '<div class="wiz-dot' + (i<step?' done':(i===step?' active':'')) + '"></div>';
+  var html = '';
+  if (step===1) {
+    wizData = {};
+    html = '<div class="wiz-header"><div class="wiz-step-label">Step 1 of 4</div><div class="wiz-title">What kind of venue?</div></div>'
+    + '<div class="wiz-dots">' + dots + '</div>'
+    + '<div class="ticket-grid">'
+    + '<div class="ticket-btn' + (ticket==='soft'?' selected':'') + '" onclick="renderWizard(2,\'soft\',{})">'
+    + '<i class="ti ti-glass-full"></i><div class="ticket-name">Soft ticket</div><div class="ticket-desc">Bar, restaurant, hotel, brewery</div></div>'
+    + '<div class="ticket-btn' + (ticket==='hard'?' selected':'') + '" onclick="renderWizard(2,\'hard\',{})">'
+    + '<i class="ti ti-armchair"></i><div class="ticket-name">Hard ticket</div><div class="ticket-desc">Listening room, theater, club</div></div>'
+    + '</div>';
+  } else if (step===2) {
+    var types = ticket==='hard' ? hardTypes : softTypes;
+    html = '<div class="wiz-header"><div class="wiz-step-label">Step 2 of 4</div><div class="wiz-title">Venue details</div></div>'
+    + '<div class="wiz-dots">' + dots + '</div>'
+    + '<div class="form-field"><label class="form-label">Venue name</label><input class="form-input" id="wn" placeholder="e.g. Dosey Doe"></div>'
+    + '<div class="form-row-2"><div class="form-field"><label class="form-label">City</label><input class="form-input" id="wc" placeholder="Houston"></div>'
+    + '<div class="form-field"><label class="form-label">State</label><input class="form-input" id="ws" placeholder="TX"></div></div>'
+    + '<div class="form-field"><label class="form-label">Venue type</label><select class="form-select" id="wvt" onchange="checkOther()">'
+    + types.map(function(t){ return '<option>' + t + '</option>'; }).join('') + '</select></div>'
+    + '<div class="form-field" id="other-wrap" style="display:none"><label class="form-label">Describe the venue type</label><input class="form-input" id="wo" placeholder="Tell us more…"></div>'
+    + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(1,\'' + ticket + '\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(2,\'' + ticket + '\')">Continue</button></div>';
+  } else if (step===3) {
+    html = '<div class="wiz-header"><div class="wiz-step-label">Step 3 of 4</div><div class="wiz-title">Pay & booking contact</div></div>'
+    + '<div class="wiz-dots">' + dots + '</div>'
+    + '<div class="form-row-2"><div class="form-field"><label class="form-label">Pay low ($)</label><input class="form-input" id="wpl" placeholder="300"></div>'
+    + '<div class="form-field"><label class="form-label">Pay high ($)</label><input class="form-input" id="wph" placeholder="500"></div></div>'
+    + '<div class="form-field"><label class="form-label">Contact name</label><input class="form-input" id="wcn" placeholder="Booking manager name"></div>'
+    + '<div class="form-field"><label class="form-label">Email or phone</label><input class="form-input" id="wce" placeholder="booking@venue.com"></div>'
+    + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(2,\'' + ticket + '\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(3,\'' + ticket + '\')">Continue</button></div>';
+  } else if (step===4) {
+    html = '<div class="wiz-header"><div class="wiz-step-label">Step 4 of 4</div><div class="wiz-title">Notes for the collective</div></div>'
+    + '<div class="wiz-dots">' + dots + '</div>'
+    + '<div class="form-field"><label class="form-label">Typical clientele</label><input class="form-input" id="wkl" placeholder="e.g. Americana fans, 35–55, seated"></div>'
+    + '<div class="form-field"><label class="form-label">Notes</label><textarea class="form-textarea" id="wnt" placeholder="Load-in details, who to name-drop, what they\'re looking for…"></textarea></div>'
+    + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(3,\'' + ticket + '\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizSubmit(\'' + ticket + '\')">Add to collective ↗</button></div>';
+  } else if (step===5) {
+    html = '<div class="success-screen"><div class="success-icon"><i class="ti ti-check"></i></div>'
+    + '<h3 style="font-size:18px;font-weight:500;margin-bottom:8px">Added to the collective</h3>'
+    + '<p style="font-size:14px;color:var(--text-secondary);margin-bottom:24px">Your venue is now visible to everyone. Every artist who canvasses it adds to what you just built.</p>'
+    + '<button class="btn-primary btn-full" onclick="go(\'discover\')">Browse venues</button>'
+    + '<button class="btn-secondary btn-full" onclick="renderWizard(1,null,{})">Add another</button></div>';
+  }
+  document.getElementById('wiz-container').innerHTML = html;
+}
+function checkOther() {
+  var sel = document.getElementById('wvt');
+  if (sel) document.getElementById('other-wrap').style.display = sel.value==='Other' ? 'block' : 'none';
+}
+
+// ── Profile ─────────────────────────────────────────────
+function editSection(s) { document.getElementById('view-'+s).style.display='none'; document.getElementById('edit-'+s).style.display='block'; }
+function cancelSection(s) { document.getElementById('view-'+s).style.display='block'; document.getElementById('edit-'+s).style.display='none'; }
+function saveSection(s) {
+  if (s==='identity') {
+    profile.name = document.getElementById('fi-name').value || profile.name;
+    profile.genre = document.getElementById('fi-genre').value || profile.genre;
+    profile.oneliner = document.getElementById('fi-oneliner').value || profile.oneliner;
+    profile.phone = document.getElementById('fi-phone').value || profile.phone;
+    document.getElementById('fv-name').textContent = profile.name;
+    document.getElementById('fv-genre').textContent = profile.genre;
+    document.getElementById('fv-oneliner').textContent = profile.oneliner;
+    document.getElementById('fv-phone').textContent = profile.phone;
+    document.getElementById('p-display-name').textContent = profile.name;
+  }
+  if (s==='links') {
+    profile.web = document.getElementById('fi-web').value || profile.web;
+    profile.epk = document.getElementById('fi-epk').value || profile.epk;
+    profile.spotify = document.getElementById('fi-spotify').value;
+    document.getElementById('fv-web').textContent = profile.web;
+    document.getElementById('fv-epk').textContent = profile.epk;
+    var sp = document.getElementById('fv-spotify');
+    sp.textContent = profile.spotify || 'Not set'; sp.className = 'field-value' + (profile.spotify ? '' : ' empty');
+  }
+  if (s==='draw') {
+    profile.draw = document.getElementById('fi-draw').value || profile.draw;
+    profile.crowd = document.getElementById('fi-crowd').value || profile.crowd;
+    profile.formats = document.getElementById('fi-formats').value || profile.formats;
+    profile.notable = document.getElementById('fi-notable').value;
+    document.getElementById('fv-draw').textContent = profile.draw;
+    document.getElementById('fv-crowd').textContent = profile.crowd;
+    document.getElementById('fv-formats').textContent = profile.formats;
+    var nv = document.getElementById('fv-notable');
+    nv.textContent = profile.notable || 'Not set'; nv.className = 'field-value' + (profile.notable ? '' : ' empty');
+  }
+  cancelSection(s);
+  saveProfile();
+  updateProfilePreview();
+  updateCompleteness();
+}
+
+function renderMarkets() {
+  var c = document.getElementById('market-chips');
+  c.innerHTML = markets.map(function(m){
+    return '<div class="market-chip">' + m + (marketEditOpen ? '<span class="chip-remove" onclick="removeMarket(\'' + m + '\')">&nbsp;×</span>' : '') + '</div>';
+  }).join('') + (marketEditOpen ? '<div class="chip-add" onclick="toggleMarketInput()">+ Add</div>' : '');
+}
+function toggleMarketEdit() { marketEditOpen = !marketEditOpen; renderMarkets(); }
+function toggleMarketInput() {
+  var r = document.getElementById('market-add-row');
+  r.style.display = r.style.display==='none' ? 'block' : 'none';
+  if (r.style.display!=='none') document.getElementById('new-market').focus();
+}
+function removeMarket(m) { markets = markets.filter(function(x){ return x!==m; }); renderMarkets(); updateProfilePreview(); saveProfile(); }
+function confirmAddMarket() {
+  var v = document.getElementById('new-market').value.trim();
+  if (!v) return;
+  markets.push(v); document.getElementById('new-market').value = '';
+  document.getElementById('market-add-row').style.display = 'none';
+  renderMarkets(); updateProfilePreview(); saveProfile();
+}
+
+function updateProfilePreview() {
+  var el = document.getElementById('profile-tpl-preview');
+  if (!el) return;
+  var t = 'Hi [Contact],\n\nMy name is ' + profile.name + ' — I\'m a ' + profile.genre + ' based in ' + (markets[0]||'[city]') + '. ' + profile.oneliner + '.\n\nI\'d love to get on your calendar. Here\'s a quick listen: ' + profile.web + (profile.epk ? '\nEPK: ' + profile.epk : '') + '.\n\n' + (profile.draw ? profile.draw + '.\n\n' : '') + 'Are you the right person to reach for bookings?\n\nThanks,\n' + profile.name + '\n' + profile.phone;
+  el.textContent = t;
+  var lg = document.getElementById('profile-merge-legend');
+  if (lg) lg.innerHTML = [
+    {tag:'{{name}}',val:profile.name},{tag:'{{genre}}',val:profile.genre},
+    {tag:'{{market}}',val:markets[0]||'—'},{tag:'{{website}}',val:profile.web},{tag:'{{phone}}',val:profile.phone}
+  ].map(function(x){ return '<div class="merge-item"><span class="merge-tag">' + x.tag + '</span><span>' + x.val + '</span></div>'; }).join('');
+}
+
+function updateCompleteness() {
+  var fields = [profile.name,profile.genre,profile.oneliner,profile.phone,profile.web,profile.epk,profile.spotify,profile.draw,profile.notable];
+  var filled = fields.filter(function(f){ return f&&f.trim(); }).length;
+  var pct = Math.round((filled/fields.length)*100);
+  var bar = document.getElementById('pct-bar'); if (bar) bar.style.width = pct + '%';
+  var lbl = document.getElementById('pct-label'); if (lbl) lbl.textContent = pct + '%';
+}
+
+// ── Toast ───────────────────────────────────────────────
+function showToast() {
+  var t = document.getElementById('toast'); t.style.display = 'block';
+  setTimeout(function(){ t.style.display='none'; }, 2200);
+}
+
+// ── Supabase client ─────────────────────────────────────
+var sb = window.supabase.createClient(window.GIG_CONFIG.SUPABASE_URL, window.GIG_CONFIG.SUPABASE_ANON_KEY);
+var ME = null;          // current artist id (= auth user id)
+var APP_SHOWN = false;
+var wizData = {};
+
+// ── Helpers ─────────────────────────────────────────────
+function initials(s){ return (s||'?').trim().split(/\s+/).map(function(n){return n[0]||'';}).join('').slice(0,2).toUpperCase() || '?'; }
+function daysAgo(ts){ if(!ts) return 0; return Math.max(0, Math.floor((Date.now()-new Date(ts).getTime())/86400000)); }
+function relTime(ts){ var d=daysAgo(ts); if(d===0) return 'Today'; if(d===1) return 'Yesterday'; if(d<14) return d+' days ago'; if(d<60) return Math.round(d/7)+' weeks ago'; return Math.round(d/30)+' months ago'; }
+var dotByKind = {note:'#633806', email_in:'#185FA5', email_out:'#854F0B', call:'#185FA5', status_change:'#5F5E5A', system:'#5F5E5A'};
+function dotFor(k){ return dotByKind[k] || '#5F5E5A'; }
+function setText(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; }
+function setVal(id,v){ var e=document.getElementById(id); if(e) e.value=v||''; }
+
+// ── Auth ────────────────────────────────────────────────
+function gateMsg(t, ok){ var e=document.getElementById('gate-msg'); if(e){ e.textContent=t||''; e.style.color = ok ? 'var(--won-text)' : 'var(--dead-text)'; } }
+function sendMagicLink(){
+  var email = (document.getElementById('gate-email').value||'').trim();
+  if(!email){ gateMsg('Enter your email first.'); return; }
+  gateMsg('Sending…', true);
+  sb.auth.signInWithOtp({ email: email, options:{ emailRedirectTo: window.location.href } }).then(function(r){
+    if(r.error) gateMsg(r.error.message); else gateMsg('Check your inbox — tap the link to sign in.', true);
+  });
+}
+function signInGoogle(){
+  sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: window.location.href } }).then(function(r){
+    if(r.error) gateMsg(r.error.message);
+  });
+}
+function signOut(){ sb.auth.signOut().then(function(){ location.reload(); }); }
+
+function showApp(session){
+  if(APP_SHOWN) return;
+  APP_SHOWN = true;
+  ME = session.user.id;
+  document.getElementById('auth-gate').style.display='none';
+  document.getElementById('app-shell').style.display='block';
+  var pe=document.querySelector('.profile-email'); if(pe) pe.textContent = session.user.email || '';
+  loadAll();
+}
+
+// ── Load ────────────────────────────────────────────────
+function loadAll(){ loadProfile(); loadVenues(); loadPipeline(); }
+
+function loadProfile(){
+  sb.from('artists').select('*').eq('id',ME).single().then(function(r){
+    var a = r.data; if(!a) return;
+    profile.name=a.display_name||''; profile.genre=a.genre||''; profile.oneliner=a.oneliner||'';
+    profile.phone=a.phone||''; profile.web=a.website||''; profile.epk=a.epk||''; profile.spotify=a.spotify||'';
+    profile.draw=a.draw_claim||''; profile.crowd=a.typical_crowd||''; profile.formats=a.set_formats||''; profile.notable=a.notable||'';
+    markets = a.markets || [];
+    fillProfileDom(); renderMarkets(); updateProfilePreview(); updateHomeStats();
+  });
+}
+function fillProfileDom(){
+  setText('fv-name',profile.name); setText('fv-genre',profile.genre); setText('fv-oneliner',profile.oneliner); setText('fv-phone',profile.phone);
+  setText('fv-web',profile.web); setText('fv-epk',profile.epk);
+  var sp=document.getElementById('fv-spotify'); if(sp){ sp.textContent=profile.spotify||'Not set'; sp.className='field-value'+(profile.spotify?'':' empty'); }
+  setText('fv-draw',profile.draw); setText('fv-crowd',profile.crowd); setText('fv-formats',profile.formats);
+  var nv=document.getElementById('fv-notable'); if(nv){ nv.textContent=profile.notable||'Not set'; nv.className='field-value'+(profile.notable?'':' empty'); }
+  setVal('fi-name',profile.name); setVal('fi-genre',profile.genre); setVal('fi-oneliner',profile.oneliner); setVal('fi-phone',profile.phone);
+  setVal('fi-web',profile.web); setVal('fi-epk',profile.epk); setVal('fi-spotify',profile.spotify);
+  setVal('fi-draw',profile.draw); setVal('fi-crowd',profile.crowd); setVal('fi-formats',profile.formats); setVal('fi-notable',profile.notable);
+  setText('p-display-name', profile.name||'—');
+  var av=document.getElementById('avatar-btn'); if(av) av.textContent=initials(profile.name);
+  var avlg=document.querySelector('.profile-av-lg'); if(avlg) avlg.textContent=initials(profile.name);
+  updateCompleteness();
+}
+function saveProfile(){
+  if(!ME) return;
+  sb.from('artists').update({
+    display_name:profile.name, genre:profile.genre, oneliner:profile.oneliner, phone:profile.phone,
+    website:profile.web, epk:profile.epk, spotify:profile.spotify,
+    draw_claim:profile.draw, typical_crowd:profile.crowd, set_formats:profile.formats,
+    notable:profile.notable, markets:markets
+  }).eq('id',ME).then(function(r){ if(r.error) console.error('saveProfile', r.error); });
+}
+
+function loadVenues(){
+  sb.from('venues').select('*, contacts(name)').order('created_at',{ascending:false}).then(function(r){
+    var rows=r.data||[]; cities={};
+    venues = rows.map(function(v){
+      if(v.state){ cities[v.state]=cities[v.state]||[]; if(v.city && cities[v.state].indexOf(v.city)<0) cities[v.state].push(v.city); }
+      return {id:v.id, name:v.name, city:v.city||'', state:v.state||'', type:v.ticket_type||'soft',
+              vtype:v.venue_type||'', pay:v.pay_range||'—', contact:(v.contacts&&v.contacts[0]?v.contacts[0].name:'—')};
+    });
+    if(currentScreen==='discover') renderDiscover();
+  });
+}
+
+function loadPipeline(){
+  sb.from('pipeline_entries')
+    .select('id,status,followup_date,last_activity_at,created_at, venue:venues(name,city,state,venue_type,pay_range), contact:contacts(name,title,email,phone)')
+    .order('last_activity_at',{ascending:false}).then(function(r){
+      if(r.error){ console.error('loadPipeline', r.error); return; }
+      var rows=r.data||[];
+      pipeline = rows.map(function(e,i){
+        var v=e.venue||{}, c=e.contact||{};
+        return {id:i, uuid:e.id, venue:v.name||'(unknown venue)', city:v.city||'', state:v.state||'',
+                contact:c.name||'(no contact)', title:c.title||'', email:c.email||'', phone:c.phone||'',
+                vtype:v.venue_type||'', pay:v.pay_range||'—', s:e.status||'outreach', days:daysAgo(e.last_activity_at), activity:[]};
+      });
+      updateHomeStats();
+      if(currentScreen==='pipeline') renderPipeline();
+      var ids = rows.map(function(e){ return e.id; });
+      if(ids.length) loadActivities(ids);
+    });
+}
+function loadActivities(ids){
+  sb.from('activities').select('*').in('pipeline_entry_id',ids).order('created_at',{ascending:false}).then(function(r){
+    var byEntry={};
+    (r.data||[]).forEach(function(a){
+      (byEntry[a.pipeline_entry_id]=byEntry[a.pipeline_entry_id]||[]).push({dot:dotFor(a.kind), text:a.body||'', time:relTime(a.created_at)});
+    });
+    pipeline.forEach(function(p){ p.activity = byEntry[p.uuid]||[]; });
+  });
+}
+
+function updateHomeStats(){
+  var active = pipeline.filter(function(p){ return p.s!=='won' && p.s!=='dead'; }).length;
+  var won = pipeline.filter(function(p){ return p.s==='won'; }).length;
+  var due = pipeline.filter(function(p){ return p.s==='followup'; });
+  setText('stat-active', active);
+  setText('stat-booked', won);
+  setText('home-greeting', 'Welcome back' + (profile.name ? ', ' + profile.name.split(' ')[0] : ''));
+  setText('home-sub', active===0 ? 'No active leads yet — add a venue to start' : (active + ' active ' + (active===1?'lead':'leads') + ' in your pipeline'));
+  var strip=document.getElementById('attn-strip');
+  if(strip){
+    if(due.length){ strip.style.display='flex'; setText('attn-text-inner', 'Follow-up due: ' + due[0].venue); }
+    else strip.style.display='none';
+  }
+}
+
+// ── Status changes ──────────────────────────────────────
+function setStatus(id, s){
+  var p = pipeline[id]; if(!p || p.s===s) return;
+  p.s = s; p.days = 0;
+  p.activity.unshift({dot:dotFor('status_change'), text:'Moved to ' + statusLabel[s], time:'Just now'});
+  openDetail(id);
+  updateHomeStats();
+  sb.from('pipeline_entries').update({status:s, last_activity_at:new Date().toISOString()}).eq('id',p.uuid).then(function(r){
+    if(r.error) alert('Could not save status: ' + r.error.message);
+  });
+  sb.from('activities').insert({pipeline_entry_id:p.uuid, kind:'status_change', body:'Moved to ' + statusLabel[s], source:'manual'});
+}
+
+// ── Add venue wizard persistence ────────────────────────
+function wizNext(step, ticket){ wizCapture(step, ticket); renderWizard(step+1, ticket, {}); }
+function wizCapture(step, ticket){
+  function val(id){ var e=document.getElementById(id); return e ? e.value : ''; }
+  if(step===2){
+    wizData.ticket=ticket;
+    wizData.name=val('wn').trim(); wizData.city=val('wc').trim(); wizData.state=val('ws').trim();
+    var vt=val('wvt'); if(vt==='Other'){ var o=val('wo').trim(); vt = o || 'Other'; }
+    wizData.vtype=vt;
+  } else if(step===3){
+    var lo=val('wpl').trim(), hi=val('wph').trim();
+    wizData.pay = (lo&&hi) ? ('$'+lo+'–'+hi) : (lo ? ('$'+lo+'+') : (hi ? ('up to $'+hi) : ''));
+    wizData.contactName=val('wcn').trim(); wizData.contactRaw=val('wce').trim();
+  } else if(step===4){
+    wizData.clientele=val('wkl').trim(); wizData.notes=val('wnt').trim();
+  }
+}
+function wizSubmit(ticket){
+  wizCapture(4, ticket);
+  if(!wizData.name){ alert('Give the venue a name first.'); return; }
+  var raw=(wizData.contactRaw||'').trim();
+  var cEmail = raw.indexOf('@')>-1 ? raw : null;
+  var cPhone = raw.indexOf('@')>-1 ? null : (raw || null);
+  var btn=document.querySelector('#wiz-container .btn-primary'); if(btn){ btn.textContent='Saving…'; btn.disabled=true; }
+  sb.from('venues').insert({
+    name:wizData.name, city:wizData.city||null, state:(wizData.state||'').toUpperCase()||null,
+    ticket_type:wizData.ticket||'soft', venue_type:wizData.vtype||null, pay_range:wizData.pay||null,
+    clientele:wizData.clientele||null, notes:wizData.notes||null, created_by:ME
+  }).select().single().then(function(vr){
+    if(vr.error){ alert('Could not save venue: ' + vr.error.message); if(btn){ btn.disabled=false; btn.textContent='Add to collective ↗'; } return; }
+    var venueId=vr.data.id;
+    var needContact = wizData.contactName || cEmail || cPhone;
+    var contactStep = needContact
+      ? sb.from('contacts').insert({venue_id:venueId, name:wizData.contactName||null, email:cEmail, phone:cPhone, verified_by:ME, verified_at:new Date().toISOString()}).select().single()
+      : Promise.resolve({data:null});
+    contactStep.then(function(cr){
+      var contactId = (cr && cr.data) ? cr.data.id : null;
+      sb.from('pipeline_entries').insert({artist_id:ME, venue_id:venueId, contact_id:contactId, status:'outreach'}).select().single().then(function(pr){
+        if(pr.error){ alert('Venue saved, but could not start your pipeline: ' + pr.error.message); }
+        else { sb.from('activities').insert({pipeline_entry_id:pr.data.id, kind:'system', body:'Added to pipeline', source:'manual'}); }
+        loadVenues(); loadPipeline();
+        renderWizard(5, null, {});
+      });
+    });
+  });
+}
+
+// ── Boot ────────────────────────────────────────────────
+if(!window.GIG_CONFIG || !window.GIG_CONFIG.SUPABASE_URL || window.GIG_CONFIG.SUPABASE_URL.indexOf('PASTE')>-1){
+  gateMsg('config.js is not set up yet.');
+} else {
+  sb.auth.getSession().then(function(r){ if(r.data && r.data.session) showApp(r.data.session); });
+  sb.auth.onAuthStateChange(function(_event, session){ if(session) showApp(session); });
+}
+</script>
+</body>
+</html>

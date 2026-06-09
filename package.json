@@ -1,0 +1,12 @@
+{
+  "name": "gig-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Gig Collective — booking pipeline for working musicians",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
