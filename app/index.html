@@ -1058,7 +1058,11 @@ function showToast() {
 }
 
 // ── Supabase client ─────────────────────────────────────
-var sb = window.supabase.createClient(window.GIG_CONFIG.SUPABASE_URL, window.GIG_CONFIG.SUPABASE_ANON_KEY);
+// Implicit flow: tokens return in the URL hash (no stored PKCE verifier), which
+// avoids "OAuth state not found or expired" on this static, single-page app.
+var sb = window.supabase.createClient(window.GIG_CONFIG.SUPABASE_URL, window.GIG_CONFIG.SUPABASE_ANON_KEY, {
+  auth: { flowType: 'implicit', detectSessionInUrl: true, persistSession: true, autoRefreshToken: true }
+});
 var ME = null;          // current artist id (= auth user id)
 var APP_SHOWN = false;
 var wizData = {};
