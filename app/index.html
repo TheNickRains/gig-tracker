@@ -794,7 +794,7 @@ function renderDiscover() {
   var g = document.getElementById('venue-grid');
   if (!f.length) { g.innerHTML = '<p style="color:var(--text-secondary);font-size:14px;grid-column:1/-1">No venues match this filter.</p>'; return; }
   g.innerHTML = f.map(function(v){
-    return '<div class="venue-card" onclick="openVenueEdit(\'' + v.id + '\')">'
+    return '<div class="venue-card" onclick="openVenueDetail(\'' + v.id + '\')">'
     + '<div class="venue-name">' + esc(v.name) + '</div>'
     + '<div class="venue-loc">' + esc(v.city) + ', ' + esc(v.state) + '</div>'
     + '<span class="badge badge-' + v.type + '">' + esc(v.vtype) + '</span>'
@@ -1282,12 +1282,45 @@ function wizSubmit(ticket){
 
 // ── Edit a venue (shared collective layer) ──────────────
 function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function openVenueDetail(id){
+  var v = venues.filter(function(x){ return x.id===id; })[0];
+  if(!v) return;
+  var loc = [v.address, v.city, v.state].filter(function(x){ return x; }).join(', ');
+  var mapBlock;
+  if(loc){
+    mapBlock = '<div class="section-label" style="margin-top:4px">Location</div>'
+      + '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px">'
+      + '<iframe title="map" width="100%" height="180" style="border:0;display:block" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="https://www.google.com/maps?q=' + encodeURIComponent(loc) + '&output=embed"></iframe>'
+      + '</div>';
+  } else {
+    mapBlock = '<div class="section-label" style="margin-top:4px">Location <span class="soon">map: coming soon</span></div>'
+      + '<div class="card placeholder" style="text-align:center;color:var(--text-tertiary);font-size:13px;padding:28px 16px;margin-bottom:20px">Add an address (Edit ↑) to place this venue on a map.</div>';
+  }
+  var row = function(label, val){ return val ? ('<div class="field-row"><span class="field-label">' + label + '</span><span class="field-value">' + esc(val) + '</span></div>') : ''; };
+  document.getElementById('venue-container').innerHTML =
+    '<button class="back-btn" onclick="go(\'discover\')"><i class="ti ti-arrow-left"></i> Discover</button>'
+    + '<div class="detail-header"><div class="detail-icon"><i class="ti ti-building-store"></i></div>'
+    + '<div style="flex:1"><div class="detail-venue">' + esc(v.name) + '</div>'
+    + '<div class="detail-meta">' + esc([v.vtype, [v.city, v.state].filter(function(x){return x;}).join(', '), (v.pay && v.pay!=='—' ? v.pay : '')].filter(function(x){return x;}).join(' · ')) + '</div>'
+    + '<span class="badge badge-' + v.type + '" style="margin-top:6px">' + (v.type==='hard'?'Hard ticket':'Soft ticket') + '</span></div>'
+    + '<button class="edit-btn" onclick="openVenueEdit(\'' + v.id + '\')"><i class="ti ti-pencil"></i> Edit</button></div>'
+    + '<div class="card card-flush" style="margin-bottom:20px">'
+    + row('Booking contact', v.contact && v.contact!=='—' ? v.contact : '')
+    + row('Pay', v.pay && v.pay!=='—' ? v.pay : '')
+    + row('Address', v.address)
+    + row('Clientele', v.clientele)
+    + row('Notes', v.notes)
+    + (!(v.contact && v.contact!=='—') && !v.address && !v.clientele && !v.notes && (!v.pay || v.pay==='—') ? '<div class="field-row"><span class="field-value empty">No details yet — tap Edit to add them.</span></div>' : '')
+    + '</div>'
+    + mapBlock;
+  go('venue');
+}
 function openVenueEdit(id){
   var v = venues.filter(function(x){ return x.id===id; })[0];
   if(!v) return;
   var ticketOpts = ['soft','hard'].map(function(t){ return '<option value="'+t+'"'+(v.type===t?' selected':'')+'>'+(t==='soft'?'Soft ticket':'Hard ticket')+'</option>'; }).join('');
   document.getElementById('venue-container').innerHTML =
-    '<button class="back-btn" onclick="go(\'discover\')"><i class="ti ti-arrow-left"></i> Discover</button>'
+    '<button class="back-btn" onclick="openVenueDetail(\'' + v.id + '\')"><i class="ti ti-arrow-left"></i> Back</button>'
     + '<div class="page-title" style="margin-bottom:16px">Edit venue</div>'
     + '<div class="form-field"><label class="form-label">Venue name</label><input class="form-input" id="ev-name" value="'+esc(v.name)+'"></div>'
     + '<div class="form-row-2"><div class="form-field"><label class="form-label">City</label><input class="form-input" id="ev-city" value="'+esc(v.city)+'"></div>'
@@ -1298,19 +1331,24 @@ function openVenueEdit(id){
     + '<div class="form-field"><label class="form-label">Address</label><input class="form-input" id="ev-address" value="'+esc(v.address)+'"></div>'
     + '<div class="form-field"><label class="form-label">Typical clientele</label><input class="form-input" id="ev-clientele" value="'+esc(v.clientele)+'"></div>'
     + '<div class="form-field"><label class="form-label">Notes</label><textarea class="form-textarea" id="ev-notes">'+esc(v.notes)+'</textarea></div>'
-    + '<div class="save-row"><button class="btn-primary" onclick="saveVenue(\''+v.id+'\')">Save changes</button><button class="btn-secondary" onclick="go(\'discover\')">Cancel</button></div>';
+    + '<div class="save-row"><button class="btn-primary" onclick="saveVenue(\''+v.id+'\')">Save changes</button><button class="btn-secondary" onclick="openVenueDetail(\''+v.id+'\')">Cancel</button></div>';
   go('venue');
 }
 function saveVenue(id){
   var g=function(i){ var e=document.getElementById(i); return e?e.value.trim():''; };
   if(!g('ev-name')){ alert('Venue name is required.'); return; }
+  var addr=g('ev-address');
   var payload = { name:g('ev-name'), city:g('ev-city')||null, state:(g('ev-state')||'').toUpperCase()||null,
     ticket_type:g('ev-ticket'), venue_type:g('ev-vtype')||null, pay_range:g('ev-pay')||null,
     clientele:g('ev-clientele')||null, notes:g('ev-notes')||null };
-  var addr=g('ev-address'); if(addr) payload.address=addr;
+  if(addr) payload.address=addr;
   sb.from('venues').update(payload).eq('id',id).then(function(r){
     if(r.error){ alert('Could not save: '+r.error.message); return; }
-    loadVenues(); go('discover');
+    var v = venues.filter(function(x){ return x.id===id; })[0];
+    if(v){ v.name=payload.name; v.city=payload.city||''; v.state=payload.state||''; v.type=payload.ticket_type;
+           v.vtype=payload.venue_type||''; v.pay=payload.pay_range||'—'; v.address=addr; v.clientele=payload.clientele||''; v.notes=payload.notes||''; }
+    loadVenues();
+    openVenueDetail(id);
   });
 }
 
