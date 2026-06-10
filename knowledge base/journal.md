@@ -17,6 +17,18 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-09 — Live: Railway + gig.nicholasrains.com, Google auth, Resend SMTP
+Deployed `app/` to Railway (service `gig-tracker`) via CLI; custom domain
+gig.nicholasrains.com (Cloudflare CNAME). Private repo TheNickRains/gig-tracker.
+`server.js` generates `/config.js` from Railway env so keys stay out of git.
+Enabled Google OAuth + email magic-link. **Switched supabase-js to `flowType:'implicit'`
+— do not revert to PKCE**; PKCE lost its verifier on this static custom-domain SPA
+("OAuth state not found or expired"). Custom SMTP via Resend (domain verified) replaced
+Supabase's throttled built-in email — this is what unblocks roster onboarding. Added the
+Nick Rains logo (nav/login/favicon; CSS-inverts in dark mode). Replaced the mock collective
+feed + roster with labeled dashed placeholders — no fake names — matching the "build by using
+it" approach; incomplete features get a dashed border + "coming soon" badge.
+
 ## 2026-06-09 — Slice 1 shipped: real backend on Supabase (app/index.html)
 Nick asked for the MVP live, with login via his booking email and (later) email-driven
 pipeline updates. Built the live app as `app/index.html` (a copy of the prototype) so
