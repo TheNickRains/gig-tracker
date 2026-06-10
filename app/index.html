@@ -572,8 +572,8 @@
       </div>
       <div id="edit-identity" style="display:none">
         <div class="field-row"><span class="field-label">Display name</span><input class="form-input" id="fi-name" value="Nick Rains"></div>
-        <div class="field-row"><span class="field-label">Genre / style</span><input class="form-input" id="fi-genre" value="Americana / country singer-songwriter"></div>
-        <div class="field-row"><span class="field-label">One-liner</span><input class="form-input" id="fi-oneliner" value="Originals with a sound that tends to work well in listening rooms and intimate venues"></div>
+        <div class="field-row"><span class="field-label">Genre / style</span><input class="form-input" id="fi-genre" placeholder="e.g. Americana / country singer-songwriter"></div>
+        <div class="field-row"><span class="field-label">One-liner</span><input class="form-input" id="fi-oneliner" placeholder="One sentence on your sound — becomes your intro line in outreach"></div>
         <div class="field-row"><span class="field-label">Phone</span><input class="form-input" id="fi-phone" value="(713) 555-0100"></div>
         <div class="save-row"><button class="btn-primary btn-sm" onclick="saveSection('identity')">Save</button><button class="btn-secondary btn-sm" onclick="cancelSection('identity')">Cancel</button></div>
       </div>
@@ -941,9 +941,9 @@ function renderWizard(step, ticket, data) {
     var types = ticket==='hard' ? hardTypes : softTypes;
     html = '<div class="wiz-header"><div class="wiz-step-label">Step 2 of 4</div><div class="wiz-title">Venue details</div></div>'
     + '<div class="wiz-dots">' + dots + '</div>'
-    + '<div class="form-field"><label class="form-label">Venue name</label><input class="form-input" id="wn" placeholder="e.g. Dosey Doe"></div>'
-    + '<div class="form-row-2"><div class="form-field"><label class="form-label">City</label><input class="form-input" id="wc" placeholder="Houston"></div>'
-    + '<div class="form-field"><label class="form-label">State</label><input class="form-input" id="ws" placeholder="TX"></div></div>'
+    + '<div class="form-field"><label class="form-label">Venue name *</label><input class="form-input" id="wn" placeholder="e.g. Dosey Doe"></div>'
+    + '<div class="form-row-2"><div class="form-field"><label class="form-label">City *</label><input class="form-input" id="wc" placeholder="Houston"></div>'
+    + '<div class="form-field"><label class="form-label">State *</label><input class="form-input" id="ws" placeholder="TX"></div></div>'
     + '<div class="form-field"><label class="form-label">Venue type</label><select class="form-select" id="wvt" onchange="checkOther()">'
     + types.map(function(t){ return '<option>' + t + '</option>'; }).join('') + '</select></div>'
     + '<div class="form-field" id="other-wrap" style="display:none"><label class="form-label">Describe the venue type</label><input class="form-input" id="wo" placeholder="Tell us more…"></div>'
@@ -953,8 +953,10 @@ function renderWizard(step, ticket, data) {
     + '<div class="wiz-dots">' + dots + '</div>'
     + '<div class="form-row-2"><div class="form-field"><label class="form-label">Pay low ($)</label><input class="form-input" id="wpl" placeholder="300"></div>'
     + '<div class="form-field"><label class="form-label">Pay high ($)</label><input class="form-input" id="wph" placeholder="500"></div></div>'
-    + '<div class="form-field"><label class="form-label">Contact name</label><input class="form-input" id="wcn" placeholder="Booking manager name"></div>'
-    + '<div class="form-field"><label class="form-label">Email or phone</label><input class="form-input" id="wce" placeholder="booking@venue.com"></div>'
+    + '<div class="form-row-2"><div class="form-field"><label class="form-label">Contact first name</label><input class="form-input" id="wcf" placeholder="Mike"></div>'
+    + '<div class="form-field"><label class="form-label">Last name</label><input class="form-input" id="wcl" placeholder="Dosey"></div></div>'
+    + '<div class="form-field"><label class="form-label">Email</label><input class="form-input" id="wcemail" type="email" placeholder="booking@venue.com"></div>'
+    + '<div class="form-field"><label class="form-label">Phone</label><input class="form-input" id="wcphone" type="tel" placeholder="(713) 555-0182"></div>'
     + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(2,\'' + ticket + '\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(3,\'' + ticket + '\')">Continue</button></div>';
   } else if (step===4) {
     html = '<div class="wiz-header"><div class="wiz-step-label">Step 4 of 4</div><div class="wiz-title">Notes for the collective</div></div>'
@@ -981,10 +983,10 @@ function editSection(s) { document.getElementById('view-'+s).style.display='none
 function cancelSection(s) { document.getElementById('view-'+s).style.display='block'; document.getElementById('edit-'+s).style.display='none'; }
 function saveSection(s) {
   if (s==='identity') {
-    profile.name = document.getElementById('fi-name').value || profile.name;
-    profile.genre = document.getElementById('fi-genre').value || profile.genre;
-    profile.oneliner = document.getElementById('fi-oneliner').value || profile.oneliner;
-    profile.phone = document.getElementById('fi-phone').value || profile.phone;
+    profile.name = document.getElementById('fi-name').value.trim();
+    profile.genre = document.getElementById('fi-genre').value.trim();
+    profile.oneliner = document.getElementById('fi-oneliner').value.trim();
+    profile.phone = document.getElementById('fi-phone').value.trim();
     document.getElementById('fv-name').textContent = profile.name;
     document.getElementById('fv-genre').textContent = profile.genre;
     document.getElementById('fv-oneliner').textContent = profile.oneliner;
@@ -992,19 +994,19 @@ function saveSection(s) {
     document.getElementById('p-display-name').textContent = profile.name;
   }
   if (s==='links') {
-    profile.web = document.getElementById('fi-web').value || profile.web;
-    profile.epk = document.getElementById('fi-epk').value || profile.epk;
-    profile.spotify = document.getElementById('fi-spotify').value;
+    profile.web = document.getElementById('fi-web').value.trim();
+    profile.epk = document.getElementById('fi-epk').value.trim();
+    profile.spotify = document.getElementById('fi-spotify').value.trim();
     document.getElementById('fv-web').textContent = profile.web;
     document.getElementById('fv-epk').textContent = profile.epk;
     var sp = document.getElementById('fv-spotify');
     sp.textContent = profile.spotify || 'Not set'; sp.className = 'field-value' + (profile.spotify ? '' : ' empty');
   }
   if (s==='draw') {
-    profile.draw = document.getElementById('fi-draw').value || profile.draw;
-    profile.crowd = document.getElementById('fi-crowd').value || profile.crowd;
-    profile.formats = document.getElementById('fi-formats').value || profile.formats;
-    profile.notable = document.getElementById('fi-notable').value;
+    profile.draw = document.getElementById('fi-draw').value.trim();
+    profile.crowd = document.getElementById('fi-crowd').value.trim();
+    profile.formats = document.getElementById('fi-formats').value.trim();
+    profile.notable = document.getElementById('fi-notable').value.trim();
     document.getElementById('fv-draw').textContent = profile.draw;
     document.getElementById('fv-crowd').textContent = profile.crowd;
     document.getElementById('fv-formats').textContent = profile.formats;
@@ -1217,7 +1219,11 @@ function setStatus(id, s){
 }
 
 // ── Add venue wizard persistence ────────────────────────
-function wizNext(step, ticket){ wizCapture(step, ticket); renderWizard(step+1, ticket, {}); }
+function wizNext(step, ticket){
+  wizCapture(step, ticket);
+  if(step===2 && (!wizData.name || !wizData.city || !wizData.state)){ alert('Venue name, city, and state are required.'); return; }
+  renderWizard(step+1, ticket, {});
+}
 function wizCapture(step, ticket){
   function val(id){ var e=document.getElementById(id); return e ? e.value : ''; }
   if(step===2){
@@ -1228,7 +1234,9 @@ function wizCapture(step, ticket){
   } else if(step===3){
     var lo=val('wpl').trim(), hi=val('wph').trim();
     wizData.pay = (lo&&hi) ? ('$'+lo+'–'+hi) : (lo ? ('$'+lo+'+') : (hi ? ('up to $'+hi) : ''));
-    wizData.contactName=val('wcn').trim(); wizData.contactRaw=val('wce').trim();
+    wizData.contactName=(val('wcf').trim()+' '+val('wcl').trim()).trim();
+    wizData.contactEmail=val('wcemail').trim();
+    wizData.contactPhone=val('wcphone').trim();
   } else if(step===4){
     wizData.clientele=val('wkl').trim(); wizData.notes=val('wnt').trim();
   }
@@ -1236,9 +1244,8 @@ function wizCapture(step, ticket){
 function wizSubmit(ticket){
   wizCapture(4, ticket);
   if(!wizData.name){ alert('Give the venue a name first.'); return; }
-  var raw=(wizData.contactRaw||'').trim();
-  var cEmail = raw.indexOf('@')>-1 ? raw : null;
-  var cPhone = raw.indexOf('@')>-1 ? null : (raw || null);
+  var cEmail = wizData.contactEmail || null;
+  var cPhone = wizData.contactPhone || null;
   var btn=document.querySelector('#wiz-container .btn-primary'); if(btn){ btn.textContent='Saving…'; btn.disabled=true; }
   sb.from('venues').insert({
     name:wizData.name, city:wizData.city||null, state:(wizData.state||'').toUpperCase()||null,
