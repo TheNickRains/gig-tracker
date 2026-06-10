@@ -17,6 +17,25 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-10 — Slice 2 started: read-only inbox agent (apps-script/email-agent.gs)
+Gmail watcher runs inside booking@'s Apps Script on a 10-min trigger. READ-ONLY on
+the inbox; writes only to Supabase via the service_role key (Script Properties, never
+client/git). Calls Claude via raw HTTP to the Messages API (UrlFetchApp) — Apps Script
+has no Anthropic SDK, so raw HTTP is correct per the claude-api skill. Default model
+claude-opus-4-8 (don't silently downgrade); Haiku 4.5 is the one-line cost swap.
+Transition policy: auto outreach→waiting on a booker reply; Won/Dead are PROPOSED in
+the activity note, not auto-applied (no review UI yet). Outbound emails logged as
+email_out — the raw material for the future tone-learning / agentic-outreach slice.
+Dedup via activities.email_message_id unique index + PostgREST ignore-duplicates.
+Setup in apps-script/SETUP.md. v1 = Nick's inbox only.
+
+## 2026-06-10 — Venue cards open a detail view, not edit
+Tapping a Discover venue opens a read-only detail (openVenueDetail) with an embedded
+Google Maps iframe (keyless ?output=embed) when an address exists, else a dashed
+"map: coming soon" placeholder. Edit is behind a button (openVenueEdit); Save/Cancel
+return to the detail view. Batch-2 also added editable venues + optional venue.address
+(migration-002). Deferred: notable-venues-as-chips, profile picture.
+
 ## 2026-06-09 — Live: Railway + gig.nicholasrains.com, Google auth, Resend SMTP
 Deployed `app/` to Railway (service `gig-tracker`) via CLI; custom domain
 gig.nicholasrains.com (Cloudflare CNAME). Private repo TheNickRains/gig-tracker.
