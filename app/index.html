@@ -541,6 +541,11 @@
     <div id="wiz-container"></div>
   </div>
 
+  <!-- VENUE EDIT -->
+  <div class="screen" id="screen-venue">
+    <div id="venue-container"></div>
+  </div>
+
   <!-- PROFILE -->
   <div class="screen" id="screen-profile">
     <div class="profile-hero">
@@ -789,12 +794,12 @@ function renderDiscover() {
   var g = document.getElementById('venue-grid');
   if (!f.length) { g.innerHTML = '<p style="color:var(--text-secondary);font-size:14px;grid-column:1/-1">No venues match this filter.</p>'; return; }
   g.innerHTML = f.map(function(v){
-    return '<div class="venue-card">'
-    + '<div class="venue-name">' + v.name + '</div>'
-    + '<div class="venue-loc">' + v.city + ', ' + v.state + '</div>'
-    + '<span class="badge badge-' + v.type + '">' + v.vtype + '</span>'
-    + '<div class="venue-tag"><i class="ti ti-currency-dollar"></i>' + v.pay + '</div>'
-    + '<div class="venue-tag"><i class="ti ti-user"></i>' + v.contact + '</div>'
+    return '<div class="venue-card" onclick="openVenueEdit(\'' + v.id + '\')">'
+    + '<div class="venue-name">' + esc(v.name) + '</div>'
+    + '<div class="venue-loc">' + esc(v.city) + ', ' + esc(v.state) + '</div>'
+    + '<span class="badge badge-' + v.type + '">' + esc(v.vtype) + '</span>'
+    + '<div class="venue-tag"><i class="ti ti-currency-dollar"></i>' + esc(v.pay) + '</div>'
+    + '<div class="venue-tag"><i class="ti ti-user"></i>' + esc(v.contact) + '</div>'
     + '</div>';
   }).join('');
 }
@@ -947,6 +952,7 @@ function renderWizard(step, ticket, data) {
     + '<div class="form-field"><label class="form-label">Venue type</label><select class="form-select" id="wvt" onchange="checkOther()">'
     + types.map(function(t){ return '<option>' + t + '</option>'; }).join('') + '</select></div>'
     + '<div class="form-field" id="other-wrap" style="display:none"><label class="form-label">Describe the venue type</label><input class="form-input" id="wo" placeholder="Tell us more…"></div>'
+    + '<div class="form-field"><label class="form-label">Address (optional)</label><input class="form-input" id="waddr" placeholder="Street address — powers maps later"></div>'
     + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(1,\'' + ticket + '\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(2,\'' + ticket + '\')">Continue</button></div>';
   } else if (step===3) {
     html = '<div class="wiz-header"><div class="wiz-step-label">Step 3 of 4</div><div class="wiz-title">Pay & booking contact</div></div>'
@@ -1156,7 +1162,8 @@ function loadVenues(){
     venues = rows.map(function(v){
       if(v.state){ cities[v.state]=cities[v.state]||[]; if(v.city && cities[v.state].indexOf(v.city)<0) cities[v.state].push(v.city); }
       return {id:v.id, name:v.name, city:v.city||'', state:v.state||'', type:v.ticket_type||'soft',
-              vtype:v.venue_type||'', pay:v.pay_range||'—', contact:(v.contacts&&v.contacts[0]?v.contacts[0].name:'—')};
+              vtype:v.venue_type||'', pay:v.pay_range||'—', contact:(v.contacts&&v.contacts[0]?v.contacts[0].name:'—'),
+              address:v.address||'', clientele:v.clientele||'', notes:v.notes||''};
     });
     if(currentScreen==='discover') renderDiscover();
   });
@@ -1231,6 +1238,7 @@ function wizCapture(step, ticket){
     wizData.name=val('wn').trim(); wizData.city=val('wc').trim(); wizData.state=val('ws').trim();
     var vt=val('wvt'); if(vt==='Other'){ var o=val('wo').trim(); vt = o || 'Other'; }
     wizData.vtype=vt;
+    wizData.address=val('waddr').trim();
   } else if(step===3){
     var lo=val('wpl').trim(), hi=val('wph').trim();
     wizData.pay = (lo&&hi) ? ('$'+lo+'–'+hi) : (lo ? ('$'+lo+'+') : (hi ? ('up to $'+hi) : ''));
@@ -1247,11 +1255,13 @@ function wizSubmit(ticket){
   var cEmail = wizData.contactEmail || null;
   var cPhone = wizData.contactPhone || null;
   var btn=document.querySelector('#wiz-container .btn-primary'); if(btn){ btn.textContent='Saving…'; btn.disabled=true; }
-  sb.from('venues').insert({
+  var venuePayload = {
     name:wizData.name, city:wizData.city||null, state:(wizData.state||'').toUpperCase()||null,
     ticket_type:wizData.ticket||'soft', venue_type:wizData.vtype||null, pay_range:wizData.pay||null,
     clientele:wizData.clientele||null, notes:wizData.notes||null, created_by:ME
-  }).select().single().then(function(vr){
+  };
+  if(wizData.address) venuePayload.address = wizData.address;
+  sb.from('venues').insert(venuePayload).select().single().then(function(vr){
     if(vr.error){ alert('Could not save venue: ' + vr.error.message); if(btn){ btn.disabled=false; btn.textContent='Add to collective ↗'; } return; }
     var venueId=vr.data.id;
     var needContact = wizData.contactName || cEmail || cPhone;
@@ -1267,6 +1277,40 @@ function wizSubmit(ticket){
         renderWizard(5, null, {});
       });
     });
+  });
+}
+
+// ── Edit a venue (shared collective layer) ──────────────
+function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function openVenueEdit(id){
+  var v = venues.filter(function(x){ return x.id===id; })[0];
+  if(!v) return;
+  var ticketOpts = ['soft','hard'].map(function(t){ return '<option value="'+t+'"'+(v.type===t?' selected':'')+'>'+(t==='soft'?'Soft ticket':'Hard ticket')+'</option>'; }).join('');
+  document.getElementById('venue-container').innerHTML =
+    '<button class="back-btn" onclick="go(\'discover\')"><i class="ti ti-arrow-left"></i> Discover</button>'
+    + '<div class="page-title" style="margin-bottom:16px">Edit venue</div>'
+    + '<div class="form-field"><label class="form-label">Venue name</label><input class="form-input" id="ev-name" value="'+esc(v.name)+'"></div>'
+    + '<div class="form-row-2"><div class="form-field"><label class="form-label">City</label><input class="form-input" id="ev-city" value="'+esc(v.city)+'"></div>'
+    + '<div class="form-field"><label class="form-label">State</label><input class="form-input" id="ev-state" value="'+esc(v.state)+'"></div></div>'
+    + '<div class="form-field"><label class="form-label">Ticket type</label><select class="form-select" id="ev-ticket">'+ticketOpts+'</select></div>'
+    + '<div class="form-field"><label class="form-label">Venue type</label><input class="form-input" id="ev-vtype" value="'+esc(v.vtype)+'"></div>'
+    + '<div class="form-field"><label class="form-label">Pay range</label><input class="form-input" id="ev-pay" value="'+esc(v.pay==='—'?'':v.pay)+'"></div>'
+    + '<div class="form-field"><label class="form-label">Address</label><input class="form-input" id="ev-address" value="'+esc(v.address)+'"></div>'
+    + '<div class="form-field"><label class="form-label">Typical clientele</label><input class="form-input" id="ev-clientele" value="'+esc(v.clientele)+'"></div>'
+    + '<div class="form-field"><label class="form-label">Notes</label><textarea class="form-textarea" id="ev-notes">'+esc(v.notes)+'</textarea></div>'
+    + '<div class="save-row"><button class="btn-primary" onclick="saveVenue(\''+v.id+'\')">Save changes</button><button class="btn-secondary" onclick="go(\'discover\')">Cancel</button></div>';
+  go('venue');
+}
+function saveVenue(id){
+  var g=function(i){ var e=document.getElementById(i); return e?e.value.trim():''; };
+  if(!g('ev-name')){ alert('Venue name is required.'); return; }
+  var payload = { name:g('ev-name'), city:g('ev-city')||null, state:(g('ev-state')||'').toUpperCase()||null,
+    ticket_type:g('ev-ticket'), venue_type:g('ev-vtype')||null, pay_range:g('ev-pay')||null,
+    clientele:g('ev-clientele')||null, notes:g('ev-notes')||null };
+  var addr=g('ev-address'); if(addr) payload.address=addr;
+  sb.from('venues').update(payload).eq('id',id).then(function(r){
+    if(r.error){ alert('Could not save: '+r.error.message); return; }
+    loadVenues(); go('discover');
   });
 }
 
