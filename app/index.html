@@ -630,18 +630,25 @@
         <div class="field-row"><span class="field-label">Draw claim</span><span class="field-value" id="fv-draw">Strong draw in Houston and Austin, building Nashville</span></div>
         <div class="field-row"><span class="field-label">Typical crowd</span><span class="field-value" id="fv-crowd">35–55, seated, attentive — good fit for listening rooms</span></div>
         <div class="field-row"><span class="field-label">Set formats</span><span class="field-value" id="fv-formats">Solo acoustic · Full band</span></div>
-        <div class="field-row">
-          <span class="field-label">Notable venues</span>
-          <div style="flex:1"><span class="field-value empty" id="fv-notable">Not set</span>
-          <div class="field-hint"><i class="ti ti-alert-triangle"></i>Missing — strong social proof signal</div></div>
-        </div>
       </div>
       <div id="edit-draw" style="display:none">
         <div class="field-row"><span class="field-label">Draw claim</span><input class="form-input" id="fi-draw" value="Strong draw in Houston and Austin, building Nashville"></div>
         <div class="field-row"><span class="field-label">Typical crowd</span><input class="form-input" id="fi-crowd" value="35–55, seated, attentive — good fit for listening rooms"></div>
         <div class="field-row"><span class="field-label">Set formats</span><input class="form-input" id="fi-formats" value="Solo acoustic · Full band"></div>
-        <div class="field-row"><span class="field-label">Notable venues</span><input class="form-input" id="fi-notable" placeholder="e.g. 3rd & Lindsley, Continental Club"></div>
         <div class="save-row"><button class="btn-primary btn-sm" onclick="saveSection('draw')">Save</button><button class="btn-secondary btn-sm" onclick="cancelSection('draw')">Cancel</button></div>
+      </div>
+    </div>
+
+    <!-- Notable venues -->
+    <div class="card">
+      <div class="section-header">
+        <div><div class="section-title">Notable venues played</div><div class="section-sub">Social proof for pitch templates</div></div>
+        <button class="edit-btn" onclick="toggleNotableEdit()"><i class="ti ti-pencil"></i> Edit</button>
+      </div>
+      <div class="market-chips" id="notable-chips"></div>
+      <div id="notable-add-row" style="display:none;margin-top:10px">
+        <input class="form-input" id="new-notable" placeholder="e.g. 3rd & Lindsley" style="width:200px;display:inline-block;margin-right:8px">
+        <button class="btn-primary btn-sm" onclick="confirmAddNotable()">Add</button>
       </div>
     </div>
 
@@ -699,6 +706,8 @@ var profile = {
 
 var markets = [];
 var marketEditOpen = false;
+var notables = [];
+var notableEditOpen = false;
 
 var venues = [];
 var cities = {};
@@ -746,7 +755,7 @@ function go(screen) {
   if (screen === 'discover') renderDiscover();
   if (screen === 'pipeline') renderPipeline();
   if (screen === 'add') renderWizard(1, null, {});
-  if (screen === 'profile') { renderMarkets(); updateProfilePreview(); updateCompleteness(); }
+  if (screen === 'profile') { renderMarkets(); renderNotables(); updateProfilePreview(); updateCompleteness(); }
 }
 
 function toggleMenu() {
@@ -772,7 +781,7 @@ function toggleProfile() {
     document.querySelectorAll('.dd-item').forEach(function(b){ b.classList.remove('active'); });
     document.getElementById('avatar-btn').classList.add('active');
     currentScreen = 'profile';
-    renderMarkets(); updateProfilePreview(); updateCompleteness();
+    renderMarkets(); renderNotables(); updateProfilePreview(); updateCompleteness();
   }
 }
 
@@ -955,10 +964,12 @@ function renderWizard(step, ticket, data) {
     + '<div class="form-field"><label class="form-label">Address (optional)</label><input class="form-input" id="waddr" placeholder="Street address — powers maps later"></div>'
     + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(1,\'' + ticket + '\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(2,\'' + ticket + '\')">Continue</button></div>';
   } else if (step===3) {
+    var payFields = ticket==='soft'
+      ? '<div class="form-field"><label class="form-label">Rate ($ per hour)</label><input class="form-input" id="wrate" placeholder="150" inputmode="decimal"></div>'
+      : '<div class="form-row-2"><div class="form-field"><label class="form-label">Pay low ($)</label><input class="form-input" id="wpl" placeholder="300" inputmode="decimal"></div><div class="form-field"><label class="form-label">Pay high ($)</label><input class="form-input" id="wph" placeholder="500" inputmode="decimal"></div></div>';
     html = '<div class="wiz-header"><div class="wiz-step-label">Step 3 of 4</div><div class="wiz-title">Pay & booking contact</div></div>'
     + '<div class="wiz-dots">' + dots + '</div>'
-    + '<div class="form-row-2"><div class="form-field"><label class="form-label">Pay low ($)</label><input class="form-input" id="wpl" placeholder="300"></div>'
-    + '<div class="form-field"><label class="form-label">Pay high ($)</label><input class="form-input" id="wph" placeholder="500"></div></div>'
+    + payFields
     + '<div class="form-row-2"><div class="form-field"><label class="form-label">Contact first name</label><input class="form-input" id="wcf" placeholder="Mike"></div>'
     + '<div class="form-field"><label class="form-label">Last name</label><input class="form-input" id="wcl" placeholder="Dosey"></div></div>'
     + '<div class="form-field"><label class="form-label">Email</label><input class="form-input" id="wcemail" type="email" placeholder="booking@venue.com"></div>'
@@ -1012,12 +1023,9 @@ function saveSection(s) {
     profile.draw = document.getElementById('fi-draw').value.trim();
     profile.crowd = document.getElementById('fi-crowd').value.trim();
     profile.formats = document.getElementById('fi-formats').value.trim();
-    profile.notable = document.getElementById('fi-notable').value.trim();
     document.getElementById('fv-draw').textContent = profile.draw;
     document.getElementById('fv-crowd').textContent = profile.crowd;
     document.getElementById('fv-formats').textContent = profile.formats;
-    var nv = document.getElementById('fv-notable');
-    nv.textContent = profile.notable || 'Not set'; nv.className = 'field-value' + (profile.notable ? '' : ' empty');
   }
   cancelSection(s);
   saveProfile();
@@ -1037,13 +1045,37 @@ function toggleMarketInput() {
   r.style.display = r.style.display==='none' ? 'block' : 'none';
   if (r.style.display!=='none') document.getElementById('new-market').focus();
 }
-function removeMarket(m) { markets = markets.filter(function(x){ return x!==m; }); renderMarkets(); updateProfilePreview(); saveProfile(); }
+function removeMarket(m) { markets = markets.filter(function(x){ return x!==m; }); renderMarkets(); renderNotables(); updateProfilePreview(); saveProfile(); }
 function confirmAddMarket() {
   var v = document.getElementById('new-market').value.trim();
   if (!v) return;
   markets.push(v); document.getElementById('new-market').value = '';
   document.getElementById('market-add-row').style.display = 'none';
-  renderMarkets(); updateProfilePreview(); saveProfile();
+  renderMarkets(); renderNotables(); updateProfilePreview(); saveProfile();
+}
+
+// Notable venues — same chip pattern as markets; remove by index so names with
+// apostrophes (e.g. "Antone's") don't break the onclick handler.
+function renderNotables() {
+  var c = document.getElementById('notable-chips');
+  if (!c) return;
+  c.innerHTML = notables.map(function(m, i){
+    return '<div class="market-chip">' + esc(m) + (notableEditOpen ? '<span class="chip-remove" onclick="removeNotable(' + i + ')">&nbsp;×</span>' : '') + '</div>';
+  }).join('') + (notableEditOpen ? '<div class="chip-add" onclick="toggleNotableInput()">+ Add</div>' : '');
+}
+function toggleNotableEdit() { notableEditOpen = !notableEditOpen; renderNotables(); }
+function toggleNotableInput() {
+  var r = document.getElementById('notable-add-row');
+  r.style.display = r.style.display==='none' ? 'block' : 'none';
+  if (r.style.display!=='none') document.getElementById('new-notable').focus();
+}
+function removeNotable(i) { notables.splice(i,1); renderNotables(); saveProfile(); }
+function confirmAddNotable() {
+  var v = document.getElementById('new-notable').value.trim();
+  if (!v) return;
+  notables.push(v); document.getElementById('new-notable').value = '';
+  document.getElementById('notable-add-row').style.display = 'none';
+  renderNotables(); saveProfile();
 }
 
 function updateProfilePreview() {
@@ -1059,7 +1091,7 @@ function updateProfilePreview() {
 }
 
 function updateCompleteness() {
-  var fields = [profile.name,profile.genre,profile.oneliner,profile.phone,profile.web,profile.epk,profile.spotify,profile.draw,profile.notable];
+  var fields = [profile.name,profile.genre,profile.oneliner,profile.phone,profile.web,profile.epk,profile.spotify,profile.draw,(notables.length?'y':'')];
   var filled = fields.filter(function(f){ return f&&f.trim(); }).length;
   var pct = Math.round((filled/fields.length)*100);
   var bar = document.getElementById('pct-bar'); if (bar) bar.style.width = pct + '%';
@@ -1129,7 +1161,8 @@ function loadProfile(){
     profile.phone=a.phone||''; profile.web=a.website||''; profile.epk=a.epk||''; profile.spotify=a.spotify||'';
     profile.draw=a.draw_claim||''; profile.crowd=a.typical_crowd||''; profile.formats=a.set_formats||''; profile.notable=a.notable||'';
     markets = a.markets || [];
-    fillProfileDom(); renderMarkets(); updateProfilePreview(); updateHomeStats();
+    notables = (profile.notable||'').split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+    fillProfileDom(); renderMarkets(); renderNotables(); updateProfilePreview(); updateHomeStats();
   });
 }
 function fillProfileDom(){
@@ -1137,10 +1170,9 @@ function fillProfileDom(){
   setText('fv-web',profile.web); setText('fv-epk',profile.epk);
   var sp=document.getElementById('fv-spotify'); if(sp){ sp.textContent=profile.spotify||'Not set'; sp.className='field-value'+(profile.spotify?'':' empty'); }
   setText('fv-draw',profile.draw); setText('fv-crowd',profile.crowd); setText('fv-formats',profile.formats);
-  var nv=document.getElementById('fv-notable'); if(nv){ nv.textContent=profile.notable||'Not set'; nv.className='field-value'+(profile.notable?'':' empty'); }
   setVal('fi-name',profile.name); setVal('fi-genre',profile.genre); setVal('fi-oneliner',profile.oneliner); setVal('fi-phone',profile.phone);
   setVal('fi-web',profile.web); setVal('fi-epk',profile.epk); setVal('fi-spotify',profile.spotify);
-  setVal('fi-draw',profile.draw); setVal('fi-crowd',profile.crowd); setVal('fi-formats',profile.formats); setVal('fi-notable',profile.notable);
+  setVal('fi-draw',profile.draw); setVal('fi-crowd',profile.crowd); setVal('fi-formats',profile.formats);
   setText('p-display-name', profile.name||'—');
   var av=document.getElementById('avatar-btn'); if(av) av.textContent=initials(profile.name);
   var avlg=document.querySelector('.profile-av-lg'); if(avlg) avlg.textContent=initials(profile.name);
@@ -1152,7 +1184,7 @@ function saveProfile(){
     display_name:profile.name, genre:profile.genre, oneliner:profile.oneliner, phone:profile.phone,
     website:profile.web, epk:profile.epk, spotify:profile.spotify,
     draw_claim:profile.draw, typical_crowd:profile.crowd, set_formats:profile.formats,
-    notable:profile.notable, markets:markets
+    notable:notables.join(', '), markets:markets
   }).eq('id',ME).then(function(r){ if(r.error) console.error('saveProfile', r.error); });
 }
 
@@ -1240,8 +1272,13 @@ function wizCapture(step, ticket){
     wizData.vtype=vt;
     wizData.address=val('waddr').trim();
   } else if(step===3){
-    var lo=val('wpl').trim(), hi=val('wph').trim();
-    wizData.pay = (lo&&hi) ? ('$'+lo+'–'+hi) : (lo ? ('$'+lo+'+') : (hi ? ('up to $'+hi) : ''));
+    if(ticket==='soft'){
+      var rate=val('wrate').trim();
+      wizData.pay = rate ? ('$'+rate+'/hr') : '';
+    } else {
+      var lo=val('wpl').trim(), hi=val('wph').trim();
+      wizData.pay = (lo&&hi) ? ('$'+lo+'–'+hi) : (lo ? ('$'+lo+'+') : (hi ? ('up to $'+hi) : ''));
+    }
     wizData.contactName=(val('wcf').trim()+' '+val('wcl').trim()).trim();
     wizData.contactEmail=val('wcemail').trim();
     wizData.contactPhone=val('wcphone').trim();
@@ -1282,6 +1319,14 @@ function wizSubmit(ticket){
 
 // ── Edit a venue (shared collective layer) ──────────────
 function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+// Render multi-line notes as a dash listicle; single line stays plain text.
+function notesList_(s){
+  var items = String(s||'').split(/\r?\n/).map(function(x){ return x.trim(); }).filter(Boolean);
+  if(items.length<=1) return esc(s);
+  return '<ul style="margin:2px 0 0;padding:0;list-style:none;line-height:1.6">'
+    + items.map(function(it){ return '<li style="display:flex;gap:7px"><span style="color:var(--text-tertiary)">–</span><span>'+esc(it)+'</span></li>'; }).join('')
+    + '</ul>';
+}
 function openVenueDetail(id){
   var v = venues.filter(function(x){ return x.id===id; })[0];
   if(!v) return;
@@ -1309,7 +1354,7 @@ function openVenueDetail(id){
     + row('Pay', v.pay && v.pay!=='—' ? v.pay : '')
     + row('Address', v.address)
     + row('Clientele', v.clientele)
-    + row('Notes', v.notes)
+    + (v.notes ? ('<div class="field-row"><span class="field-label">Notes</span><div class="field-value">' + notesList_(v.notes) + '</div></div>') : '')
     + (!(v.contact && v.contact!=='—') && !v.address && !v.clientele && !v.notes && (!v.pay || v.pay==='—') ? '<div class="field-row"><span class="field-value empty">No details yet — tap Edit to add them.</span></div>' : '')
     + '</div>'
     + mapBlock;
@@ -1327,7 +1372,7 @@ function openVenueEdit(id){
     + '<div class="form-field"><label class="form-label">State</label><input class="form-input" id="ev-state" value="'+esc(v.state)+'"></div></div>'
     + '<div class="form-field"><label class="form-label">Ticket type</label><select class="form-select" id="ev-ticket">'+ticketOpts+'</select></div>'
     + '<div class="form-field"><label class="form-label">Venue type</label><input class="form-input" id="ev-vtype" value="'+esc(v.vtype)+'"></div>'
-    + '<div class="form-field"><label class="form-label">Pay range</label><input class="form-input" id="ev-pay" value="'+esc(v.pay==='—'?'':v.pay)+'"></div>'
+    + '<div class="form-field"><label class="form-label">Rate / pay</label><input class="form-input" id="ev-pay" placeholder="$150/hr (soft) or $300–500 (hard)" value="'+esc(v.pay==='—'?'':v.pay)+'"></div>'
     + '<div class="form-field"><label class="form-label">Address</label><input class="form-input" id="ev-address" value="'+esc(v.address)+'"></div>'
     + '<div class="form-field"><label class="form-label">Typical clientele</label><input class="form-input" id="ev-clientele" value="'+esc(v.clientele)+'"></div>'
     + '<div class="form-field"><label class="form-label">Notes</label><textarea class="form-textarea" id="ev-notes">'+esc(v.notes)+'</textarea></div>'
