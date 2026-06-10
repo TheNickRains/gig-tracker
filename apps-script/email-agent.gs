@@ -94,8 +94,8 @@ function interpret_(contactName, venueName, status, subject, body) {
       intent: { type: 'string', enum: ['interested', 'passed', 'scheduling', 'asked_for_info', 'other'] },
       summary: { type: 'string' },
       suggested_status: { type: 'string', enum: ['outreach', 'waiting', 'followup', 'won', 'dead', 'none'] },
-      date: { type: ['string', 'null'] },
-      pay: { type: ['string', 'null'] }
+      date: { type: 'string' },
+      pay: { type: 'string' }
     },
     required: ['intent', 'summary', 'suggested_status', 'date', 'pay']
   };
@@ -103,7 +103,7 @@ function interpret_(contactName, venueName, status, subject, body) {
     'Be terse and factual. "summary" is one short line for the activity log (<=120 chars). ' +
     'suggested_status: "won" only if a date/booking is confirmed; "dead" only if clearly declined; ' +
     '"followup" if they went quiet or said "later"; "waiting" if the ball is in their court; else "none". ' +
-    'Extract date and pay only if explicitly stated, else null. Never invent details.';
+    'Extract date and pay only if explicitly stated, else return an empty string "". Never invent details.';
   var user = 'Venue: ' + venueName + '\nContact: ' + contactName + '\nCurrent stage: ' + status +
     '\nSubject: ' + subject + '\n\nEmail:\n' + body;
 
