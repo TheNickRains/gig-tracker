@@ -74,6 +74,14 @@ async function gmailGet(token, id) {
 function decodeEntities(s) {
   return (s || "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ");
 }
+// Gmail snippets drag the quoted thread along ("... On Jun 11, Nick wrote: ...").
+// Keep only the fresh words — cut at the first quote marker.
+function cleanSnippet(s) {
+  s = decodeEntities((s || "").trim());
+  const m = s.search(/\b(On (Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d).{0,140}?wrote:|-+\s*Original Message\s*-+|-+\s*Forwarded message\s*-+|From:\s.{3,80}@|Sent from my )/);
+  if (m > 0) s = s.slice(0, m);
+  return s.trim().replace(/[\s>-]+$/, "");
+}
 async function gmailHistory(token, startHistoryId) {
   const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/history?startHistoryId=${startHistoryId}&historyTypes=messageAdded&maxResults=100`, { headers: { Authorization: "Bearer " + token } });
   if (!r.ok) { console.error("history failed", r.status, (await r.text()).slice(0, 150)); return []; }
@@ -94,7 +102,7 @@ async function applyMessage(entry, full, contactEmail) {
   const subject = header(full, "Subject") || "(no subject)";
   const inbound = from.includes(contactEmail.toLowerCase());
   if (inbound) {
-    const snippet = decodeEntities((full.snippet || "").trim());
+    const snippet = cleanSnippet(full.snippet);
     const body = snippet ? snippet.slice(0, 600) : "Reply: " + subject;
     const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_in", body: body, source: "email_sync", email_message_id: full.id });
     console.log("  inbound reply on entry", entry.id, "newly logged:", isNew);

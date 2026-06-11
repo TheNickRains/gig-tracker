@@ -309,6 +309,16 @@
   .stage-dot.current::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--amber-800); position: absolute; }
   .stage-label { font-size: 10px; color: var(--text-secondary); }
   .stage-label.current { color: var(--amber-800); font-weight: 500; }
+  .stage-step { cursor: pointer; }
+  .stage-step:hover .stage-dot:not(.current) { border-color: var(--amber-400); }
+  .stage-step:hover .stage-label { color: var(--amber-800); }
+  .exit-row { display: flex; gap: 16px; justify-content: flex-end; margin: -6px 2px 16px; }
+  .exit-btn { font-size: 12px; color: var(--text-tertiary); cursor: pointer; background: none; border: none; padding: 2px 0; font-family: inherit; }
+  .exit-btn:hover { text-decoration: underline; color: var(--passed-text); }
+  .exit-btn.dead:hover { color: var(--dead-text); }
+  .pipe-group-h { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin: 16px 0 2px; display: flex; gap: 7px; align-items: baseline; }
+  .pipe-group-h:first-child { margin-top: 2px; }
+  .pipe-group-h .gcount { color: var(--text-tertiary); font-weight: 500; }
 
   /* Contact card */
   .contact-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid var(--border-light); }
@@ -495,7 +505,7 @@
     </div>
     <div class="nav-dropdown" id="nav-menu" role="menu">
       <button class="dd-item" id="nav-home" onclick="go('home')" role="menuitem">Home</button>
-      <button class="dd-item" id="nav-pipeline" onclick="go('pipeline')" role="menuitem">My pipeline</button>
+      <button class="dd-item" id="nav-pipeline" onclick="go('pipeline')" role="menuitem">Pipeline</button>
       <button class="dd-item" id="nav-discover" onclick="go('discover')" role="menuitem">Discover</button>
       <button class="dd-item" onclick="goProfile()" role="menuitem">Profile</button>
       <button class="dd-item" onclick="go('settings')" role="menuitem">Settings</button>
@@ -560,7 +570,7 @@
   <!-- PIPELINE LIST -->
   <div class="screen" id="screen-pipeline">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div class="page-title" style="margin-bottom:0">My pipeline</div>
+      <div class="page-title" style="margin-bottom:0">Pipeline</div>
       <span style="font-size:12px;color:var(--text-secondary)" id="pipe-count">0 venues</span>
     </div>
     <div class="card card-flush" id="pipe-list"></div>
@@ -802,7 +812,37 @@ function go(screen) {
   if (screen === 'pipeline') renderPipeline();
   if (screen === 'add') renderWizard(1, null, {});
   if (screen === 'profile') { renderMarkets(); renderNotables(); updateProfilePreview(); updateCompleteness(); }
+  syncHash(screen);
 }
+
+// ── Routing: every screen is a #hash, so refresh/back/deep-links work ──
+var APPLYING_ROUTE = false, pendingRoute = false, currentVenueId = null;
+function syncHash(screen){
+  if (APPLYING_ROUTE) return;
+  var h = screen;
+  if (screen === 'detail') { if (!currentDetailUuid) return; h = 'entry/' + currentDetailUuid; }
+  if (screen === 'venue')  { if (!currentVenueId)  return; h = 'venue/' + currentVenueId; }
+  if (location.hash !== '#' + h) location.hash = h;
+}
+function applyRoute(){
+  var h = (location.hash || '').replace(/^#/, '') || 'home';
+  APPLYING_ROUTE = true;
+  try {
+    if (h.indexOf('entry/') === 0) {
+      var u = h.slice(6), idx = -1;
+      pipeline.forEach(function(p, i){ if (p.uuid === u) idx = i; });
+      if (idx >= 0) { if (currentScreen !== 'detail' || currentDetailUuid !== u) openDetail(idx); }
+      else pendingRoute = true; // pipeline not loaded yet — retried after load
+    } else if (h.indexOf('venue/') === 0) {
+      var vid = h.slice(6);
+      if (venues.some(function(x){ return x.id === vid; })) { if (currentScreen !== 'venue' || currentVenueId !== vid) openVenueDetail(vid); }
+      else pendingRoute = true;
+    } else if (h === 'profile') { if (currentScreen !== 'profile') goProfile(); }
+    else if (document.getElementById('screen-' + h)) { if (currentScreen !== h) go(h); }
+  } finally { APPLYING_ROUTE = false; }
+}
+function retryPendingRoute(){ if (pendingRoute) { pendingRoute = false; applyRoute(); } }
+window.addEventListener('hashchange', applyRoute);
 
 function toggleMenu() {
   menuOpen = !menuOpen;
@@ -826,6 +866,7 @@ function goProfile() {
   document.getElementById('avatar-btn').classList.add('active');
   currentScreen = 'profile';
   renderMarkets(); renderNotables(); updateProfilePreview(); updateCompleteness();
+  syncHash('profile');
 }
 
 // ── Discover ────────────────────────────────────────────
@@ -864,14 +905,24 @@ function renderPipeline() {
     document.getElementById('pipe-list').innerHTML = '<p style="color:var(--text-secondary);font-size:14px;padding:8px 0">No venues yet. Open the menu → <strong>Add venue</strong> to log your first business card.</p>';
     return;
   }
-  var sorted = pipeline.slice().sort(function(a,b){ return statusOrder[a.s]-statusOrder[b.s]; });
-  document.getElementById('pipe-list').innerHTML = sorted.map(function(p){
-    var alert = followupDue(p) ? '<i class="ti ti-alert-circle" style="font-size:13px;color:var(--pitched-text)"></i>' : '';
-    return '<div class="pipe-item" onclick="openDetail(' + p.id + ')">'
-    + '<div class="pipe-icon"><i class="ti ti-building-store"></i></div>'
-    + '<div class="pipe-info"><div class="pipe-venue">' + p.venue + alert + '</div><div class="pipe-contact">' + p.contact + ' · ' + p.city + ', ' + p.state + '</div></div>'
-    + '<div class="pipe-meta"><span class="badge badge-' + p.s + '">' + statusLabel[p.s] + '</span><div class="pipe-date">' + p.days + ' days ago</div></div>'
-    + '</div>';
+  // Grouped by stage (the group header carries the stage, so rows stay clean).
+  var groups = {};
+  pipeline.forEach(function(p){ (groups[p.s] = groups[p.s] || []).push(p); });
+  var order = ['talks','hold','pitched','lead','booked','played','passed','dead'];
+  Object.keys(groups).forEach(function(k){ if(order.indexOf(k)<0) order.push(k); }); // legacy keys pre-migration
+  function dLabel(d){ return d===0 ? 'today' : (d===1 ? 'yesterday' : d + 'd ago'); }
+  document.getElementById('pipe-list').innerHTML = order.map(function(st){
+    var g = groups[st]; if(!g || !g.length) return '';
+    g.sort(function(a,b){ return a.days - b.days; });
+    return '<div class="pipe-group-h" style="color:var(--' + st + '-text, var(--text-secondary))">' + statusLabel[st] + ' <span class="gcount">' + g.length + '</span></div>'
+      + g.map(function(p){
+        var alert = followupDue(p) ? '<i class="ti ti-alert-circle" style="font-size:13px;color:var(--pitched-text)"></i>' : '';
+        return '<div class="pipe-item" onclick="openDetail(' + p.id + ')">'
+        + '<div class="pipe-icon"><i class="ti ti-building-store"></i></div>'
+        + '<div class="pipe-info"><div class="pipe-venue">' + esc(p.venue) + alert + '</div><div class="pipe-contact">' + esc(p.contact) + ' · ' + esc(p.city) + (p.state ? ', ' + esc(p.state) : '') + '</div></div>'
+        + '<div class="pipe-meta"><div class="pipe-date">' + dLabel(p.days) + '</div></div>'
+        + '</div>';
+      }).join('');
   }).join('');
 }
 
@@ -884,7 +935,7 @@ function openDetail(id) {
   var stageDots = sts.map(function(s,i){
     var cls = i<stageIdx ? 'done' : (i===stageIdx ? 'current' : '');
     var inner = i<stageIdx ? '<i class="ti ti-check"></i>' : '';
-    return '<div class="stage-step"><div class="stage-dot ' + cls + '">' + inner + '</div><div class="stage-label' + (i===stageIdx?' current':'') + '">' + statusLabel[s] + '</div></div>';
+    return '<div class="stage-step" onclick="setStatus(' + id + ',\'' + s + '\')" title="Move to ' + statusLabel[s] + '"><div class="stage-dot ' + cls + '">' + inner + '</div><div class="stage-label' + (i===stageIdx?' current':'') + '">' + statusLabel[s] + '</div></div>';
   }).join('');
 
   if (!activeTpl[id]) activeTpl[id] = (p.s==='lead'||p.s==='outreach') ? 'outreach' : ((p.s==='pitched'||p.s==='talks'||p.s==='waiting'||p.s==='followup') ? 'followup' : 'checkin');
@@ -893,17 +944,21 @@ function openDetail(id) {
     return '<div class="tpl-tab' + (activeTpl[id]===k?' active':'') + '" onclick="switchTpl(' + id + ',\'' + k + '\')">' + tplLabels[i] + '</div>';
   }).join('');
 
+  var first = (p.contact||'').split(' ')[0] || 'venue';
   var actHtml = p.activity.map(function(a){
     if (a.kind==='email_in' || a.kind==='note') {
-      var label = a.kind==='email_in' ? 'Reply' : 'Note';
+      // Direction is explicit: "Marcy → you" = their words; notes are yours.
+      var label = a.kind==='email_in' ? esc(first) + ' → you' : 'Your note';
       return '<div class="activity-item ctx">'
         + '<div class="act-rail" style="background:' + a.dot + '"></div>'
         + '<div class="act-body"><div class="act-kind" style="color:' + a.dot + '">' + label + '<span class="act-time">' + a.time + '</span></div>'
         + '<div class="act-ctx">' + esc(a.text) + '</div></div></div>';
     }
+    var line = a.text;
+    if (a.kind==='email_out') line = 'You → ' + first + ': ' + line.replace(/^Sent:\s*/,'');
     return '<div class="activity-item action">'
       + '<div class="act-dot-sm"></div>'
-      + '<div class="act-line"><span class="act-action-text">' + esc(a.text) + '</span><span class="act-time">' + a.time + '</span></div></div>';
+      + '<div class="act-line"><span class="act-action-text">' + esc(line) + '</span><span class="act-time">' + a.time + '</span></div></div>';
   }).join('');
 
   var chips = ['3 days','7 days','14 days','1 month'].map(function(d){
@@ -912,10 +967,19 @@ function openDetail(id) {
 
   var wonBanner = (p.s==='booked'||p.s==='played'||p.s==='won') ? '<div class="won-banner"><i class="ti ti-' + (p.s==='played'?'music':'trophy') + '"></i><div><div class="won-banner-title">' + (p.s==='played'?'Played':'Booked') + '</div><div class="won-banner-sub">' + p.venue + '</div></div></div>' : '';
 
-  var allStatuses = stagesFor(p).concat(['passed','dead']);
-  var statusActions = '<div class="section-label">Move stage</div><div class="card" style="margin-bottom:12px"><div class="followup-chips">'
-    + allStatuses.map(function(st){ return '<div class="fu-chip' + (p.s===st?' selected':'') + '" onclick="setStatus(' + id + ',\'' + st + '\')">' + statusLabel[st] + '</div>'; }).join('')
-    + '</div></div>';
+  // Tracker dots ARE the stage control. Exits sit quietly under it; from a
+  // terminal state the full chip row returns so you can move back.
+  var statusActions;
+  if (stageIdx >= 0) {
+    statusActions = '<div class="exit-row">'
+      + '<button class="exit-btn" onclick="setStatus(' + id + ',\'passed\')">Mark passed</button>'
+      + '<button class="exit-btn dead" onclick="setStatus(' + id + ',\'dead\')">Dead end</button></div>';
+  } else {
+    var allStatuses = stagesFor(p).concat(['passed','dead']);
+    statusActions = '<div class="section-label">Move stage</div><div class="card" style="margin-bottom:12px"><div class="followup-chips">'
+      + allStatuses.map(function(st){ return '<div class="fu-chip' + (p.s===st?' selected':'') + '" onclick="setStatus(' + id + ',\'' + st + '\')">' + statusLabel[st] + '</div>'; }).join('')
+      + '</div></div>';
+  }
 
   var tplSection = (p.s!=='passed'&&p.s!=='dead') ? (
     '<div class="section-label" style="margin-top:4px">Outreach templates</div>'
@@ -933,7 +997,7 @@ function openDetail(id) {
   ) : '';
 
   document.getElementById('detail-container').innerHTML =
-    '<button class="back-btn" onclick="go(\'pipeline\')"><i class="ti ti-arrow-left"></i> My pipeline</button>'
+    '<button class="back-btn" onclick="go(\'pipeline\')"><i class="ti ti-arrow-left"></i> Pipeline</button>'
     + '<div class="detail-header"><div class="detail-icon"><i class="ti ti-building-store"></i></div>'
     + '<div><div class="detail-venue">' + p.venue + '</div><div class="detail-meta">' + p.vtype + ' · ' + p.city + ', ' + p.state + ' · ' + p.pay + '</div>'
     + '<span class="badge badge-' + p.s + '" style="margin-top:6px">' + statusLabel[p.s] + '</span></div></div>'
@@ -948,7 +1012,7 @@ function openDetail(id) {
     + '<div style="padding:8px 0 4px"><div style="font-size:12px;color:var(--text-secondary);margin-bottom:2px">' + p.email + '</div><div style="font-size:12px;color:var(--text-secondary)">' + p.phone + '</div></div>'
     + '</div>'
     + tplSection
-    + '<div class="section-label">Activity <span class="soon">email auto-tracking: coming soon</span></div>'
+    + '<div class="section-label">Activity</div>'
     + '<div class="card card-flush" style="margin-bottom:20px">' + actHtml
     + '<div><input class="note-input" placeholder="Add a note… press Enter to save" onkeydown="addNote(event,' + id + ')"></div>'
     + '</div>';
@@ -1238,7 +1302,7 @@ function googleRowClick(){ if(googleConnected) disconnectGoogle(); else connectG
 function disconnectGoogle(){
   sb.from('google_connections').delete().eq('artist_id', ME).then(function(r){
     if(r.error){ showToast('Could not disconnect: ' + r.error.message, true); return; }
-    sb.from('artists').update({ gmail_connected: false }).eq('id', ME);
+    sb.from('artists').update({ gmail_connected: false }).eq('id', ME).then(function(){});
     googleConnected = false; renderGoogleStatus();
     showToast('Gmail & Calendar disconnected');
   });
@@ -1269,8 +1333,11 @@ function uploadAvatar(e){
     if(r.error){ showToast('Upload failed: ' + r.error.message, true); return; }
     var url = sb.storage.from('avatars').getPublicUrl(ME + '/avatar').data.publicUrl + '?t=' + Date.now();
     profile.avatar_url = url; applyAvatar(url);
-    sb.from('artists').update({ avatar_url: url }).eq('id', ME);
-    showToast('Photo updated');
+    // NB: supabase-js queries are lazy — without .then() nothing executes.
+    sb.from('artists').update({ avatar_url: url }).eq('id', ME).then(function(ur){
+      if(ur.error){ showToast('Photo uploaded but not saved: ' + ur.error.message, true); return; }
+      showToast('Photo updated');
+    });
   });
 }
 function signOut(){ sb.auth.signOut().then(function(){ location.reload(); }); }
@@ -1284,6 +1351,7 @@ function showApp(session){
   var pe=document.querySelector('.profile-email'); if(pe) pe.textContent = session.user.email || '';
   try { if(sb.realtime && session.access_token) sb.realtime.setAuth(session.access_token); } catch(e){}
   loadAll();
+  applyRoute(); // restore the screen from the URL hash (deep links / refresh)
 }
 
 // ── Load ────────────────────────────────────────────────
@@ -1349,6 +1417,7 @@ function loadVenues(){
               address:v.address||'', clientele:v.clientele||'', notes:v.notes||''};
     });
     if(currentScreen==='discover') renderDiscover();
+    retryPendingRoute();
   });
 }
 
@@ -1366,6 +1435,7 @@ function loadPipeline(){
       });
       updateHomeStats();
       if(currentScreen==='pipeline') renderPipeline();
+      retryPendingRoute();
       var ids = rows.map(function(e){ return e.id; });
       if(ids.length) loadActivities(ids);
     });
@@ -1485,6 +1555,7 @@ function notesList_(s){
 function openVenueDetail(id){
   var v = venues.filter(function(x){ return x.id===id; })[0];
   if(!v) return;
+  currentVenueId = id;
   var loc = [v.address, v.city, v.state].filter(function(x){ return x; }).join(', ');
   var mapBlock;
   if(loc){

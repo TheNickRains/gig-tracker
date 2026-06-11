@@ -17,6 +17,18 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-11 — Polish batch: hash routing, tappable tracker, grouped pipeline, activity direction
+(1) **Hash routing**: every screen is a `#hash` (`#entry/<uuid>`, `#venue/<uuid>`, `#pipeline`…) —
+refresh/back/deep-links work; deep routes retry after data load (pendingRoute). (2) **Tracker IS the
+stage control** — tap a dot to move stage; the Move-chips card is gone, replaced by a quiet exit row
+("Mark passed" / "Dead end"); chips return only in terminal states to move back. (3) **Pipeline screen**
+(renamed from "My pipeline"): grouped by stage with colored headers + counts, no per-row badge, relative
+time. (4) **Activity direction is explicit**: "{Contact} → you" cards / "You → {Contact}: subj" grey
+lines; worker `cleanSnippet()` strips quoted thread tails from Gmail snippets; removed the stale
+"email auto-tracking: coming soon" chip (it's live). (5) **Bug**: supabase-js queries are LAZY —
+`update(...).eq(...)` with no `.then()` never fires. That's why avatars didn't persist (and
+disconnect's flag write silently no-oped). Always chain `.then()`.
+
 ## 2026-06-11 — Comprehensive staging: Lead → Pitched → In talks → Hold → Booked → Played (+ Passed/Dead)
 Replaced outreach/waiting/followup/won with a real booking lifecycle (migration 010 maps old→new and
 swaps the check constraint; new default 'lead'). ONE spine for both ticket types — **Hold renders only on

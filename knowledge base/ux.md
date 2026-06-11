@@ -4,15 +4,17 @@ This document is maintained by Claude. After any session where a screen is added
 
 ---
 
-## Nav
+## Nav & routing
 
 Sticky, 54px. Always visible.
 
 - **Left:** brand mark (amber rounded square, music icon) + "Gig Collective" wordmark
-- **Right:** avatar initials chip (opens/closes profile screen on tap) + hamburger button
-- **Hamburger dropdown:** Home · My pipeline · Discover · [divider] · + Add venue (amber)
+- **Right:** avatar chip (photo if set, else initials — opens Profile) + hamburger button
+- **Hamburger dropdown:** Home · Pipeline · Discover · Profile · Settings · [divider] · + Add venue (amber)
 - Dropdown closes on outside click
 - Avatar gets an amber border ring when profile screen is active
+
+**Routing** — every screen is a URL hash: `#home #pipeline #discover #add #profile #settings`, pipeline detail = `#entry/<uuid>`, venue detail = `#venue/<uuid>`. Refresh restores the screen (deep routes wait for data via a pending-route retry), browser back/forward work, and detail links are shareable within the app.
 
 ---
 
@@ -55,18 +57,19 @@ Map view: deferred to v2.
 
 ---
 
-## My pipeline
+## Pipeline (renamed from "My pipeline")
 
-Personal CRM. Stages (the spine): **Lead → Pitched → In talks → Hold → Booked → Played**, with exits **Passed** (recyclable no — fair to circle back) and **Dead end** (terminal — never resurface). Hold appears only for hard-ticket venues. Follow-up is not a stage; it's a scheduled action (slice B). Sorted by urgency: In talks → Hold → Pitched → Lead → Booked → Played → Passed → Dead end.
+Personal CRM. Stages (the spine): **Lead → Pitched → In talks → Hold → Booked → Played**, with exits **Passed** (recyclable no — fair to circle back) and **Dead end** (terminal — never resurface). Hold appears only for hard-ticket venues. Follow-up is not a stage; it's a scheduled action (slice B).
 
 The worker auto-advances stages from Gmail: outbound pitch to the contact ⇒ Lead → Pitched; their reply ⇒ → In talks (also resurrects Passed); never auto-moves Hold/Booked/Played/Dead.
+
+**Grouped list** — rows are grouped under stage headers (stage-colored uppercase label + count), group order: In talks → Hold → Pitched → Lead → Booked → Played → Passed → Dead end. Within a group, most-recent activity first. No per-row status badge (the header carries the stage).
 
 Each row:
 - Building icon in a square chip
 - Venue name (+ orange alert icon when Pitched ≥ 7 days with no reply)
 - Contact · City, State
-- Status badge (right-aligned)
-- Days since last activity (right-aligned, below badge)
+- Last activity (right-aligned: today / yesterday / Nd ago)
 
 Tapping a row opens Pipeline detail.
 
@@ -76,15 +79,15 @@ Tapping a row opens Pipeline detail.
 
 Full CRM view for one venue. Accessed from My pipeline.
 
-**Back button** — "← My pipeline"
+**Back button** — "← Pipeline"
 
 **Header** — amber icon chip + venue name + venue type · city, state · pay range + status badge.
 
-**Stage tracker** — the happy path: Lead → Pitched → In talks → (Hold, hard-ticket only) → Booked → Played. Completed steps filled amber, current step has amber dot, future steps hollow. Hidden when status is Passed or Dead end (badge carries the state).
+**Stage tracker (tappable — it IS the stage control)** — the happy path: Lead → Pitched → In talks → (Hold, hard-ticket only) → Booked → Played. Completed steps filled amber, current step has amber dot, future steps hollow; tapping any step moves the entry there. Hidden when status is Passed or Dead end (badge carries the state).
 
-**Booked/Played banner** — green banner above Move stage when status = Booked (trophy) or Played (music icon).
+**Exit row** — quiet right-aligned text buttons under the tracker: "Mark passed" · "Dead end" (red on hover). When the entry IS in a terminal state, a full Move-stage chip row appears instead so it can be moved back.
 
-**Move stage** — chips for every stage on this venue's path + Passed + Dead end.
+**Booked/Played banner** — green banner when status = Booked (trophy) or Played (music icon).
 
 **Contact card** — contact initials avatar, name, title. Email and phone shown below. Email + call icon buttons (right side).
 
@@ -93,7 +96,7 @@ Full CRM view for one venue. Accessed from My pipeline.
 - Open in email → opens mailto: with subject and body pre-filled
 - Follow-up reminder chips: 3 days · 7 days · 14 days · 1 month (tap to select)
 
-**Activity log** — two visual tiers: **context pops, actions recede**. Replies (email_in) and notes render as prominent cards — colored left rail, uppercase kind label (Reply/Note), full content text (replies carry the booker's actual words via the Gmail snippet). System events (Sent…, Moved to…, status changes) are muted grey single lines with a small dot. Note input at bottom — press Enter to save and prepend to log. Updates live via Supabase Realtime when the worker logs email.
+**Activity log** — two visual tiers: **context pops, actions recede**. Replies (email_in) and notes render as prominent cards — colored left rail, direction-explicit label ("{Contact} → you" / "Your note"), full content text (the worker stores the booker's words via the Gmail snippet, with quoted thread tails stripped). System events are muted grey single lines with a small dot; outbound email reads "You → {Contact}: {subject}". Note input at bottom — press Enter to save and prepend to log. Updates live via Supabase Realtime when the worker logs email.
 
 ---
 
