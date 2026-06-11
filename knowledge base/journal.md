@@ -17,6 +17,22 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-11 — Island NAV + war-room Home + calendar screen; badges/chips/dots killed
+Nick's correction: "the island is the navigation, not the whole app" (YouVersion/Venmo/Slack refs).
+Hamburger + dropdown REMOVED → **floating bottom island nav** (fixed blurred pill, safe-area aware):
+Pipeline · Discover · **HOME center throne** (raised amber circle) · Calendar · Settings; top bar = brand
+(tap=home) + avatar (profile). `.app` gets bottom padding. **Attention redesign — Nick hated the red
+badge ("instantly stressed me out") and the blue dots ("useless")**: both removed; attention now lives
+(1) at the TOP of Home — the war room: "Needs you" list (send-awaiting-review / "{contact} replied —
+your move" / follow-up due) with AI-summary previews + count pill + quick actions + Scheduled-sends
+queue; (2) as an unmissable bordered card at the TOP of pipeline detail with Respond/Review buttons
+(jumpToDraft). needsReply is DATA-driven (lastInbound > lastOutbound — clears when the worker logs your
+sent reply); localStorage seen-state machinery deleted. **Pipeline:** stage chips REMOVED (noisy) →
+filter select beside search; defaults each visit = All + Recent (sort options Recent/Priority/Name);
+priorityScore now tops ready-sends then needsReply. Notes: edit (inline input) + delete via migration
+014 policies. **Calendar v1 (slice D start):** own nav item, month grid, tap-to-cycle availability
+(available/busy/clear) persisted to `availability` (migration 015); Google sync = next.
+
 ## 2026-06-11 — Tone-learning + group-by + attention badges + island-everywhere + Gemini truncation fix
 **Tone-learning (C complete):** worker `refreshToneProfile` daily per artist — pulls ~8 real SENT
 emails from Gmail (extractPlainText walks MIME parts; cleanSnippet strips quoted tails), Gemini

@@ -6,13 +6,9 @@ This document is maintained by Claude. After any session where a screen is added
 
 ## Nav & routing
 
-Sticky, 54px. Always visible.
+**Top bar** — sticky, 54px: brand (tap = Home) left; avatar right (photo if set — opens Profile, amber ring when active). **No hamburger, no dropdown.**
 
-- **Left:** brand mark + "Gig Collective" wordmark — **tappable, goes Home**
-- **Right:** hamburger button, then avatar chip outermost (photo if set, else initials — opens Profile)
-- **Hamburger dropdown:** Discover · Pipeline · Settings · [divider] · **Add venue as a filled amber button** (no Home/Profile items — brand and avatar cover those)
-- Dropdown closes on outside click
-- Avatar gets an amber border ring when profile screen is active
+**Floating island nav (bottom)** — THE island is the navigation (YouVersion/Venmo-style): fixed pill, blurred translucent bg, safe-area-aware, centered, max 432px. Items: Pipeline · Discover · **HOME (center throne — raised 52px amber circle)** · Calendar · Settings. Active item gets an amber pill; detail maps to Pipeline's tab, venue detail to Discover's. Add-venue lives on Home (war room quick action). `.app` carries bottom padding so content clears the island.
 
 **The island — everywhere** (per Nick: the island is FOR the mobile PWA). `body` is always `--bg-page` (light `#dddbd5` / dark `#0c0b0a`). On phones (<600px) the app floats in an 8px safe-area-aware gutter: 22px radius, hairline border, soft shadow; the sticky nav offsets to the gutter top and rounds its top corners. On ≥600px it's the centered bordered column (bottom-only radius). Scroll stays on the page.
 
@@ -20,13 +16,17 @@ Sticky, 54px. Always visible.
 
 ---
 
-## Home
+## Home — the war room
 
-Personalized greeting + date-aware subhead ("Good afternoon, Nick").
+Greeting + subhead, then the command center:
 
-**Attention strip** — amber background, full width. Shows the single highest-urgency pipeline item (Pitched ≥ 7 days with no reply = follow-up due). Tapping navigates to My pipeline.
+**Needs you** (top of page) — the attention list, computed from DATA not localStorage: (1) **send awaiting review** (scheduled message hit its time with auto-send off), (2) **"{Contact} replied — your move"** (their last word is newer than yours; clears automatically when the worker logs your outbound), (3) **follow-up due** (Pitched ≥7d). Rows: colored icon chip + venue + what happened + AI summary preview; tap → detail. Count pill in the label. Empty state: "All clear — nothing waiting on you." NO badges on nav icons anywhere (rejected: stress-inducing).
 
-**Stats row** — 3 cards: Active leads (personal) · Booked this year (personal) · Collective wins (shared, this month).
+**Stats row** — 3 cards: Active leads · Booked · Collective wins (placeholder).
+
+**Quick actions** — Add venue (primary) · Discover.
+
+**Scheduled sends** — queue of pending sends ("Sends Fri, Jun 12, 9:00 AM · cancels if they reply"); tap → detail.
 
 **Collective activity feed** — card with flush padding. Each entry: member avatar (colored initials), action description, timestamp + market. Most recent first. Members have consistent avatar colors across the app:
 - NR (Nick): amber
@@ -67,11 +67,11 @@ The worker auto-advances stages from Gmail: outbound pitch to the contact ⇒ Le
 
 **Priority list** (grouping was tried and rejected) — one flat list sorted by `priorityScore`: replies awaiting response (In talks, ≥1d) → follow-up overdue (Pitched ≥7d) → Pitched aging → fresh replies → Lead/Hold going stale → Booked → Played → Passed/Dead at bottom.
 
-**Search** — always-visible input above the list; matches venue/contact/city **plus stage names and the deal's notes + conversation text**. **Stage filter chips** — horizontally scrollable pill row (All + each stage present, with counts), **tinted with each stage's colors**; single-select, composes with search. **Filter + search reset to All/empty on every visit** (deliberate). **Sort** — header select: Priority (default) / Recent / Name (hidden while grouped). **View toggle** — list or 2-col grid; persists in localStorage.
+**Search** — input row at top; matches venue/contact/city **plus stage names and the deal's notes + conversation text**. **Filter** — a select beside the search (All · {stage} · counts; chips were tried and REJECTED as noisy). **Defaults every visit: filter All + sort Recent** (search cleared; view type persists). **Sort** — select: Recent (default) / Priority / Name (hidden while grouped). **Views** — list / 2-col grid toggle (persisted) + the Group-by toggle.
 
-**Group by (Notion-style, UX-agent spec'd)** — header toggle (rows icon), OFF by default, persisted (`gc_pipe_group`). On: collapsible stage sections in priority order (In talks → Pitched → Hold → Lead → Booked → Played → Passed → Dead end), tinted headers with count + rotating chevron; collapsed state persists per stage (`gc_pipe_collapsed_*`); active search auto-expands for that render only; grid is disabled while grouped (auto-switches to list); empty groups never render.
+**Group by (Notion-style)** — rows-icon toggle, OFF by default, persisted (`gc_pipe_group`): collapsible tinted stage sections (In talks → Pitched → Hold → Lead → Booked → Played → Passed → Dead end), per-stage collapse persisted, search auto-expands, grid disabled while grouped, empty groups never render.
 
-**Attention system** — "needs you" = unseen inbound reply OR follow-up overdue OR scheduled send awaiting review. Red count badge on the **hamburger** (9+ cap, removed from DOM at 0). Rows with unseen replies get a **blue unread dot** on the icon (list + grid). Opening a detail marks it seen (`gc_seen_<uuid>` in localStorage); badge and dots update live via Realtime.
+**Attention in the list** — no dots/badges; "Reply waiting" / "Follow up · Nd overdue" right-meta labels (data-driven: needsReply = their last word newer than yours), and Priority sort floats ready-sends + reply-waiting + overdue to the top. The war room (Home) is the primary attention surface.
 
 Each row:
 - Building icon in a square chip
@@ -80,6 +80,12 @@ Each row:
 - Right meta: "Follow up / Nd overdue" (amber) when due, "Reply waiting / Nd ago" (blue) for unanswered replies, else relative time
 
 Tapping a row opens Pipeline detail.
+
+---
+
+## Calendar (Slice D start)
+
+Own island-nav item. Month grid (Sun-start), prev/Today/next controls. **Tap a day to cycle: clear → Available (green) → Busy (red) → clear**; persists per day to the `availability` table (migration 015). Today ringed amber; adjacent-month days dimmed but tappable. Legend below the grid. Dashed "Holds & gigs — coming soon" placeholder for the Google Calendar two-way sync (holds = tentative events, booked = confirmed).
 
 ---
 
@@ -99,7 +105,11 @@ Full CRM view for one venue. Accessed from My pipeline.
 
 **Contact card** — contact initials avatar, name, title. Email and phone shown below. Email + call icon buttons (right side).
 
-**Section order:** header/tracker/close-out → Contact → **Notes** → **Draft** → **Conversation**.
+**Section order:** header/tracker/close-out → **Attention card** → Contact → **Notes** → **Draft** → **Conversation**.
+
+**Attention card (top of hierarchy)** — when a response is owed, it's unmissable: bordered card right under the stage controls — "{Contact} replied — your move" (+ AI summary preview) with a **Respond** button that scrolls/focuses the draft, or "Send awaiting your review" with **Review**. Driven by needsReply/sched-ready; disappears once you've replied (worker sees your outbound).
+
+**Notes (edit/delete)** — each note has pencil/trash icons; pencil swaps to an inline input (Enter saves, Esc cancels), trash deletes (migration 014 policies).
 
 **Draft outreach (editable)** — 4 tabs: Cold outreach · Follow-up · Full pitch · Check-in, rendering into an editable `textarea`. Suggested tab pre-selected from stage. Actions: Copy · Open in email · **Draft with AI** (calls the worker's `/ai/draft`, Gemini writes from profile + venue + conversation; fills the textarea for the artist to edit).
 

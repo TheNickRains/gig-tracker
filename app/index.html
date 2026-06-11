@@ -76,7 +76,7 @@
   }
 
   /* ── App shell ── */
-  .app { max-width: 480px; margin: 0 auto; min-height: 100vh; background: var(--bg-tertiary); position: relative; }
+  .app { max-width: 480px; margin: 0 auto; min-height: 100vh; background: var(--bg-tertiary); position: relative; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); }
 
   /* The island — everywhere. Mobile/PWA: the app floats in a slim gutter with
      rounded corners (safe-area aware). Desktop: centered island on --bg-page. */
@@ -360,10 +360,42 @@
   .group-hdr-count { font-size: 11px; color: var(--text-secondary); }
   .group-hdr-chevron { font-size: 14px; color: var(--text-tertiary); transition: transform 0.15s; transform: rotate(90deg); }
   .group-hdr.collapsed .group-hdr-chevron { transform: rotate(0deg); }
-  /* Attention */
-  .nav-hamburger { position: relative; }
-  .attn-badge { position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #E8341A; color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; pointer-events: none; }
-  .unread-dot { position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border-radius: 50%; background: var(--talks-bg); border: 2px solid var(--talks-text); }
+  /* Floating island nav (the island IS the navigation) */
+  .bnav { position: fixed; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); left: 50%; transform: translateX(-50%); width: min(calc(100% - 28px), 432px); height: 62px; background: var(--bg-primary); background: color-mix(in srgb, var(--bg-primary) 86%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 0.5px solid var(--border-mid); border-radius: 999px; box-shadow: 0 10px 30px rgba(0,0,0,0.24); display: flex; align-items: center; justify-content: space-around; padding: 0 10px; z-index: 90; }
+  .bnav-item { display: flex; flex-direction: column; align-items: center; gap: 2px; background: none; border: none; font-family: inherit; font-size: 10px; color: var(--text-secondary); cursor: pointer; padding: 6px 11px; border-radius: 999px; }
+  .bnav-item i { font-size: 20px; }
+  .bnav-item.active { color: var(--amber-800); background: var(--amber-50); }
+  .bnav-home { width: 52px; height: 52px; border-radius: 50%; background: var(--amber-800); color: #fff; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; transform: translateY(-16px); box-shadow: 0 6px 18px rgba(0,0,0,0.3); flex-shrink: 0; }
+  .bnav-home i { font-size: 25px; }
+  .bnav-home.active { outline: 3px solid var(--amber-50); }
+  /* War room */
+  .war-count { display: inline-block; min-width: 17px; padding: 1px 5px; border-radius: 999px; background: var(--amber-800); color: #fff; font-size: 10.5px; font-weight: 700; text-align: center; margin-left: 4px; }
+  .war-row { display: flex; gap: 11px; align-items: center; padding: 12px; border-bottom: 0.5px solid var(--border-light); cursor: pointer; }
+  .war-row:last-child { border-bottom: none; }
+  .war-ic { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 17px; }
+  .war-t { font-size: 13.5px; font-weight: 500; }
+  .war-sub { font-size: 12px; color: var(--text-secondary); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .war-actions { display: flex; gap: 8px; margin: 0 0 20px; }
+  .war-actions button { flex: 1; }
+  /* Detail attention card */
+  .attn-card { display: flex; gap: 10px; align-items: center; padding: 12px; border: 1px solid; border-radius: 12px; margin-bottom: 12px; background: var(--bg-primary); }
+  .attn-card .grow { flex: 1; min-width: 0; }
+  .attn-card .sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .attn-card i { font-size: 18px; flex-shrink: 0; }
+  /* Notes edit/delete */
+  .note-ic { background: none; border: none; color: var(--text-tertiary); cursor: pointer; padding: 2px 3px; font-size: 14px; flex-shrink: 0; }
+  .note-ic:hover { color: var(--amber-800); }
+  /* Calendar */
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-dow { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); text-align: center; padding: 4px 0; }
+  .cal-day { aspect-ratio: 1; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 13px; cursor: pointer; border: 0.5px solid transparent; }
+  .cal-day:hover { border-color: var(--amber-400); }
+  .cal-day.other { opacity: 0.3; }
+  .cal-day.today { border-color: var(--amber-800); font-weight: 700; }
+  .cal-day.available { background: var(--booked-bg); color: var(--booked-text); font-weight: 500; }
+  .cal-day.busy { background: var(--dead-bg); color: var(--dead-text); font-weight: 500; }
+  .cal-legend { display: flex; gap: 14px; font-size: 11.5px; color: var(--text-secondary); margin-top: 10px; align-items: center; flex-wrap: wrap; }
+  .leg-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; vertical-align: -1px; }
   #pipe-list.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: none; border: none; box-shadow: none; padding: 0; }
   .pipe-card { background: var(--bg-primary); border: 0.5px solid var(--border-light); border-radius: 14px; padding: 12px; cursor: pointer; min-width: 0; }
   .pipe-card:hover { border-color: var(--amber-400); }
@@ -561,18 +593,17 @@
       <span class="nav-name">Gig Collective</span>
     </div>
     <div class="nav-right">
-      <button class="nav-hamburger" id="hbtn" onclick="toggleMenu()" aria-label="Menu" aria-expanded="false">
-        <i class="ti ti-menu-2"></i>
-      </button>
       <div class="nav-avatar" id="avatar-btn" onclick="goProfile()" title="Profile">NR</div>
     </div>
-    <div class="nav-dropdown" id="nav-menu" role="menu">
-      <button class="dd-item" id="nav-discover" onclick="go('discover')" role="menuitem">Discover</button>
-      <button class="dd-item" id="nav-pipeline" onclick="go('pipeline')" role="menuitem">Pipeline</button>
-      <button class="dd-item" id="nav-settings" onclick="go('settings')" role="menuitem">Settings</button>
-      <div class="dd-divider"></div>
-      <button class="dd-item dd-add" onclick="go('add')" role="menuitem"><i class="ti ti-plus"></i> Add venue</button>
-    </div>
+  </nav>
+
+  <!-- Floating island nav: Home is the base of operations, center throne -->
+  <nav class="bnav" aria-label="Primary">
+    <button class="bnav-item" id="tab-pipeline" onclick="go('pipeline')"><i class="ti ti-layout-list"></i><span>Pipeline</span></button>
+    <button class="bnav-item" id="tab-discover" onclick="go('discover')"><i class="ti ti-compass"></i><span>Discover</span></button>
+    <button class="bnav-home active" id="tab-home" onclick="go('home')" title="Home" aria-label="Home"><i class="ti ti-home"></i></button>
+    <button class="bnav-item" id="tab-calendar" onclick="go('calendar')"><i class="ti ti-calendar"></i><span>Calendar</span></button>
+    <button class="bnav-item" id="tab-settings" onclick="go('settings')"><i class="ti ti-settings"></i><span>Settings</span></button>
   </nav>
 
   <!-- HOME -->
@@ -581,16 +612,17 @@
       <div class="page-title" id="home-greeting">Welcome back</div>
       <div style="font-size:14px;color:var(--text-secondary)" id="home-sub">Loading…</div>
     </div>
-    <div class="attn-strip" id="attn-strip" onclick="go('pipeline')" style="display:none">
-      <i class="ti ti-alert-circle"></i>
-      <div class="attn-text"><span id="attn-text-inner"></span></div>
-      <i class="ti ti-chevron-right"></i>
-    </div>
+    <div id="war-needs"></div>
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-label">Active leads</div><div class="stat-val" id="stat-active">0</div><div class="stat-sub">in your pipeline</div></div>
       <div class="stat-card"><div class="stat-label">Booked</div><div class="stat-val" id="stat-booked">0</div><div class="stat-sub">confirmed gigs</div></div>
       <div class="stat-card placeholder"><div class="stat-label">Collective wins</div><div class="stat-val">—</div><div class="stat-sub">coming soon</div></div>
     </div>
+    <div class="war-actions">
+      <button class="btn-primary" onclick="go('add')"><i class="ti ti-plus"></i> Add venue</button>
+      <button class="btn-secondary" onclick="go('discover')"><i class="ti ti-compass"></i> Discover</button>
+    </div>
+    <div id="war-sends"></div>
     <div class="section-label">Collective activity <span class="soon">feature incomplete: coming soon</span></div>
     <div class="card placeholder">
       <div class="feed-item">
@@ -634,8 +666,8 @@
       <div class="page-title" style="margin-bottom:0">Pipeline</div>
       <div style="display:flex;align-items:center;gap:8px">
         <select class="pipe-sort" id="pipe-sort" onchange="pipeSort=this.value;renderPipeline()" title="Sort">
-          <option value="priority">Priority</option>
           <option value="recent">Recent</option>
+          <option value="priority">Priority</option>
           <option value="name">Name</option>
         </select>
         <button class="view-btn" id="view-list" onclick="setPipeView('list')" title="List view"><i class="ti ti-list"></i></button>
@@ -643,8 +675,10 @@
         <button class="view-btn" id="group-btn" onclick="togglePipeGroup()" title="Group by stage"><i class="ti ti-rows"></i></button>
       </div>
     </div>
-    <input class="pipe-search" id="pipe-search" type="search" placeholder="Search venues, stages, notes, conversations…" oninput="pipeQuery=this.value;renderPipeline()">
-    <div class="pipe-filters" id="pipe-filters"></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <input class="pipe-search" id="pipe-search" type="search" placeholder="Search venues, stages, notes, conversations…" style="margin-bottom:0;flex:1" oninput="pipeQuery=this.value;renderPipeline()">
+      <select class="pipe-sort" id="pipe-filter" onchange="pipeFilter=this.value;renderPipeline()" title="Filter by stage"></select>
+    </div>
     <div class="card card-flush" id="pipe-list"></div>
   </div>
 
@@ -796,6 +830,30 @@
 
   </div>
 
+  <!-- CALENDAR -->
+  <div class="screen" id="screen-calendar">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div class="page-title" style="margin-bottom:0">Calendar</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="view-btn" onclick="calShift(-1)" title="Previous month"><i class="ti ti-chevron-left"></i></button>
+        <button class="view-btn" onclick="calToday()" title="Today" style="width:auto;padding:0 10px;font-size:12px">Today</button>
+        <button class="view-btn" onclick="calShift(1)" title="Next month"><i class="ti ti-chevron-right"></i></button>
+      </div>
+    </div>
+    <div style="font-size:16px;font-weight:500;margin-bottom:10px" id="cal-title"></div>
+    <div class="card" style="padding:10px">
+      <div class="cal-grid" id="cal-dow"></div>
+      <div class="cal-grid" id="cal-days"></div>
+    </div>
+    <div class="cal-legend">
+      <span><span class="leg-dot" style="background:var(--booked-bg);border:1px solid var(--booked-text)"></span>Available</span>
+      <span><span class="leg-dot" style="background:var(--dead-bg);border:1px solid var(--dead-text)"></span>Busy</span>
+      <span style="color:var(--text-tertiary)">Tap a day to cycle · clear on third tap</span>
+    </div>
+    <div class="section-label" style="margin-top:18px">Holds &amp; gigs <span class="soon">coming soon</span></div>
+    <div class="card placeholder"><div class="ph-caption">Date holds will land here as tentative blocks, booked gigs as confirmed — synced two-way with your Google Calendar.</div></div>
+  </div>
+
   <!-- SETTINGS -->
   <div class="screen" id="screen-settings">
     <div class="page-title" style="margin-bottom:16px">Settings</div>
@@ -815,7 +873,6 @@
 <script>
 // ── State ──────────────────────────────────────────────
 var currentScreen = 'home';
-var menuOpen = false;
 
 var profile = {
   name: 'Nick Rains', genre: 'Americana / country singer-songwriter',
@@ -871,15 +928,19 @@ var tplKeys = ['outreach','followup','pitch','checkin'];
 var tplLabels = ['Cold outreach','Follow-up','Full pitch','Check-in'];
 
 // ── Navigation ──────────────────────────────────────────
+var TAB_FOR = { home:'home', pipeline:'pipeline', detail:'pipeline', discover:'discover', venue:'discover', calendar:'calendar', settings:'settings' };
+function setActiveTab(screen){
+  document.querySelectorAll('.bnav-item, .bnav-home').forEach(function(b){ b.classList.remove('active'); });
+  var t = TAB_FOR[screen];
+  if (t) { var el = document.getElementById('tab-' + t); if (el) el.classList.add('active'); }
+}
 function go(screen) {
-  closeMenu();
   document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
   document.getElementById('screen-' + screen).classList.add('active');
-  document.querySelectorAll('.dd-item').forEach(function(b){ b.classList.remove('active'); });
-  var navEl = document.getElementById('nav-' + screen);
-  if (navEl) navEl.classList.add('active');
+  setActiveTab(screen);
   document.getElementById('avatar-btn').classList.remove('active');
   currentScreen = screen;
+  if (screen === 'home') renderHome();
   if (screen === 'discover') renderDiscover();
   if (screen === 'pipeline') {
     // Fresh view every visit: filter back to All, search cleared (view type persists).
@@ -887,6 +948,7 @@ function go(screen) {
     var psi = document.getElementById('pipe-search'); if (psi) psi.value = '';
     renderPipeline();
   }
+  if (screen === 'calendar') { renderCalendar(); loadAvail(); }
   if (screen === 'add') renderWizard(1, null, {});
   if (screen === 'profile') { renderMarkets(); renderNotables(); updateProfilePreview(); updateCompleteness(); }
   syncHash(screen);
@@ -921,25 +983,10 @@ function applyRoute(){
 function retryPendingRoute(){ if (pendingRoute) { pendingRoute = false; applyRoute(); } }
 window.addEventListener('hashchange', applyRoute);
 
-function toggleMenu() {
-  menuOpen = !menuOpen;
-  document.getElementById('nav-menu').classList.toggle('open', menuOpen);
-  document.getElementById('hbtn').setAttribute('aria-expanded', String(menuOpen));
-}
-function closeMenu() {
-  menuOpen = false;
-  document.getElementById('nav-menu').classList.remove('open');
-  document.getElementById('hbtn').setAttribute('aria-expanded', 'false');
-}
-document.addEventListener('click', function(e) {
-  if (menuOpen && !e.target.closest('.nav')) closeMenu();
-});
-
 function goProfile() {
-  closeMenu();
   document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
   document.getElementById('screen-profile').classList.add('active');
-  document.querySelectorAll('.dd-item').forEach(function(b){ b.classList.remove('active'); });
+  setActiveTab('profile');
   document.getElementById('avatar-btn').classList.add('active');
   currentScreen = 'profile';
   renderMarkets(); renderNotables(); updateProfilePreview(); updateCompleteness();
@@ -985,7 +1032,7 @@ function renderPipeline() {
   // Flat list, priority-ordered: follow-up-due first, then hottest stage, then
   // most recent activity. Search + stage filter chips above. (Deeper view-type
   // exploration is with the designer.)
-  renderPipeFilters();
+  renderPipeFilterSelect();
   var q = (pipeQuery || '').toLowerCase();
   var rows = pipeline.filter(function(p){
     if (pipeFilter !== 'all' && p.s !== pipeFilter) return false;
@@ -995,14 +1042,14 @@ function renderPipeline() {
       + (p.activity||[]).map(function(a){ return a.text; }).join(' ');
     return blob.toLowerCase().indexOf(q) >= 0;
   });
-  if (pipeSort === 'recent') rows.sort(function(a,b){ return a.days - b.days; });
+  if (pipeSort === 'priority') rows.sort(function(a,b){ return priorityScore(b) - priorityScore(a); });
   else if (pipeSort === 'name') rows.sort(function(a,b){ return a.venue.localeCompare(b.venue); });
-  else rows.sort(function(a,b){ return priorityScore(b) - priorityScore(a); });
+  else rows.sort(function(a,b){ return a.days - b.days; });
   function dLabel(d){ return d===0 ? 'today' : (d===1 ? 'yesterday' : d + 'd ago'); }
   function metaFor(p){
     return followupDue(p)
       ? '<div style="font-size:11px;font-weight:500;color:var(--pitched-text)">Follow up</div><div class="pipe-date">' + (p.days-7) + 'd overdue</div>'
-      : (p.s==='talks' && p.days>=1
+      : (needsReply(p)
         ? '<div style="font-size:11px;font-weight:500;color:var(--talks-text)">Reply waiting</div><div class="pipe-date">' + dLabel(p.days) + '</div>'
         : '<div class="pipe-date">' + dLabel(p.days) + '</div>');
   }
@@ -1014,12 +1061,10 @@ function renderPipeline() {
   if (gb) gb.classList.toggle('on', pipeGroup);
   var gridBtn = document.getElementById('view-grid'); if (gridBtn) gridBtn.classList.toggle('disabled', pipeGroup);
   var sortSel = document.getElementById('pipe-sort'); if (sortSel) { sortSel.value = pipeSort; sortSel.style.display = pipeGroup ? 'none' : ''; }
-  updateAttnBadge();
   if (!rows.length) { list.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">Nothing matches.</p>'; return; }
   function rowHtml(p){
-    var dot = p.unread ? '<span class="unread-dot"></span>' : '';
     return '<div class="pipe-item" onclick="openDetail(' + p.id + ')">'
-    + '<div class="pipe-icon" style="position:relative"><i class="ti ti-building-store"></i>' + dot + '</div>'
+    + '<div class="pipe-icon"><i class="ti ti-building-store"></i></div>'
     + '<div class="pipe-info"><div class="pipe-venue">' + esc(p.venue) + ' <span class="badge badge-' + p.s + '" style="font-size:10px;padding:2px 7px">' + statusLabel[p.s] + '</span></div><div class="pipe-contact">' + esc(p.contact) + ' · ' + esc(p.city) + (p.state ? ', ' + esc(p.state) : '') + '</div></div>'
     + '<div class="pipe-meta">' + metaFor(p) + '</div>'
     + '</div>';
@@ -1044,8 +1089,7 @@ function renderPipeline() {
   }
   if (pipeView === 'grid') {
     list.innerHTML = rows.map(function(p){
-      var dot = p.unread ? '<span class="unread-dot" style="top:8px;right:8px"></span>' : '';
-      return '<div class="pipe-card" style="position:relative" onclick="openDetail(' + p.id + ')">' + dot
+      return '<div class="pipe-card" onclick="openDetail(' + p.id + ')">'
         + '<div class="pc-venue">' + esc(p.venue) + '</div>'
         + '<div class="pc-sub">' + esc(p.contact) + ' · ' + esc(p.city) + '</div>'
         + '<div class="pc-meta"><span class="badge badge-' + p.s + '" style="font-size:10px;padding:2px 7px">' + statusLabel[p.s] + '</span><span class="pipe-date">' + dLabel(p.days) + '</span></div>'
@@ -1055,7 +1099,7 @@ function renderPipeline() {
   }
   list.innerHTML = rows.map(rowHtml).join('');
 }
-var pipeSort = 'priority';
+var pipeSort = 'recent';
 function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
 function lsSet(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
 var pipeView = lsGet('gc_pipe_view') || 'list';
@@ -1065,52 +1109,80 @@ function togglePipeGroup(){ pipeGroup = !pipeGroup; lsSet('gc_pipe_group', pipeG
 function isGroupCollapsed(st){ return lsGet('gc_pipe_collapsed_' + st) === '1'; }
 function toggleGroupCollapse(st){ lsSet('gc_pipe_collapsed_' + st, isGroupCollapsed(st) ? '0' : '1'); renderPipeline(); }
 
-// ── Attention: what needs you right now ──
-// unseen inbound reply · follow-up overdue · scheduled send awaiting review
-function needsAttention(p){ return !!p.unread || followupDue(p) || (p.sched && p.sched.status==='ready'); }
-function computeUnread(p){
-  if (!p.lastInboundTs) { p.unread = false; return; }
-  var seen = Number(lsGet('gc_seen_' + p.uuid) || 0);
-  p.unread = p.lastInboundTs > seen;
+// ── Attention: what needs you right now (from DATA, not localStorage) ──
+// "Awaiting your reply" = their last word came after yours. Sending from Gmail
+// clears it automatically (the worker logs your email_out).
+function needsReply(p){
+  if (p.s==='dead' || p.s==='passed') return false;
+  return !!p.lastInboundTs && p.lastInboundTs > (p.lastOutboundTs || 0);
 }
-function markSeen(p){ if (p && p.uuid) { lsSet('gc_seen_' + p.uuid, String(Date.now())); p.unread = false; updateAttnBadge(); } }
-function updateAttnBadge(){
-  var n = pipeline.filter(needsAttention).length;
-  var btn = document.getElementById('hbtn'); if (!btn) return;
-  var b = btn.querySelector('.attn-badge');
-  if (!n) { if (b) b.remove(); return; }
-  if (!b) { b = document.createElement('span'); b.className = 'attn-badge'; btn.appendChild(b); }
-  b.textContent = n > 9 ? '9+' : String(n);
+function lastInboundPreview(p){
+  for (var i=0;i<(p.activity||[]).length;i++){
+    var a = p.activity[i];
+    if (a.kind==='email_in') return (a.summary || a.text || '').slice(0, 90);
+  }
+  return '';
 }
-// Urgency model (designer-spec'd): who needs attention right now?
+// The war room: Home leads with what needs you, then the scheduled queue.
+function renderHome(){
+  var el = document.getElementById('war-needs'); if (!el) return;
+  var items = [];
+  pipeline.forEach(function(p){
+    if (p.sched && p.sched.status==='ready') items.push({p:p, ic:'ti-bell-ringing', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Send awaiting your review', sub:'Auto-send is off — review & fire'});
+    else if (needsReply(p)) items.push({p:p, ic:'ti-mail', c:'var(--talks-text)', bg:'var(--talks-bg)', t:((p.contact||'').split(' ')[0]||'They') + ' replied — your move', sub:lastInboundPreview(p)});
+    else if (followupDue(p)) items.push({p:p, ic:'ti-clock-exclamation', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Follow-up due · ' + p.days + 'd quiet', sub:'Nudge them or schedule it'});
+  });
+  var html = '<div class="section-label">Needs you' + (items.length ? ' <span class="war-count">' + items.length + '</span>' : '') + '</div>';
+  if (!items.length) {
+    html += '<div class="card" style="margin-bottom:20px;font-size:13px;color:var(--text-secondary)"><i class="ti ti-circle-check" style="color:var(--booked-text);margin-right:6px"></i>All clear — nothing waiting on you.</div>';
+  } else {
+    html += '<div class="card card-flush" style="margin-bottom:20px">' + items.map(function(it){
+      return '<div class="war-row" onclick="openDetail(' + it.p.id + ')">'
+        + '<div class="war-ic" style="background:' + it.bg + ';color:' + it.c + '"><i class="ti ' + it.ic + '"></i></div>'
+        + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(it.p.venue) + ' — ' + it.t + '</div>'
+        + (it.sub ? '<div class="war-sub">' + esc(it.sub) + '</div>' : '') + '</div>'
+        + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
+    }).join('') + '</div>';
+  }
+  el.innerHTML = html;
+  var sends = pipeline.filter(function(p){ return p.sched && p.sched.status==='scheduled'; });
+  var se = document.getElementById('war-sends');
+  if (se) se.innerHTML = sends.length
+    ? '<div class="section-label">Scheduled sends</div><div class="card card-flush" style="margin-bottom:20px">' + sends.map(function(p){
+        return '<div class="war-row" onclick="openDetail(' + p.id + ')">'
+          + '<div class="war-ic" style="background:var(--bg-secondary);color:var(--amber-800)"><i class="ti ti-clock-hour-4"></i></div>'
+          + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(p.venue) + '</div><div class="war-sub">Sends ' + fmtWhen(p.sched.send_at) + ' · cancels if they reply</div></div>'
+          + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
+      }).join('') + '</div>'
+    : '';
+}
+// Urgency model: who needs attention right now?
 function priorityScore(p) {
-  if (p.s === 'talks' && p.days >= 1) return 100 + p.days; // they replied; you haven't moved
+  if (p.sched && p.sched.status === 'ready') return 120;   // send awaiting review
+  if (needsReply(p))                  return 100 + p.days; // their word is the last word
   if (followupDue(p))                 return 80 + p.days;  // pitched, gone quiet
   if (p.s === 'pitched')              return 60 + p.days;  // clock running
-  if (p.s === 'talks')                return 55;           // fresh reply today
+  if (p.s === 'talks')                return 55;
   if (p.s === 'lead' || p.s === 'hold') return 40 + p.days;
   if (p.s === 'booked')               return 5;
   if (p.s === 'played')               return 3;
   return -1; // passed, dead
 }
 var pipeQuery = '', pipeFilter = 'all';
-function renderPipeFilters(){
-  var el = document.getElementById('pipe-filters'); if(!el) return;
+function renderPipeFilterSelect(){
+  var el = document.getElementById('pipe-filter'); if(!el) return;
   var present = {}; pipeline.forEach(function(p){ present[p.s] = (present[p.s]||0) + 1; });
   var order = ['talks','hold','pitched','lead','booked','played','passed','dead'].filter(function(s){ return present[s]; });
-  var html = '<button class="pf-chip' + (pipeFilter==='all'?' on':'') + '" onclick="pipeFilter=\'all\';renderPipeline()">All ' + pipeline.length + '</button>';
-  order.forEach(function(s){
-    // Stage-colored chips: instant visual priority read.
-    html += '<button class="pf-chip' + (pipeFilter===s?' on':'') + '" style="background:var(--' + s + '-bg);color:var(--' + s + '-text)" onclick="pipeFilter=\'' + s + '\';renderPipeline()">' + statusLabel[s] + ' ' + present[s] + '</button>';
-  });
+  var html = '<option value="all">All · ' + pipeline.length + '</option>';
+  order.forEach(function(s){ html += '<option value="' + s + '">' + statusLabel[s] + ' · ' + present[s] + '</option>'; });
   el.innerHTML = html;
+  el.value = pipeFilter;
 }
 
 // ── Pipeline detail ─────────────────────────────────────
 function openDetail(id) {
   var p = pipeline[id];
   currentDetailUuid = p ? p.uuid : null;
-  if (p) markSeen(p);
   var sts = stagesFor(p);
   var stageIdx = sts.indexOf(p.s);
   var stageDots = sts.map(function(s,i){
@@ -1128,6 +1200,19 @@ function openDetail(id) {
   // Conversation = the thread with the venue (both directions, prominent).
   // System events stay grey lines. Notes live in their own section below.
   var first = (p.contact||'').split(' ')[0] || 'venue';
+
+  // What needs you, at the TOP of the hierarchy — obvious, with the action.
+  var attnCard = '';
+  if (p.sched && p.sched.status === 'ready') {
+    attnCard = '<div class="attn-card" style="border-color:var(--pitched-text)"><i class="ti ti-bell-ringing" style="color:var(--pitched-text)"></i>'
+      + '<div class="grow"><strong>Send awaiting your review</strong><div class="sub">Auto-send is off — review the draft below, then fire</div></div>'
+      + '<button class="btn-primary btn-sm" onclick="jumpToDraft(' + id + ')">Review</button></div>';
+  } else if (needsReply(p)) {
+    attnCard = '<div class="attn-card" style="border-color:var(--talks-text)"><i class="ti ti-mail" style="color:var(--talks-text)"></i>'
+      + '<div class="grow"><strong>' + esc(first) + ' replied — your move</strong>'
+      + (lastInboundPreview(p) ? '<div class="sub">' + esc(lastInboundPreview(p)) + '</div>' : '') + '</div>'
+      + '<button class="btn-primary btn-sm" onclick="jumpToDraft(' + id + ')">Respond</button></div>';
+  }
   var convo = p.activity.filter(function(a){ return a.kind!=='note'; });
   var notes = p.activity.filter(function(a){ return a.kind==='note'; });
   var actHtml = convo.map(function(a){
@@ -1149,7 +1234,14 @@ function openDetail(id) {
       + '<div class="act-line"><span class="act-action-text">' + esc(a.text) + '</span><span class="act-time">' + a.time + '</span></div></div>';
   }).join('') || '<p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">No conversation yet — emails with ' + esc(first) + ' appear here automatically.</p>';
   var notesHtml = notes.map(function(a){
-    return '<div class="note-item"><div class="act-ctx">' + esc(a.text) + '</div><div class="activity-time">' + a.time + '</div></div>';
+    if (a.id && notesEditing[a.id]) {
+      return '<div class="note-item"><input class="note-input" style="margin:0;width:100%" value="' + esc(a.text) + '" onkeydown="saveNoteEdit(event,\'' + a.id + '\',' + id + ')" autofocus></div>';
+    }
+    var icons = a.id
+      ? '<button class="note-ic" onclick="event.stopPropagation();startNoteEdit(\'' + a.id + '\',' + id + ')" title="Edit"><i class="ti ti-pencil"></i></button>'
+        + '<button class="note-ic" onclick="event.stopPropagation();deleteNote(\'' + a.id + '\',' + id + ')" title="Delete"><i class="ti ti-trash"></i></button>'
+      : '';
+    return '<div class="note-item"><div style="display:flex;gap:6px;align-items:flex-start"><div style="flex:1;min-width:0"><div class="act-ctx">' + esc(a.text) + '</div><div class="activity-time">' + a.time + '</div></div>' + icons + '</div></div>';
   }).join('');
 
   // Slice B: schedule the draft. One pending send per entry; the worker fires it
@@ -1235,6 +1327,7 @@ function openDetail(id) {
     + (stageIdx>=0 ? '<div class="stage-track" style="margin-bottom:20px">' + stageDots + '</div>' : '')
     + wonBanner
     + statusActions
+    + attnCard
     + '<div class="section-label">Contact</div>'
     + '<div class="card card-flush" style="margin-bottom:12px">'
     + '<div class="contact-row"><div class="contact-av">' + p.contact.split(' ').map(function(n){return n[0];}).join('') + '</div>'
@@ -1360,6 +1453,97 @@ function legacySelectFollowup(id, val) {
   selectedFollowup[id] = val;
   document.querySelectorAll('#fu-chips-' + id + ' .fu-chip').forEach(function(c){ c.classList.toggle('selected', c.textContent===val); });
 }
+// ── Calendar (Slice D start): availability painting ──
+var calMonth = (function(){ var d = new Date(); d.setDate(1); return d; })();
+var availMap = {};
+function isoDay(y, m, d){ return y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0'); }
+function calShift(n){ calMonth.setMonth(calMonth.getMonth() + n); renderCalendar(); loadAvail(); }
+function calToday(){ calMonth = new Date(); calMonth.setDate(1); renderCalendar(); loadAvail(); }
+function renderCalendar(){
+  var y = calMonth.getFullYear(), m = calMonth.getMonth();
+  setText('cal-title', calMonth.toLocaleDateString(undefined, { month:'long', year:'numeric' }));
+  var dow = document.getElementById('cal-dow');
+  if (dow && !dow.innerHTML) dow.innerHTML = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(function(d){ return '<div class="cal-dow">' + d + '</div>'; }).join('');
+  var firstIdx = new Date(y, m, 1).getDay();
+  var dim = new Date(y, m + 1, 0).getDate();
+  var dimPrev = new Date(y, m, 0).getDate();
+  var today = new Date(); var todayIso = isoDay(today.getFullYear(), today.getMonth(), today.getDate());
+  var cells = '';
+  for (var i = 0; i < 42; i++) {
+    var dnum, cy = y, cm = m, other = false;
+    if (i < firstIdx) { dnum = dimPrev - firstIdx + 1 + i; cm = m - 1; other = true; }
+    else if (i - firstIdx + 1 > dim) { dnum = i - firstIdx + 1 - dim; cm = m + 1; other = true; }
+    else dnum = i - firstIdx + 1;
+    var norm = new Date(cy, cm, dnum);
+    var iso = isoDay(norm.getFullYear(), norm.getMonth(), norm.getDate());
+    var cls = 'cal-day' + (other ? ' other' : '') + (iso === todayIso ? ' today' : '') + (availMap[iso] ? ' ' + availMap[iso] : '');
+    cells += '<div class="' + cls + '" onclick="cycleAvail(\'' + iso + '\')">' + dnum + '</div>';
+    if (i >= firstIdx + dim - 1 && (i + 1) % 7 === 0) break; // stop at the last full week
+  }
+  var days = document.getElementById('cal-days'); if (days) days.innerHTML = cells;
+}
+function loadAvail(){
+  var y = calMonth.getFullYear(), m = calMonth.getMonth();
+  var start = isoDay(y, m, 1);
+  var endD = new Date(y, m + 1, 7);
+  var end = isoDay(endD.getFullYear(), endD.getMonth(), endD.getDate());
+  var startD = new Date(y, m, -6);
+  var startPad = isoDay(startD.getFullYear(), startD.getMonth(), startD.getDate());
+  sb.from('availability').select('day,status').gte('day', startPad).lte('day', end).then(function(r){
+    if (r.error) { showToast('Calendar load failed: ' + r.error.message, true); return; }
+    (r.data||[]).forEach(function(x){ availMap[x.day] = x.status; });
+    renderCalendar();
+  });
+}
+function cycleAvail(iso){
+  var cur = availMap[iso];
+  var next = !cur ? 'available' : (cur === 'available' ? 'busy' : null);
+  if (next) {
+    availMap[iso] = next;
+    sb.from('availability').upsert({ artist_id: ME, day: iso, status: next }).then(function(r){
+      if (r.error) { delete availMap[iso]; renderCalendar(); showToast('Could not save: ' + r.error.message, true); }
+    });
+  } else {
+    delete availMap[iso];
+    sb.from('availability').delete().eq('artist_id', ME).eq('day', iso).then(function(r){
+      if (r.error) showToast('Could not clear: ' + r.error.message, true);
+    });
+  }
+  renderCalendar();
+}
+
+function jumpToDraft(id){
+  var el = document.getElementById('tpl-body-' + id) || document.getElementById('sched-edit-' + id) || document.querySelector('.locked-body') || document.querySelector('.sched-card');
+  if (el) { el.scrollIntoView({ behavior:'smooth', block:'center' }); if (el.focus) try { el.focus({ preventScroll:true }); } catch(e){} }
+}
+
+// ── Notes: edit + delete ──
+var notesEditing = {};
+function startNoteEdit(actId, id){ notesEditing[actId] = true; openDetail(id); }
+function saveNoteEdit(e, actId, id){
+  if (e.key === 'Escape') { delete notesEditing[actId]; openDetail(id); return; }
+  if (e.key !== 'Enter') return;
+  var val = e.target.value.trim();
+  if (!val) { showToast('Note is empty — use delete instead', true); return; }
+  sb.from('activities').update({ body: val }).eq('id', actId).then(function(r){
+    if (r.error) { showToast('Could not save note: ' + r.error.message, true); return; }
+    var p = pipeline[id];
+    (p.activity||[]).forEach(function(a){ if (a.id === actId) a.text = val; });
+    delete notesEditing[actId];
+    openDetail(id);
+    showToast('Note updated');
+  });
+}
+function deleteNote(actId, id){
+  sb.from('activities').delete().eq('id', actId).then(function(r){
+    if (r.error) { showToast('Could not delete: ' + r.error.message, true); return; }
+    var p = pipeline[id];
+    p.activity = (p.activity||[]).filter(function(a){ return a.id !== actId; });
+    openDetail(id);
+    showToast('Note deleted');
+  });
+}
+
 function addNote(e, id) {
   if (e.key==='Enter' && e.target.value.trim()) {
     var text = e.target.value.trim();
@@ -1368,8 +1552,9 @@ function addNote(e, id) {
     p.days = 0;
     openDetail(id);
     sb.from('activities').insert({pipeline_entry_id:p.uuid, kind:'note', body:text, source:'manual'}).then(function(r){
-      if (r.error) alert('Could not save note: ' + r.error.message);
-      else sb.from('pipeline_entries').update({last_activity_at:new Date().toISOString()}).eq('id', p.uuid);
+      if (r.error) { showToast('Could not save note: ' + r.error.message, true); return; }
+      sb.from('pipeline_entries').update({last_activity_at:new Date().toISOString()}).eq('id', p.uuid).then(function(){});
+      loadPipeline(); // refresh so the new note gets its id (edit/delete)
     });
   }
 }
@@ -1765,22 +1950,19 @@ function loadPipeline(){
 }
 function loadActivities(ids){
   sb.from('activities').select('*').in('pipeline_entry_id',ids).order('created_at',{ascending:false}).then(function(r){
-    var byEntry={}, lastIn={};
+    var byEntry={}, lastIn={}, lastOut={};
     (r.data||[]).forEach(function(a){
-      (byEntry[a.pipeline_entry_id]=byEntry[a.pipeline_entry_id]||[]).push({kind:a.kind, dot:dotFor(a.kind), text:a.body||'', time:relTime(a.created_at), summary:a.summary||''});
-      if (a.kind==='email_in') {
-        var t = new Date(a.created_at).getTime();
-        if (!lastIn[a.pipeline_entry_id] || t > lastIn[a.pipeline_entry_id]) lastIn[a.pipeline_entry_id] = t;
-      }
+      (byEntry[a.pipeline_entry_id]=byEntry[a.pipeline_entry_id]||[]).push({id:a.id, kind:a.kind, dot:dotFor(a.kind), text:a.body||'', time:relTime(a.created_at), summary:a.summary||''});
+      var t = new Date(a.created_at).getTime();
+      if (a.kind==='email_in'  && (!lastIn[a.pipeline_entry_id]  || t > lastIn[a.pipeline_entry_id]))  lastIn[a.pipeline_entry_id]  = t;
+      if (a.kind==='email_out' && (!lastOut[a.pipeline_entry_id] || t > lastOut[a.pipeline_entry_id])) lastOut[a.pipeline_entry_id] = t;
     });
     pipeline.forEach(function(p){
       p.activity = byEntry[p.uuid]||[];
       p.lastInboundTs = lastIn[p.uuid] || 0;
-      computeUnread(p);
-      // Viewing it right now = seen.
-      if (currentScreen==='detail' && currentDetailUuid===p.uuid && p.unread) markSeen(p);
+      p.lastOutboundTs = lastOut[p.uuid] || 0;
     });
-    updateAttnBadge();
+    renderHome();
     if (currentScreen==='pipeline') renderPipeline();
     rerenderOpenDetail();
   });
@@ -1790,7 +1972,7 @@ function loadScheduled(ids){
     var byEntry={};
     (r.data||[]).forEach(function(m){ if(!byEntry[m.pipeline_entry_id]) byEntry[m.pipeline_entry_id]=m; });
     pipeline.forEach(function(p){ p.sched = byEntry[p.uuid]||null; });
-    updateAttnBadge();
+    renderHome();
     if (currentScreen==='pipeline') renderPipeline();
     rerenderOpenDetail();
   });
@@ -1805,16 +1987,11 @@ function rerenderOpenDetail(){
 function updateHomeStats(){
   var active = pipeline.filter(function(p){ return ['lead','pitched','talks','hold','outreach','waiting','followup'].indexOf(p.s)>=0; }).length;
   var won = pipeline.filter(function(p){ return p.s==='booked'||p.s==='played'||p.s==='won'; }).length;
-  var due = pipeline.filter(followupDue);
   setText('stat-active', active);
   setText('stat-booked', won);
   setText('home-greeting', 'Welcome back' + (profile.name ? ', ' + profile.name.split(' ')[0] : ''));
   setText('home-sub', active===0 ? 'No active leads yet — add a venue to start' : (active + ' active ' + (active===1?'lead':'leads') + ' in your pipeline'));
-  var strip=document.getElementById('attn-strip');
-  if(strip){
-    if(due.length){ strip.style.display='flex'; setText('attn-text-inner', 'Follow-up due: ' + due[0].venue); }
-    else strip.style.display='none';
-  }
+  renderHome();
 }
 
 // ── Status changes ──────────────────────────────────────
