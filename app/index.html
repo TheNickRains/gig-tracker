@@ -1157,9 +1157,8 @@ function captureGoogleToken(session){
   var rt = session && session.provider_refresh_token;
   if(!rt || !session.user) return;  // no refresh token surfaced this round
   try { sessionStorage.removeItem('gc_connecting'); } catch(e){}
-  sb.from('google_connections').upsert({ artist_id: session.user.id, refresh_token: rt, scope: GOOGLE_SCOPES, updated_at: new Date().toISOString() }).then(function(r){
+  sb.rpc('store_google_token', { p_refresh_token: rt, p_scope: GOOGLE_SCOPES }).then(function(r){
     if(r.error){ alert('Connected to Google, but saving the connection failed: ' + r.error.message); return; }
-    sb.from('artists').update({ gmail_connected: true }).eq('id', session.user.id);
     setGoogleConnectedUI(true);
     alert('Gmail & Calendar connected ✓');
   });
