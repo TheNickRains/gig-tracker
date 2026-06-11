@@ -44,6 +44,14 @@
     --waiting-bg: #E6F1FB; --waiting-text: #185FA5;
     --outreach-bg: #F1EFE8; --outreach-text: #5F5E5A;
     --dead-bg: #FCEBEB; --dead-text: #A32D2D;
+    /* Staging spine */
+    --lead-bg: #F1EFE8; --lead-text: #5F5E5A;
+    --pitched-bg: #FAEEDA; --pitched-text: #854F0B;
+    --talks-bg: #E6F1FB; --talks-text: #185FA5;
+    --hold-bg: #F0EAFB; --hold-text: #6D3FA8;
+    --booked-bg: #EAF3DE; --booked-text: #3B6D11;
+    --played-bg: #E7F0ED; --played-text: #1F6D5A;
+    --passed-bg: #EFE9E4; --passed-text: #87655B;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -155,6 +163,13 @@
   .badge-waiting { background: var(--waiting-bg); color: var(--waiting-text); }
   .badge-outreach { background: var(--outreach-bg); color: var(--outreach-text); }
   .badge-dead { background: var(--dead-bg); color: var(--dead-text); }
+  .badge-lead { background: var(--lead-bg); color: var(--lead-text); }
+  .badge-pitched { background: var(--pitched-bg); color: var(--pitched-text); }
+  .badge-talks { background: var(--talks-bg); color: var(--talks-text); }
+  .badge-hold { background: var(--hold-bg); color: var(--hold-text); }
+  .badge-booked { background: var(--booked-bg); color: var(--booked-text); }
+  .badge-played { background: var(--played-bg); color: var(--played-text); }
+  .badge-passed { background: var(--passed-bg); color: var(--passed-text); }
   .badge-hard { background: var(--waiting-bg); color: var(--waiting-text); }
   .badge-soft { background: var(--outreach-bg); color: var(--outreach-text); }
   /* "coming soon" marker for features we'll build by using the app */
@@ -502,7 +517,7 @@
     </div>
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-label">Active leads</div><div class="stat-val" id="stat-active">0</div><div class="stat-sub">in your pipeline</div></div>
-      <div class="stat-card"><div class="stat-label">Booked</div><div class="stat-val" id="stat-booked">0</div><div class="stat-sub">marked won</div></div>
+      <div class="stat-card"><div class="stat-label">Booked</div><div class="stat-val" id="stat-booked">0</div><div class="stat-sub">confirmed gigs</div></div>
       <div class="stat-card placeholder"><div class="stat-label">Collective wins</div><div class="stat-val">—</div><div class="stat-sub">coming soon</div></div>
     </div>
     <div class="section-label">Collective activity <span class="soon">feature incomplete: coming soon</span></div>
@@ -739,10 +754,16 @@ var cities = {};
 
 var pipeline = [];
 
-var statusLabel = {followup:'Follow up',waiting:'Waiting',outreach:'Outreach',won:'Won',dead:'Dead end'};
-var statusOrder = {followup:0,waiting:1,outreach:2,won:3,dead:4};
-var stages = ['outreach','waiting','followup','won'];
-var stageNames = ['Outreach','Waiting','Follow up','Won'];
+// Staging spine. Happy path: lead → pitched → talks → hold (hard ticket only) →
+// booked → played. Exits: passed (recyclable no — fair game to circle back) and
+// dead (terminal — never resurface). Follow-up is an ACTION (slice B), not a stage.
+var statusLabel = {lead:'Lead',pitched:'Pitched',talks:'In talks',hold:'Hold',booked:'Booked',played:'Played',passed:'Passed',dead:'Dead end',
+                   followup:'Follow up',waiting:'Waiting',outreach:'Outreach',won:'Won'}; // legacy keys kept until migration 010 runs
+var statusOrder = {talks:0,hold:1,pitched:2,lead:3,booked:4,played:5,passed:6,dead:7,
+                   followup:0,waiting:0,outreach:3,won:4};
+var happyPath = ['lead','pitched','talks','hold','booked','played'];
+function stagesFor(p){ return p.t==='hard' ? happyPath : happyPath.filter(function(s){ return s!=='hold'; }); }
+function followupDue(p){ return p.s==='pitched' && p.days>=7; }
 
 var softTypes = ['Bar / Pub','Coffee shop','Restaurant','Hotel bar','Winery / Brewery','Casino floor','Festival stage','Other'];
 var hardTypes = ['Listening room','Theater','Concert hall','Performing arts center','Music club (ticketed)','Other'];
@@ -845,7 +866,7 @@ function renderPipeline() {
   }
   var sorted = pipeline.slice().sort(function(a,b){ return statusOrder[a.s]-statusOrder[b.s]; });
   document.getElementById('pipe-list').innerHTML = sorted.map(function(p){
-    var alert = p.s==='followup' ? '<i class="ti ti-alert-circle" style="font-size:13px;color:var(--followup-text)"></i>' : '';
+    var alert = followupDue(p) ? '<i class="ti ti-alert-circle" style="font-size:13px;color:var(--pitched-text)"></i>' : '';
     return '<div class="pipe-item" onclick="openDetail(' + p.id + ')">'
     + '<div class="pipe-icon"><i class="ti ti-building-store"></i></div>'
     + '<div class="pipe-info"><div class="pipe-venue">' + p.venue + alert + '</div><div class="pipe-contact">' + p.contact + ' · ' + p.city + ', ' + p.state + '</div></div>'
@@ -858,14 +879,15 @@ function renderPipeline() {
 function openDetail(id) {
   var p = pipeline[id];
   currentDetailUuid = p ? p.uuid : null;
-  var stageIdx = stages.indexOf(p.s);
-  var stageDots = stages.map(function(s,i){
+  var sts = stagesFor(p);
+  var stageIdx = sts.indexOf(p.s);
+  var stageDots = sts.map(function(s,i){
     var cls = i<stageIdx ? 'done' : (i===stageIdx ? 'current' : '');
     var inner = i<stageIdx ? '<i class="ti ti-check"></i>' : '';
-    return '<div class="stage-step"><div class="stage-dot ' + cls + '">' + inner + '</div><div class="stage-label' + (i===stageIdx?' current':'') + '">' + stageNames[i] + '</div></div>';
+    return '<div class="stage-step"><div class="stage-dot ' + cls + '">' + inner + '</div><div class="stage-label' + (i===stageIdx?' current':'') + '">' + statusLabel[s] + '</div></div>';
   }).join('');
 
-  if (!activeTpl[id]) activeTpl[id] = p.s==='outreach' ? 'outreach' : (p.s==='waiting'||p.s==='followup' ? 'followup' : 'checkin');
+  if (!activeTpl[id]) activeTpl[id] = (p.s==='lead'||p.s==='outreach') ? 'outreach' : ((p.s==='pitched'||p.s==='talks'||p.s==='waiting'||p.s==='followup') ? 'followup' : 'checkin');
 
   var tplTabsHtml = tplKeys.map(function(k,i){
     return '<div class="tpl-tab' + (activeTpl[id]===k?' active':'') + '" onclick="switchTpl(' + id + ',\'' + k + '\')">' + tplLabels[i] + '</div>';
@@ -888,14 +910,14 @@ function openDetail(id) {
     return '<div class="fu-chip' + (selectedFollowup[id]===d?' selected':'') + '" onclick="selectFollowup(' + id + ',\'' + d + '\')">' + d + '</div>';
   }).join('');
 
-  var wonBanner = p.s==='won' ? '<div class="won-banner"><i class="ti ti-trophy"></i><div><div class="won-banner-title">Booked</div><div class="won-banner-sub">' + p.venue + '</div></div></div>' : '';
+  var wonBanner = (p.s==='booked'||p.s==='played'||p.s==='won') ? '<div class="won-banner"><i class="ti ti-' + (p.s==='played'?'music':'trophy') + '"></i><div><div class="won-banner-title">' + (p.s==='played'?'Played':'Booked') + '</div><div class="won-banner-sub">' + p.venue + '</div></div></div>' : '';
 
-  var allStatuses = ['outreach','waiting','followup','won','dead'];
+  var allStatuses = stagesFor(p).concat(['passed','dead']);
   var statusActions = '<div class="section-label">Move stage</div><div class="card" style="margin-bottom:12px"><div class="followup-chips">'
     + allStatuses.map(function(st){ return '<div class="fu-chip' + (p.s===st?' selected':'') + '" onclick="setStatus(' + id + ',\'' + st + '\')">' + statusLabel[st] + '</div>'; }).join('')
     + '</div></div>';
 
-  var tplSection = (p.s!=='won'&&p.s!=='dead') ? (
+  var tplSection = (p.s!=='passed'&&p.s!=='dead') ? (
     '<div class="section-label" style="margin-top:4px">Outreach templates</div>'
     + '<div class="card" style="margin-bottom:12px">'
     + '<div class="tpl-tabs" id="tpl-tabs-' + id + '">' + tplTabsHtml + '</div>'
@@ -915,7 +937,7 @@ function openDetail(id) {
     + '<div class="detail-header"><div class="detail-icon"><i class="ti ti-building-store"></i></div>'
     + '<div><div class="detail-venue">' + p.venue + '</div><div class="detail-meta">' + p.vtype + ' · ' + p.city + ', ' + p.state + ' · ' + p.pay + '</div>'
     + '<span class="badge badge-' + p.s + '" style="margin-top:6px">' + statusLabel[p.s] + '</span></div></div>'
-    + (p.s!=='won'&&p.s!=='dead' ? '<div class="stage-track" style="margin-bottom:20px">' + stageDots + '</div>' : '')
+    + (stageIdx>=0 ? '<div class="stage-track" style="margin-bottom:20px">' + stageDots + '</div>' : '')
     + wonBanner
     + statusActions
     + '<div class="section-label">Contact</div>'
@@ -1332,7 +1354,7 @@ function loadVenues(){
 
 function loadPipeline(){
   sb.from('pipeline_entries')
-    .select('id,status,followup_date,last_activity_at,created_at, venue:venues(name,city,state,venue_type,pay_range), contact:contacts(name,title,email,phone)')
+    .select('id,status,followup_date,last_activity_at,created_at, venue:venues(name,city,state,venue_type,pay_range,ticket_type), contact:contacts(name,title,email,phone)')
     .order('last_activity_at',{ascending:false}).then(function(r){
       if(r.error){ console.error('loadPipeline', r.error); return; }
       var rows=r.data||[];
@@ -1340,7 +1362,7 @@ function loadPipeline(){
         var v=e.venue||{}, c=e.contact||{};
         return {id:i, uuid:e.id, venue:v.name||'(unknown venue)', city:v.city||'', state:v.state||'',
                 contact:c.name||'(no contact)', title:c.title||'', email:c.email||'', phone:c.phone||'',
-                vtype:v.venue_type||'', pay:v.pay_range||'—', s:e.status||'outreach', days:daysAgo(e.last_activity_at), activity:[]};
+                vtype:v.venue_type||'', pay:v.pay_range||'—', t:v.ticket_type||'soft', s:e.status||'lead', days:daysAgo(e.last_activity_at), activity:[]};
       });
       updateHomeStats();
       if(currentScreen==='pipeline') renderPipeline();
@@ -1363,9 +1385,9 @@ function loadActivities(ids){
 }
 
 function updateHomeStats(){
-  var active = pipeline.filter(function(p){ return p.s!=='won' && p.s!=='dead'; }).length;
-  var won = pipeline.filter(function(p){ return p.s==='won'; }).length;
-  var due = pipeline.filter(function(p){ return p.s==='followup'; });
+  var active = pipeline.filter(function(p){ return ['lead','pitched','talks','hold','outreach','waiting','followup'].indexOf(p.s)>=0; }).length;
+  var won = pipeline.filter(function(p){ return p.s==='booked'||p.s==='played'||p.s==='won'; }).length;
+  var due = pipeline.filter(followupDue);
   setText('stat-active', active);
   setText('stat-booked', won);
   setText('home-greeting', 'Welcome back' + (profile.name ? ', ' + profile.name.split(' ')[0] : ''));
@@ -1440,7 +1462,7 @@ function wizSubmit(ticket){
       : Promise.resolve({data:null});
     contactStep.then(function(cr){
       var contactId = (cr && cr.data) ? cr.data.id : null;
-      sb.from('pipeline_entries').insert({artist_id:ME, venue_id:venueId, contact_id:contactId, status:'outreach'}).select().single().then(function(pr){
+      sb.from('pipeline_entries').insert({artist_id:ME, venue_id:venueId, contact_id:contactId, status:'lead'}).select().single().then(function(pr){
         if(pr.error){ alert('Venue saved, but could not start your pipeline: ' + pr.error.message); }
         else { sb.from('activities').insert({pipeline_entry_id:pr.data.id, kind:'system', body:'Added to pipeline', source:'manual'}); }
         loadVenues(); loadPipeline();

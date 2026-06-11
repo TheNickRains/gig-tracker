@@ -100,11 +100,17 @@ async function applyMessage(entry, full, contactEmail) {
     console.log("  inbound reply on entry", entry.id, "newly logged:", isNew);
     if (isNew) {
       const patch = { last_activity_at: new Date().toISOString() };
-      if (entry.status === "outreach") patch.status = "waiting";
+      // A reply = engagement -> In talks. Also resurrects "passed" (they wrote back!).
+      // Never auto-moves hold/booked/played (conversation continues, deal state doesn't regress) or dead (terminal).
+      if (["lead", "pitched", "passed", "outreach", "waiting", "followup"].includes(entry.status)) patch.status = "talks";
       await sPatch(`pipeline_entries?id=eq.${entry.id}`, patch);
     }
   } else {
-    await logActivity({ pipeline_entry_id: entry.id, kind: "email_out", body: "Sent: " + subject, source: "email_sync", email_message_id: full.id });
+    const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_out", body: "Sent: " + subject, source: "email_sync", email_message_id: full.id });
+    // You pitched from Gmail like a human -> the card moves itself: Lead -> Pitched.
+    if (isNew && ["lead", "outreach"].includes(entry.status)) {
+      await sPatch(`pipeline_entries?id=eq.${entry.id}`, { status: "pitched", last_activity_at: new Date().toISOString() });
+    }
   }
 }
 

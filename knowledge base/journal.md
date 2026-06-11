@@ -17,6 +17,18 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-11 — Comprehensive staging: Lead → Pitched → In talks → Hold → Booked → Played (+ Passed/Dead)
+Replaced outreach/waiting/followup/won with a real booking lifecycle (migration 010 maps old→new and
+swaps the check constraint; new default 'lead'). ONE spine for both ticket types — **Hold renders only on
+hard-ticket entries** (entry knows its type via venues.ticket_type). Exits are distinct on purpose:
+**Passed = recyclable no** (agent may circle back; an inbound reply auto-resurrects it to In talks) vs
+**Dead end = terminal** (never auto-moved, never resurfaced). Principles: stages track THE DEAL, not the
+work — follow-up is a slice-B scheduled action (followupDue() = pitched ≥7d is the interim heuristic);
+promo will be a checklist on Booked, not a stage. Worker auto-transitions: outbound pitch ⇒ lead→pitched
+(send from Gmail, card moves itself); reply ⇒ →talks; hold/booked/played/dead never auto-move. Slice D
+hooks: Hold = tentative calendar event, Booked = confirmed, date passes ⇒ played. App keeps legacy
+status keys until migration 010 runs, so deploy order doesn't matter.
+
 ## 2026-06-11 — Real-time Gmail PUSH live (Pub/Sub) + the partial-index gotcha
 Replaced polling-as-primary with Gmail push: `users.watch` (worker re-arms when <2 days
 to the ~7-day expiry) → Pub/Sub topic `projects/gig-collective/topics/gmail-push` → push

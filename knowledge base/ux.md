@@ -20,7 +20,7 @@ Sticky, 54px. Always visible.
 
 Personalized greeting + date-aware subhead ("Good afternoon, Nick").
 
-**Attention strip** — amber background, full width. Shows the single highest-urgency pipeline item (overdue follow-up). Tapping navigates to My pipeline.
+**Attention strip** — amber background, full width. Shows the single highest-urgency pipeline item (Pitched ≥ 7 days with no reply = follow-up due). Tapping navigates to My pipeline.
 
 **Stats row** — 3 cards: Active leads (personal) · Booked this year (personal) · Collective wins (shared, this month).
 
@@ -57,11 +57,13 @@ Map view: deferred to v2.
 
 ## My pipeline
 
-Personal CRM. Sorted by urgency: Follow up → Waiting → Outreach → Won → Dead end.
+Personal CRM. Stages (the spine): **Lead → Pitched → In talks → Hold → Booked → Played**, with exits **Passed** (recyclable no — fair to circle back) and **Dead end** (terminal — never resurface). Hold appears only for hard-ticket venues. Follow-up is not a stage; it's a scheduled action (slice B). Sorted by urgency: In talks → Hold → Pitched → Lead → Booked → Played → Passed → Dead end.
+
+The worker auto-advances stages from Gmail: outbound pitch to the contact ⇒ Lead → Pitched; their reply ⇒ → In talks (also resurrects Passed); never auto-moves Hold/Booked/Played/Dead.
 
 Each row:
 - Building icon in a square chip
-- Venue name (+ orange alert icon if follow-up overdue)
+- Venue name (+ orange alert icon when Pitched ≥ 7 days with no reply)
 - Contact · City, State
 - Status badge (right-aligned)
 - Days since last activity (right-aligned, below badge)
@@ -78,9 +80,11 @@ Full CRM view for one venue. Accessed from My pipeline.
 
 **Header** — amber icon chip + venue name + venue type · city, state · pay range + status badge.
 
-**Stage tracker** — 4 steps: Outreach → Waiting → Follow up → Won. Completed steps filled amber, current step has amber dot, future steps hollow. Hidden when status is Won or Dead end.
+**Stage tracker** — the happy path: Lead → Pitched → In talks → (Hold, hard-ticket only) → Booked → Played. Completed steps filled amber, current step has amber dot, future steps hollow. Hidden when status is Passed or Dead end (badge carries the state).
 
-**Won banner** — shown instead of stage tracker when status = Won. Green background, trophy icon, confirmed date + pay.
+**Booked/Played banner** — green banner above Move stage when status = Booked (trophy) or Played (music icon).
+
+**Move stage** — chips for every stage on this venue's path + Passed + Dead end.
 
 **Contact card** — contact initials avatar, name, title. Email and phone shown below. Email + call icon buttons (right side).
 
@@ -89,7 +93,7 @@ Full CRM view for one venue. Accessed from My pipeline.
 - Open in email → opens mailto: with subject and body pre-filled
 - Follow-up reminder chips: 3 days · 7 days · 14 days · 1 month (tap to select)
 
-**Activity log** — timestamped entries, colored dot per action type. Note input at bottom — press Enter to save and prepend to log.
+**Activity log** — two visual tiers: **context pops, actions recede**. Replies (email_in) and notes render as prominent cards — colored left rail, uppercase kind label (Reply/Note), full content text (replies carry the booker's actual words via the Gmail snippet). System events (Sent…, Moved to…, status changes) are muted grey single lines with a small dot. Note input at bottom — press Enter to save and prepend to log. Updates live via Supabase Realtime when the worker logs email.
 
 ---
 
