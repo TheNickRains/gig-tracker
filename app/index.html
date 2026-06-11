@@ -1099,9 +1099,14 @@ function updateCompleteness() {
 }
 
 // ── Toast ───────────────────────────────────────────────
-function showToast() {
-  var t = document.getElementById('toast'); t.style.display = 'block';
-  setTimeout(function(){ t.style.display='none'; }, 2200);
+function showToast(msg, isError) {
+  var t = document.getElementById('toast');
+  t.innerHTML = '<i class="ti ' + (isError ? 'ti-alert-triangle' : 'ti-check') + '" style="margin-right:6px"></i>' + (msg || 'Copied to clipboard');
+  t.style.background = isError ? '#A32D2D' : '#27500A';
+  t.style.color = isError ? '#FCEBEB' : '#EAF3DE';
+  t.style.display = 'block';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(function(){ t.style.display='none'; }, isError ? 4200 : 2400);
 }
 
 // ── Supabase client ─────────────────────────────────────
@@ -1142,13 +1147,14 @@ function signInGoogle(){
 
 // ── Connect Gmail + Calendar (incremental OAuth; separate from base login) ──
 var GOOGLE_SCOPES = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.events';
+var googleConnected = false;
 function connectGoogle(){
   try { sessionStorage.setItem('gc_connecting','1'); } catch(e){}
   sb.auth.signInWithOAuth({ provider:'google', options:{
     redirectTo: window.location.origin + '/app',
     scopes: GOOGLE_SCOPES,
     queryParams: { access_type: 'offline', prompt: 'consent' }
-  }}).then(function(r){ if(r.error){ try{sessionStorage.removeItem('gc_connecting');}catch(e){} alert('Could not start Google connect: ' + r.error.message); } });
+  }}).then(function(r){ if(r.error){ try{sessionStorage.removeItem('gc_connecting');}catch(e){} showToast('Could not start Google connect: ' + r.error.message, true); } });
 }
 // Runs on the redirect back from connectGoogle: stash the refresh token (worker uses it).
 function captureGoogleToken(session){
@@ -1158,14 +1164,15 @@ function captureGoogleToken(session){
   if(!rt || !session.user) return;  // no refresh token surfaced this round
   try { sessionStorage.removeItem('gc_connecting'); } catch(e){}
   sb.rpc('store_google_token', { p_refresh_token: rt, p_scope: GOOGLE_SCOPES }).then(function(r){
-    if(r.error){ alert('Connected to Google, but saving the connection failed: ' + r.error.message); return; }
+    if(r.error){ showToast('Couldn’t save the connection: ' + r.error.message, true); return; }
     setGoogleConnectedUI(true);
-    alert('Gmail & Calendar connected ✓');
+    showToast('Gmail & Calendar connected');
   });
 }
 function setGoogleConnectedUI(connected){
+  if(connected) googleConnected = true;   // sticky: a stale profile read can't downgrade it
   var el=document.getElementById('google-conn-status');
-  if(el) el.textContent = connected ? 'Connected ✓' : 'Connect';
+  if(el) el.textContent = googleConnected ? 'Connected ✓' : 'Connect';
 }
 function signOut(){ sb.auth.signOut().then(function(){ location.reload(); }); }
 
