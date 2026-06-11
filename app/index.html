@@ -78,9 +78,21 @@
   /* ── App shell ── */
   .app { max-width: 480px; margin: 0 auto; min-height: 100vh; background: var(--bg-tertiary); position: relative; }
 
-  /* Desktop: mobile-first island (UX-spec'd). Phones + PWA standalone = zero diff. */
-  @media (min-width: 600px) and (not (display-mode: standalone)) {
-    body { background: var(--bg-page); overscroll-behavior-y: none; }
+  /* The island — everywhere. Mobile/PWA: the app floats in a slim gutter with
+     rounded corners (safe-area aware). Desktop: centered island on --bg-page. */
+  body { background: var(--bg-page); }
+  @media (max-width: 599px) {
+    body { padding: calc(env(safe-area-inset-top, 0px) + 8px) 8px calc(env(safe-area-inset-bottom, 0px) + 8px); }
+    .app {
+      min-height: calc(100vh - 16px);
+      border-radius: 22px;
+      border: 0.5px solid var(--border-mid);
+      box-shadow: 0 2px 18px rgba(0,0,0,0.18);
+    }
+    .nav { top: calc(env(safe-area-inset-top, 0px) + 8px); border-radius: 22px 22px 0 0; }
+  }
+  @media (min-width: 600px) {
+    body { overscroll-behavior-y: none; }
     .app {
       border-left: 0.5px solid var(--border-mid);
       border-right: 0.5px solid var(--border-mid);
@@ -340,7 +352,18 @@
   .pipe-sort { font-size: 12px; font-family: inherit; color: var(--text-secondary); background: var(--bg-secondary); border: none; border-radius: 8px; padding: 6px 8px; }
   .view-btn { width: 30px; height: 30px; border-radius: 8px; border: none; background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; }
   .view-btn.on { background: var(--amber-50); color: var(--amber-800); }
+  .view-btn.disabled { opacity: 0.4; pointer-events: none; }
   .view-btn i { font-size: 16px; }
+  /* Group-by (Notion-style collapsible stage sections) */
+  .group-hdr { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; cursor: pointer; user-select: none; border-bottom: 0.5px solid var(--border-light); }
+  .group-hdr-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; flex: 1; }
+  .group-hdr-count { font-size: 11px; color: var(--text-secondary); }
+  .group-hdr-chevron { font-size: 14px; color: var(--text-tertiary); transition: transform 0.15s; transform: rotate(90deg); }
+  .group-hdr.collapsed .group-hdr-chevron { transform: rotate(0deg); }
+  /* Attention */
+  .nav-hamburger { position: relative; }
+  .attn-badge { position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #E8341A; color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; pointer-events: none; }
+  .unread-dot { position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border-radius: 50%; background: var(--talks-bg); border: 2px solid var(--talks-text); }
   #pipe-list.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: none; border: none; box-shadow: none; padding: 0; }
   .pipe-card { background: var(--bg-primary); border: 0.5px solid var(--border-light); border-radius: 14px; padding: 12px; cursor: pointer; min-width: 0; }
   .pipe-card:hover { border-color: var(--amber-400); }
@@ -409,8 +432,8 @@
   .act-line { flex: 1; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
   .act-action-text { font-size: 12px; color: var(--text-tertiary); }
   .act-time { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; font-weight: 400; letter-spacing: 0; text-transform: none; }
-  .note-input { width: 100%; font-size: 13px; padding: 8px 11px; border: 0.5px solid var(--border-mid); border-radius: var(--radius-md); background: var(--bg-primary); color: var(--text-primary); font-family: inherit; margin-top: 8px; }
-  .note-input:focus { outline: none; border-color: var(--amber-400); }
+  .note-input { display: block; width: calc(100% - 24px); box-sizing: border-box; font-size: 13px; padding: 9px 12px; border: 0.5px solid transparent; border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font-family: inherit; margin: 10px 12px 12px; }
+  .note-input:focus { outline: none; border-color: var(--amber-400); background: var(--bg-primary); }
 
   /* Won banner */
   .won-banner { background: var(--won-bg); border: 0.5px solid #97C459; border-radius: var(--radius-lg); padding: 14px 16px; display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
@@ -617,6 +640,7 @@
         </select>
         <button class="view-btn" id="view-list" onclick="setPipeView('list')" title="List view"><i class="ti ti-list"></i></button>
         <button class="view-btn" id="view-grid" onclick="setPipeView('grid')" title="Grid view"><i class="ti ti-layout-grid"></i></button>
+        <button class="view-btn" id="group-btn" onclick="togglePipeGroup()" title="Group by stage"><i class="ti ti-rows"></i></button>
       </div>
     </div>
     <input class="pipe-search" id="pipe-search" type="search" placeholder="Search venues, stages, notes, conversations…" oninput="pipeQuery=this.value;renderPipeline()">
@@ -983,14 +1007,45 @@ function renderPipeline() {
         : '<div class="pipe-date">' + dLabel(p.days) + '</div>');
   }
   var list = document.getElementById('pipe-list');
-  list.classList.toggle('grid', pipeView==='grid');
+  list.classList.toggle('grid', pipeView==='grid' && !pipeGroup);
   document.querySelectorAll('.view-btn').forEach(function(b){ b.classList.remove('on'); });
   var vb = document.getElementById('view-' + pipeView); if (vb) vb.classList.add('on');
-  var sortSel = document.getElementById('pipe-sort'); if (sortSel) sortSel.value = pipeSort;
+  var gb = document.getElementById('group-btn');
+  if (gb) gb.classList.toggle('on', pipeGroup);
+  var gridBtn = document.getElementById('view-grid'); if (gridBtn) gridBtn.classList.toggle('disabled', pipeGroup);
+  var sortSel = document.getElementById('pipe-sort'); if (sortSel) { sortSel.value = pipeSort; sortSel.style.display = pipeGroup ? 'none' : ''; }
+  updateAttnBadge();
   if (!rows.length) { list.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">Nothing matches.</p>'; return; }
+  function rowHtml(p){
+    var dot = p.unread ? '<span class="unread-dot"></span>' : '';
+    return '<div class="pipe-item" onclick="openDetail(' + p.id + ')">'
+    + '<div class="pipe-icon" style="position:relative"><i class="ti ti-building-store"></i>' + dot + '</div>'
+    + '<div class="pipe-info"><div class="pipe-venue">' + esc(p.venue) + ' <span class="badge badge-' + p.s + '" style="font-size:10px;padding:2px 7px">' + statusLabel[p.s] + '</span></div><div class="pipe-contact">' + esc(p.contact) + ' · ' + esc(p.city) + (p.state ? ', ' + esc(p.state) : '') + '</div></div>'
+    + '<div class="pipe-meta">' + metaFor(p) + '</div>'
+    + '</div>';
+  }
+  if (pipeGroup) {
+    // Notion-style: collapsible stage sections, priority order inside each.
+    var gOrder = ['talks','pitched','hold','lead','booked','played','passed','dead'];
+    var groups = {};
+    rows.forEach(function(p){ (groups[p.s] = groups[p.s] || []).push(p); });
+    Object.keys(groups).forEach(function(k){ if (gOrder.indexOf(k) < 0) gOrder.push(k); });
+    list.innerHTML = gOrder.map(function(st){
+      var g = groups[st]; if (!g || !g.length) return '';
+      g.sort(function(a,b){ return priorityScore(b) - priorityScore(a); });
+      var collapsed = !q && isGroupCollapsed(st); // active search auto-expands (render-only)
+      return '<div class="group-hdr' + (collapsed ? ' collapsed' : '') + '" onclick="toggleGroupCollapse(\'' + st + '\')">'
+        + '<span class="group-hdr-label" style="color:var(--' + st + '-text, var(--text-secondary))">' + statusLabel[st] + '</span>'
+        + '<span class="group-hdr-count">' + g.length + '</span>'
+        + '<i class="ti ti-chevron-right group-hdr-chevron"></i></div>'
+        + (collapsed ? '' : g.map(rowHtml).join(''));
+    }).join('');
+    return;
+  }
   if (pipeView === 'grid') {
     list.innerHTML = rows.map(function(p){
-      return '<div class="pipe-card" onclick="openDetail(' + p.id + ')">'
+      var dot = p.unread ? '<span class="unread-dot" style="top:8px;right:8px"></span>' : '';
+      return '<div class="pipe-card" style="position:relative" onclick="openDetail(' + p.id + ')">' + dot
         + '<div class="pc-venue">' + esc(p.venue) + '</div>'
         + '<div class="pc-sub">' + esc(p.contact) + ' · ' + esc(p.city) + '</div>'
         + '<div class="pc-meta"><span class="badge badge-' + p.s + '" style="font-size:10px;padding:2px 7px">' + statusLabel[p.s] + '</span><span class="pipe-date">' + dLabel(p.days) + '</span></div>'
@@ -998,17 +1053,35 @@ function renderPipeline() {
     }).join('');
     return;
   }
-  list.innerHTML = rows.map(function(p){
-    return '<div class="pipe-item" onclick="openDetail(' + p.id + ')">'
-    + '<div class="pipe-icon"><i class="ti ti-building-store"></i></div>'
-    + '<div class="pipe-info"><div class="pipe-venue">' + esc(p.venue) + ' <span class="badge badge-' + p.s + '" style="font-size:10px;padding:2px 7px">' + statusLabel[p.s] + '</span></div><div class="pipe-contact">' + esc(p.contact) + ' · ' + esc(p.city) + (p.state ? ', ' + esc(p.state) : '') + '</div></div>'
-    + '<div class="pipe-meta">' + metaFor(p) + '</div>'
-    + '</div>';
-  }).join('');
+  list.innerHTML = rows.map(rowHtml).join('');
 }
 var pipeSort = 'priority';
-var pipeView = (function(){ try { return localStorage.getItem('gc_pipe_view') || 'list'; } catch(e){ return 'list'; } })();
-function setPipeView(v){ pipeView = v; try { localStorage.setItem('gc_pipe_view', v); } catch(e){} renderPipeline(); }
+function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
+function lsSet(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+var pipeView = lsGet('gc_pipe_view') || 'list';
+var pipeGroup = lsGet('gc_pipe_group') === '1';
+function setPipeView(v){ pipeView = v; lsSet('gc_pipe_view', v); if (v==='grid' && pipeGroup){ pipeGroup=false; lsSet('gc_pipe_group','0'); } renderPipeline(); }
+function togglePipeGroup(){ pipeGroup = !pipeGroup; lsSet('gc_pipe_group', pipeGroup?'1':'0'); if (pipeGroup && pipeView==='grid') { pipeView='list'; lsSet('gc_pipe_view','list'); } renderPipeline(); }
+function isGroupCollapsed(st){ return lsGet('gc_pipe_collapsed_' + st) === '1'; }
+function toggleGroupCollapse(st){ lsSet('gc_pipe_collapsed_' + st, isGroupCollapsed(st) ? '0' : '1'); renderPipeline(); }
+
+// ── Attention: what needs you right now ──
+// unseen inbound reply · follow-up overdue · scheduled send awaiting review
+function needsAttention(p){ return !!p.unread || followupDue(p) || (p.sched && p.sched.status==='ready'); }
+function computeUnread(p){
+  if (!p.lastInboundTs) { p.unread = false; return; }
+  var seen = Number(lsGet('gc_seen_' + p.uuid) || 0);
+  p.unread = p.lastInboundTs > seen;
+}
+function markSeen(p){ if (p && p.uuid) { lsSet('gc_seen_' + p.uuid, String(Date.now())); p.unread = false; updateAttnBadge(); } }
+function updateAttnBadge(){
+  var n = pipeline.filter(needsAttention).length;
+  var btn = document.getElementById('hbtn'); if (!btn) return;
+  var b = btn.querySelector('.attn-badge');
+  if (!n) { if (b) b.remove(); return; }
+  if (!b) { b = document.createElement('span'); b.className = 'attn-badge'; btn.appendChild(b); }
+  b.textContent = n > 9 ? '9+' : String(n);
+}
 // Urgency model (designer-spec'd): who needs attention right now?
 function priorityScore(p) {
   if (p.s === 'talks' && p.days >= 1) return 100 + p.days; // they replied; you haven't moved
@@ -1037,6 +1110,7 @@ function renderPipeFilters(){
 function openDetail(id) {
   var p = pipeline[id];
   currentDetailUuid = p ? p.uuid : null;
+  if (p) markSeen(p);
   var sts = stagesFor(p);
   var stageIdx = sts.indexOf(p.s);
   var stageDots = sts.map(function(s,i){
@@ -1691,11 +1765,23 @@ function loadPipeline(){
 }
 function loadActivities(ids){
   sb.from('activities').select('*').in('pipeline_entry_id',ids).order('created_at',{ascending:false}).then(function(r){
-    var byEntry={};
+    var byEntry={}, lastIn={};
     (r.data||[]).forEach(function(a){
       (byEntry[a.pipeline_entry_id]=byEntry[a.pipeline_entry_id]||[]).push({kind:a.kind, dot:dotFor(a.kind), text:a.body||'', time:relTime(a.created_at), summary:a.summary||''});
+      if (a.kind==='email_in') {
+        var t = new Date(a.created_at).getTime();
+        if (!lastIn[a.pipeline_entry_id] || t > lastIn[a.pipeline_entry_id]) lastIn[a.pipeline_entry_id] = t;
+      }
     });
-    pipeline.forEach(function(p){ p.activity = byEntry[p.uuid]||[]; });
+    pipeline.forEach(function(p){
+      p.activity = byEntry[p.uuid]||[];
+      p.lastInboundTs = lastIn[p.uuid] || 0;
+      computeUnread(p);
+      // Viewing it right now = seen.
+      if (currentScreen==='detail' && currentDetailUuid===p.uuid && p.unread) markSeen(p);
+    });
+    updateAttnBadge();
+    if (currentScreen==='pipeline') renderPipeline();
     rerenderOpenDetail();
   });
 }
@@ -1704,6 +1790,8 @@ function loadScheduled(ids){
     var byEntry={};
     (r.data||[]).forEach(function(m){ if(!byEntry[m.pipeline_entry_id]) byEntry[m.pipeline_entry_id]=m; });
     pipeline.forEach(function(p){ p.sched = byEntry[p.uuid]||null; });
+    updateAttnBadge();
+    if (currentScreen==='pipeline') renderPipeline();
     rerenderOpenDetail();
   });
 }

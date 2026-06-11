@@ -17,6 +17,23 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-11 — Tone-learning + group-by + attention badges + island-everywhere + Gemini truncation fix
+**Tone-learning (C complete):** worker `refreshToneProfile` daily per artist — pulls ~8 real SENT
+emails from Gmail (extractPlainText walks MIME parts; cleanSnippet strips quoted tails), Gemini
+distills a ≤160-word TONE CARD → `artists.tone_profile` (migration 013); /ai/draft injects it
+("write indistinguishably in THIS voice"). Since the corpus is what Nick ACTUALLY sent — including
+his edits to AI drafts — proposed-vs-sent learning is implicit. **Gemini truncation bug:** 2.5
+models spend "thinking" tokens AGAINST maxOutputTokens → drafts cut mid-sentence at 1024; fix =
+maxOutputTokens 4096 + `thinkingConfig:{thinkingBudget:0}` (gated on /2\.5/ model names).
+**Island everywhere (Nick: "the island was supposed to be for the mobile PWA"):** body always
+--bg-page; <600px the app floats in an 8px safe-area gutter (22px radius, border, shadow, nav
+offsets + rounds); ≥600px keeps the centered column. **Pipeline org (2nd ux-agent consult):**
+Group-by toggle OFF by default (Notion-style collapsible tinted stage sections, collapse persisted
+per stage, search auto-expands, grid disabled while grouped) — chips/sort/flat priority list remain
+the default. **Attention:** needsAttention = unseen inbound (localStorage gc_seen_<uuid> vs latest
+email_in ts) OR followupDue OR sched 'ready'; red 9+-capped badge on the hamburger; blue unread
+dots on rows; openDetail marks seen. Notes input restyled as inset pill (Nick's bounding note).
+
 ## 2026-06-11 — Slice C v1 (Gemini) + locked drafts + desktop island + nav/pipeline polish
 **Slice C:** worker gained `gemini()` (env GEMINI_API_KEY + GEMINI_MODEL, default gemini-2.5-flash —
 override via env if Google renames; logs "Gemini: OFF" when keyless and all AI paths no-op gracefully).

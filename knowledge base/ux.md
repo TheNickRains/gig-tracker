@@ -14,7 +14,7 @@ Sticky, 54px. Always visible.
 - Dropdown closes on outside click
 - Avatar gets an amber border ring when profile screen is active
 
-**Desktop island** (UX-agent spec'd) — at ≥600px in a browser (NOT PWA standalone), `body` switches to `--bg-page` (darker outside surface, light `#dddbd5` / dark `#0c0b0a`) and the 480px `.app` column gets hairline side borders, bottom-only 20px radius, and a soft shadow. Phone + standalone are pixel-identical to before; scroll stays on the page; `min-height:100vh` keeps short screens from bleeding.
+**The island — everywhere** (per Nick: the island is FOR the mobile PWA). `body` is always `--bg-page` (light `#dddbd5` / dark `#0c0b0a`). On phones (<600px) the app floats in an 8px safe-area-aware gutter: 22px radius, hairline border, soft shadow; the sticky nav offsets to the gutter top and rounds its top corners. On ≥600px it's the centered bordered column (bottom-only radius). Scroll stays on the page.
 
 **Routing** — every screen is a URL hash: `#home #pipeline #discover #add #profile #settings`, pipeline detail = `#entry/<uuid>`, venue detail = `#venue/<uuid>`. Refresh restores the screen (deep routes wait for data via a pending-route retry), browser back/forward work, and detail links are shareable within the app.
 
@@ -67,7 +67,11 @@ The worker auto-advances stages from Gmail: outbound pitch to the contact ⇒ Le
 
 **Priority list** (grouping was tried and rejected) — one flat list sorted by `priorityScore`: replies awaiting response (In talks, ≥1d) → follow-up overdue (Pitched ≥7d) → Pitched aging → fresh replies → Lead/Hold going stale → Booked → Played → Passed/Dead at bottom.
 
-**Search** — always-visible input above the list; matches venue/contact/city **plus stage names and the deal's notes + conversation text**. **Stage filter chips** — horizontally scrollable pill row (All + each stage present, with counts), **tinted with each stage's colors** for instant differentiation; single-select, composes with search. **Filter + search reset to All/empty on every visit** (deliberate). **Sort** — header select: Priority (default) / Recent / Name. **View toggle** — list or 2-col grid cards (compact: venue, contact, badge, time); choice persists in localStorage.
+**Search** — always-visible input above the list; matches venue/contact/city **plus stage names and the deal's notes + conversation text**. **Stage filter chips** — horizontally scrollable pill row (All + each stage present, with counts), **tinted with each stage's colors**; single-select, composes with search. **Filter + search reset to All/empty on every visit** (deliberate). **Sort** — header select: Priority (default) / Recent / Name (hidden while grouped). **View toggle** — list or 2-col grid; persists in localStorage.
+
+**Group by (Notion-style, UX-agent spec'd)** — header toggle (rows icon), OFF by default, persisted (`gc_pipe_group`). On: collapsible stage sections in priority order (In talks → Pitched → Hold → Lead → Booked → Played → Passed → Dead end), tinted headers with count + rotating chevron; collapsed state persists per stage (`gc_pipe_collapsed_*`); active search auto-expands for that render only; grid is disabled while grouped (auto-switches to list); empty groups never render.
+
+**Attention system** — "needs you" = unseen inbound reply OR follow-up overdue OR scheduled send awaiting review. Red count badge on the **hamburger** (9+ cap, removed from DOM at 0). Rows with unseen replies get a **blue unread dot** on the icon (list + grid). Opening a detail marks it seen (`gc_seen_<uuid>` in localStorage); badge and dots update live via Realtime.
 
 Each row:
 - Building icon in a square chip
@@ -108,7 +112,7 @@ Full CRM view for one venue. Accessed from My pipeline.
 
 **Conversation** — the email thread with the venue, both directions prominent as cards: inbound "{Contact} → you" (blue rail) and outbound "You → {Contact}" (amber rail). When the worker's Gemini enrichment ran, the card headline is the **AI one-line summary** with the raw words dimmer beneath; AI intent proposals ("reads like a pass…", "they're talking dates…") appear as grey system lines — proposals only, never auto-moves. Empty state explains emails appear automatically. Live via Realtime.
 
-**Notes** — separate comments-style section below Conversation: your private notes with timestamps + the "Add a note" input (Enter to save).
+**Notes** — comments-style section (above Draft, below Contact): private notes with timestamps + the "Add a note" input — an inset rounded pill (bg-secondary, amber on focus) padded inside the card.
 
 ---
 

@@ -59,7 +59,11 @@ async function logActivity(row) {
 
 // ── Gemini (Slice C) ──
 async function gemini(prompt, asJson) {
-  const body = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: asJson ? 0.2 : 0.7, maxOutputTokens: 1024 } };
+  // maxOutputTokens generous + thinking budget 0: on 2.5 models internal
+  // "thinking" tokens count AGAINST maxOutputTokens and silently truncate the
+  // visible text (the cut-off-mid-sentence bug). We want fast, full output.
+  const body = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: asJson ? 0.2 : 0.7, maxOutputTokens: 4096 } };
+  if (/2\.5/.test(GEMINI_MODEL)) body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
   if (asJson) body.generationConfig.responseMimeType = "application/json";
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -229,6 +233,47 @@ async function pollArtist(artistId, token) {
   }
 }
 
+// ── Tone-learning (Slice C): distill the artist's voice from their real sent mail ──
+function extractPlainText(payload) {
+  if (!payload) return "";
+  if (payload.mimeType === "text/plain" && payload.body && payload.body.data) {
+    try { return Buffer.from(payload.body.data.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"); } catch (e) { return ""; }
+  }
+  for (const part of payload.parts || []) {
+    const t = extractPlainText(part);
+    if (t) return t;
+  }
+  return "";
+}
+async function refreshToneProfile(artistId, token) {
+  if (!GEMINI_KEY) return;
+  const arts = await sGet(`artists?id=eq.${artistId}&select=tone_updated_at`);
+  if (!arts.length) return;
+  const last = arts[0].tone_updated_at ? new Date(arts[0].tone_updated_at).getTime() : 0;
+  if (Date.now() - last < 24 * 3600000) return; // refresh daily
+  const msgs = await gmailSearch(token, "in:sent newer_than:90d");
+  const samples = [];
+  for (const m of msgs.slice(0, 12)) {
+    const full = await gmailGet(token, m.id);
+    if (!full) continue;
+    let text = extractPlainText(full.payload).trim();
+    text = cleanSnippet(text); // strip quoted tails
+    if (text.length > 60) samples.push(text.slice(0, 600));
+    if (samples.length >= 8) break;
+  }
+  if (samples.length < 2) { await sPatch(`artists?id=eq.${artistId}`, { tone_updated_at: new Date().toISOString() }); return; }
+  try {
+    const card = await gemini(
+      `These are real emails a working musician sent (their authentic voice — including how they edit AI suggestions before sending):\n\n` +
+      samples.map((s, i) => `--- EMAIL ${i + 1} ---\n${s}`).join("\n\n") +
+      `\n\nDistill a TONE CARD (max 160 words) a ghostwriter would use to write indistinguishably as this person: greeting + sign-off style, sentence rhythm/length, formality, warmth, characteristic phrases (quote 3-5 verbatim), what they never do. Plain text.`, false);
+    if (card) {
+      await sPatch(`artists?id=eq.${artistId}`, { tone_profile: card.slice(0, 2000), tone_updated_at: new Date().toISOString() });
+      console.log("tone profile refreshed", artistId, "from", samples.length, "sent emails");
+    }
+  } catch (e) { console.error("tone profile", artistId, e.message); }
+}
+
 // Slice B: fire due scheduled messages.
 // reply since scheduling -> cancel (intelligent disconnect); auto-send off -> 'ready'
 // (the app surfaces "review & send"); auto-send on -> send from the artist's Gmail.
@@ -286,6 +331,7 @@ async function tick() {
           continue;
         }
         try { await ensureWatch(c.artist_id, c, token); } catch (e) { console.error("watch error", c.artist_id, e.message); }
+        try { await refreshToneProfile(c.artist_id, token); } catch (e) { console.error("tone error", c.artist_id, e.message); }
         await pollArtist(c.artist_id, token);
       } catch (e) { console.error("artist error", c.artist_id, e.message); }
     }
@@ -323,7 +369,7 @@ async function handleAiDraft(req, res, bodyStr) {
     const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,venue:venues(name,city,state,venue_type,ticket_type,pay_range,clientele,notes),contact:contacts(name,title)`);
     if (!entries.length || entries[0].artist_id !== uid) { res.writeHead(404, hdr); res.end(JSON.stringify({ error: "Entry not found" })); return; }
     const e = entries[0], v = e.venue || {}, c = e.contact || {};
-    const arts = await sGet(`artists?id=eq.${uid}&select=display_name,genre,oneliner,website,epk,spotify,draw_claim,typical_crowd,set_formats,notable,markets,phone`);
+    const arts = await sGet(`artists?id=eq.${uid}&select=display_name,genre,oneliner,website,epk,spotify,draw_claim,typical_crowd,set_formats,notable,markets,phone,tone_profile`);
     const a = arts[0] || {};
     const acts = await sGet(`activities?pipeline_entry_id=eq.${entryId}&kind=in.(email_in,email_out,note)&order=created_at.desc&limit=8&select=kind,body`);
     const convo = acts.reverse().map((x) => (x.kind === "email_in" ? "THEM: " : x.kind === "email_out" ? "ME: " : "MY NOTE: ") + x.body).join("\n");
@@ -334,6 +380,7 @@ async function handleAiDraft(req, res, bodyStr) {
       `CONTACT: ${c.name || "the booker"}${c.title ? " (" + c.title + ")" : ""}\n` +
       `DEAL STAGE: ${e.status} (lead/pitched = first-touch pitch; talks = continue the conversation naturally; hold = confirm date details)\n` +
       (convo ? `CONVERSATION SO FAR:\n${convo}\n` : "") +
+      (a.tone_profile ? `\nTONE CARD — write indistinguishably in THIS voice (it was distilled from the artist's real sent emails):\n${a.tone_profile}\n` : "") +
       `\nWrite only the email body.`, false);
     res.writeHead(200, hdr);
     res.end(JSON.stringify({ draft }));
