@@ -14,10 +14,12 @@
 //   GOOGLE_CLIENT_SECRET   OAuth client secret
 //   POLL_MINUTES           optional, default 10
 
-const SUPA = process.env.SUPABASE_URL;
-const SVC = process.env.SUPABASE_SERVICE_KEY;
-const GCID = process.env.GOOGLE_CLIENT_ID;
-const GCS = process.env.GOOGLE_CLIENT_SECRET;
+// Trim — a stray trailing newline/space from copy-paste makes Supabase reject
+// the key as "Invalid API key" even though it's otherwise correct.
+const SUPA = (process.env.SUPABASE_URL || "").trim();
+const SVC = (process.env.SUPABASE_SERVICE_KEY || "").trim();
+const GCID = (process.env.GOOGLE_CLIENT_ID || "").trim();
+const GCS = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
 const INTERVAL = (Number(process.env.POLL_MINUTES) || 10) * 60000;
 
 if (!SUPA || !SVC || !GCID || !GCS) {
