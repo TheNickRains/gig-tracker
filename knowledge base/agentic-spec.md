@@ -5,64 +5,66 @@ An **intelligent gig-booking personal assistant**. Reduce the artist's thought a
 friction: the app drafts the right outreach with the right context at the right time,
 manages the pipeline by conversation state, and schedules around real availability.
 
-## Committed architecture: outreach-through-app
-Chosen because every feature below assumes the app both **sends** and **sees replies**.
-- **Send** outreach via Resend (verified domain), with a per-entry reply address
-  `r+<pipeline_entry_id>@reply.nicholasrains.com`.
-- **Receive** via **Cloudflare Email Routing** (the domain already lives on Cloudflare)
-  → a webhook → match the reply to its pipeline entry by the reply address → log the
-  activity, advance the stage, and forward a copy to the artist's normal inbox.
-- **No Gmail scopes, no per-user Apps Script, no Google restricted-scope verification**
-  (that wall is why we're not reading inboxes directly).
-- Tradeoff: tracks threads that **started in the app** — which is the intended flow
-  (enter venue → send from app → tracked). The earlier `apps-script/` agent is shelved.
+## Committed architecture: Google-native
+Everything funnels through **Google OAuth + a backend worker**. No Resend, no email
+routing, no per-user Apps Script — those are dropped.
 
-## The three features, mapped onto that substrate
+- **One Google login, several scopes:** `email`/`profile` + **Gmail read** (`gmail.readonly`)
+  + **Gmail send** (`gmail.send`) + **Calendar** (`calendar.events`). Requested at the
+  "Continue with Google" step with `access_type=offline` so we get a refresh token.
+- **Outreach is sent from the artist's OWN Gmail** (Gmail API) — authentic, from their
+  real address. Replies land in their inbox; the **backend worker reads them** (Gmail API),
+  logs the activity, and advances the stage. The pipeline is conversation-driven.
+- **Calendar is the artist's Google Calendar, two-way synced** (Calendar API): availability
+  in, confirmed gigs out, conflict checks against real events.
+- **Backend worker** (scheduled): per artist, refreshes Google access tokens from the
+  stored refresh token, then polls Gmail + Calendar and runs the LLM steps.
+- **LLM = the user's existing credits** — **Gemini** (recommended; same Google project +
+  billing) or **Grok/xAI** (OpenAI-compatible). **Not Anthropic.**
+- **Distribution:** Google OAuth app stays in **Testing** (≤100 test users = the roster,
+  many times over). Caveats: unverified-app consent screen; refresh tokens expire ~7 days
+  so inactive users re-connect; restricted Gmail scopes mean a real public launch later
+  needs Google's CASA security assessment.
+
+## The three features
 
 ### 1. Agentic outreach  (agentic > dynamic > static)
-Claude composes each message from everything on record — profile, venue ticket-type +
-details, contact, stage, notes, and the thread so far — instead of filling a fixed
-template. **Tone-learning loop:** store the *proposed* draft and the *sent* version; the
-diff is the per-user tone signal, fed back as few-shot examples so it sounds more like
-the artist over time. Bad/missing profile data degrades gracefully instead of leaking
-`[draw claim]` into the email.
-- *Needs:* Anthropic API key (phase 2). The substrate (compose-in-app + capture the
-  diff) ships now using the current dynamic templates as the "proposed" draft.
+The LLM composes each message from everything on record — profile, venue ticket-type +
+details, contact, stage, notes, thread history — instead of filling a fixed template, and
+**sends it from the artist's Gmail**. **Tone-learning loop:** store the *proposed* draft vs
+the *sent* version; the diff is the per-user tone signal, fed back as few-shot examples.
 
 ### 2. Intelligent pipeline  (stateful, conversation-driven)
-- Activity log ingests **emails** (via reply routing) and **manual call logs**.
+- Activity log ingests **emails** (Gmail read) and **manual call logs**.
 - Stage advances on **events**: sent → outreach; reply → waiting; quiet N days → follow-up;
-  artist confirms → won/dead. The pipeline is a small state machine driven by the
-  conversation, not manual dragging.
-- **Scheduled follow-ups:** edit + **lock** the follow-up text, save, and **schedule the
-  send**. *Intelligent disconnect:* if a reply arrives before the scheduled time, the
-  queued send auto-cancels (no redundant nudge).
-- *Needs:* a scheduler/worker + a `scheduled_messages` table.
+  artist confirms → won/dead.
+- **Scheduled follow-ups:** edit + **lock** the follow-up text, save, **schedule send** from
+  the artist's Gmail. *Intelligent disconnect:* a reply before the scheduled time
+  auto-cancels the queued send.
 
-### 3. Calendar  (new)
-- Availability view; **won** gigs auto-populate; artist marks available/blackout dates.
+### 3. Calendar  (Google Calendar, synced from the start)
+- Availability view backed by the artist's Google Calendar; **won** gigs write back as events.
 - The assistant checks conflicts and **proposes dates** when a booker asks.
-- *v1:* native in-app calendar. Google Calendar two-way sync is a later add (Calendar is
-  a "sensitive" OAuth scope — lighter than Gmail's restricted tier, but still deferred).
-  Date-proposal intelligence is phase 2 (Claude).
 
 ## Build sequence
-| Slice | What | Needs API key? |
+| Slice | What | Needs LLM key? |
 |---|---|---|
-| **A — Send + Receive substrate** (keystone) | Compose/send via Resend + Cloudflare reply routing → pipeline becomes conversation-driven; captures sent-vs-proposed | No |
-| **B — Scheduled follow-ups** | `scheduled_messages` + worker; intelligent disconnect on reply | No |
-| **C — Agentic generation + tone learning** | Swap template generation to Claude; few-shot from the sent/proposed diffs | **Yes** |
-| **D — Calendar** | Availability model + UI (now); conflict-check + date proposals (phase 2) | UI no / proposals yes |
+| **A — Google substrate** (keystone) | OAuth scopes + offline refresh-token capture/store + worker skeleton + Gmail **read** → pipeline activity/stage | No |
+| **B — Send + scheduled follow-ups** | Send outreach from the artist's Gmail; `scheduled_messages` + worker; intelligent disconnect | No |
+| **C — Agentic drafting + tone learning** | LLM composes/tunes outreach; few-shot from sent-vs-proposed diffs | **Yes (Gemini/Grok)** |
+| **D — Google Calendar** | Two-way sync, availability, conflict-check; LLM date proposals | UI no / proposals yes |
 
-A is the foundation B and C build on; D can run in parallel.
+A is the foundation B–D ride on (same OAuth + worker).
 
 ## Open decisions
-1. **Sending identity (roster):** send as `<Artist Name> <booking@send.nicholasrains.com>`
-   with the reply address routing back to the app, then forwarded to the artist's inbox.
-   Bookers see the artist's name; the from-domain is the collective's. Confirm acceptable
-   (the alternative — each artist verifying their own sending domain — is heavy).
-2. **Worker infra:** Railway cron service (same platform) vs Supabase `pg_cron` +
-   scheduled Edge Function. Recommend Railway worker for parity.
-3. **Calendar:** native-only for v1 (recommended) vs Google Calendar sync now.
-4. **Anthropic API account:** required for the intelligent layers (C, and D's proposals).
-   Separate from the Claude.ai subscription, pay-per-use, pennies. Slices A and B need none.
+1. **LLM provider:** **Gemini** (recommended — one Google project/billing alongside Gmail +
+   Calendar) vs **Grok** (you have credits; OpenAI-compatible). Pick one.
+2. **Worker host:** Railway cron service (parity) vs Supabase `pg_cron` + Edge Function.
+3. **Re-consent UX:** prompt for Google consent on every login (always-fresh token, extra
+   click) vs only on first connect (simpler, but the ~7-day expiry bites inactive users).
+
+## Google Cloud prereqs (your hands — guided)
+- OAuth consent screen → add scopes (`gmail.readonly`, `gmail.send`, `calendar.events`);
+  add the roster as **test users**; keep status **Testing**.
+- Enable **Gmail API** + **Google Calendar API** in the project.
+- LLM key: Gemini (AI Studio) or Grok (xAI console).
