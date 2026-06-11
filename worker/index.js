@@ -18,6 +18,8 @@ const GCID = (process.env.GOOGLE_CLIENT_ID || "").trim();
 const GCS = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
 const GMAIL_TOPIC = (process.env.GMAIL_TOPIC || "").trim();
 const PUSH_TOKEN = (process.env.PUSH_TOKEN || "").trim();
+const GEMINI_KEY = (process.env.GEMINI_API_KEY || "").trim();
+const GEMINI_MODEL = (process.env.GEMINI_MODEL || "gemini-2.5-flash").trim();
 const INTERVAL = (Number(process.env.POLL_MINUTES) || 10) * 60000;
 const PORT = process.env.PORT || 8080;
 
@@ -26,7 +28,7 @@ if (!SUPA || !SVC || !GCID || !GCS) {
   process.exit(1);
 }
 function keyClaim(jwt, c) { try { return JSON.parse(Buffer.from(jwt.split(".")[1], "base64").toString())[c]; } catch (e) { return "?"; } }
-console.log("Supabase key — role:", keyClaim(SVC, "role"), "ref:", keyClaim(SVC, "ref"), "| GMAIL_TOPIC:", GMAIL_TOPIC || "(none)");
+console.log("Supabase key — role:", keyClaim(SVC, "role"), "ref:", keyClaim(SVC, "ref"), "| GMAIL_TOPIC:", GMAIL_TOPIC || "(none)", "| Gemini:", GEMINI_KEY ? GEMINI_MODEL : "OFF (no GEMINI_API_KEY)");
 
 const sHeaders = { apikey: SVC, Authorization: "Bearer " + SVC, "Content-Type": "application/json" };
 async function sGet(path) {
@@ -45,14 +47,46 @@ async function logActivity(row) {
   // incompatibility entirely, works regardless of the index state.
   if (row.email_message_id) {
     const existing = await sGet(`activities?select=id&email_message_id=eq.${encodeURIComponent(row.email_message_id)}&limit=1`);
-    if (existing.length) return false;
+    if (existing.length) return null;
   }
   const r = await fetch(`${SUPA}/rest/v1/activities`, {
     method: "POST", headers: { ...sHeaders, Prefer: "return=representation" }, body: JSON.stringify(row),
   });
-  if (!r.ok) { console.error("activity insert failed", r.status, (await r.text()).slice(0, 200)); return false; }
+  if (!r.ok) { console.error("activity insert failed", r.status, (await r.text()).slice(0, 200)); return null; }
   const j = await r.json().catch(() => []);
-  return Array.isArray(j) && j.length > 0;
+  return Array.isArray(j) && j.length ? j[0] : null; // row when new, null when duplicate
+}
+
+// ── Gemini (Slice C) ──
+async function gemini(prompt, asJson) {
+  const body = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: asJson ? 0.2 : 0.7, maxOutputTokens: 1024 } };
+  if (asJson) body.generationConfig.responseMimeType = "application/json";
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`gemini ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  const j = await r.json();
+  return (((j.candidates || [])[0] || {}).content?.parts || []).map((p) => p.text || "").join("").trim();
+}
+
+// Summarize + classify a fresh inbound reply. Proposals only — never moves the stage.
+async function aiEnrich(entry, activityId, replyText) {
+  if (!GEMINI_KEY || !replyText) return;
+  try {
+    const out = await gemini(
+      `You assist a musician who books their own gigs. A venue contact replied to a booking thread.\n` +
+      `Reply text:\n"""${replyText.slice(0, 1500)}"""\n` +
+      `Current deal stage: ${entry.status}\n` +
+      `Return strict JSON: {"summary": "<=14 words, the gist that matters to the musician", ` +
+      `"intent": "interested"|"date_offer"|"decline"|"question"|"other"}`, true);
+    const j = JSON.parse(out);
+    const patch = {};
+    if (j.summary) patch.summary = String(j.summary).slice(0, 200);
+    if (j.intent) patch.ai_intent = String(j.intent).slice(0, 30);
+    if (Object.keys(patch).length) await sPatch(`activities?id=eq.${activityId}`, patch);
+    if (j.intent === "decline") await logActivity({ pipeline_entry_id: entry.id, kind: "system", body: "AI: reads like a pass — consider Mark passed", source: "email_sync" });
+    else if (j.intent === "date_offer") await logActivity({ pipeline_entry_id: entry.id, kind: "system", body: "AI: they're talking dates — possible hold", source: "email_sync" });
+  } catch (e) { console.error("aiEnrich", e.message); }
 }
 
 async function refreshAccessToken(refreshToken) {
@@ -115,13 +149,14 @@ async function applyMessage(entry, full, contactEmail) {
     const snippet = cleanSnippet(full.snippet);
     const body = snippet ? snippet.slice(0, 600) : "Reply: " + subject;
     const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_in", body: body, source: "email_sync", email_message_id: full.id });
-    console.log("  inbound reply on entry", entry.id, "newly logged:", isNew);
+    console.log("  inbound reply on entry", entry.id, "newly logged:", !!isNew);
     if (isNew) {
       const patch = { last_activity_at: new Date().toISOString() };
       // A reply = engagement -> In talks. Also resurrects "passed" (they wrote back!).
       // Never auto-moves hold/booked/played (conversation continues, deal state doesn't regress) or dead (terminal).
       if (["lead", "pitched", "passed", "outreach", "waiting", "followup"].includes(entry.status)) patch.status = "talks";
       await sPatch(`pipeline_entries?id=eq.${entry.id}`, patch);
+      await aiEnrich(entry, isNew.id, body);
     }
   } else {
     const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_out", body: "Sent: " + subject, source: "email_sync", email_message_id: full.id });
@@ -257,10 +292,69 @@ async function tick() {
   } catch (e) { console.error("tick error", e.message); }
 }
 
-// HTTP: health + the Pub/Sub push webhook.
+// ── /ai/draft: the app asks Gemini to write the outreach (Slice C) ──
+const ALLOWED_ORIGINS = ["https://gig.nicholasrains.com", "https://gig-tracker-production.up.railway.app"];
+function corsHeaders(req) {
+  const o = req.headers.origin || "";
+  return {
+    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.includes(o) ? o : ALLOWED_ORIGINS[0],
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, content-type",
+    "Content-Type": "application/json",
+  };
+}
+// Verify the caller's Supabase session token -> user id (so only the signed-in
+// artist can draft against their own entries; service key never leaves here).
+async function verifyUser(req) {
+  const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  if (!tok) return null;
+  const r = await fetch(`${SUPA}/auth/v1/user`, { headers: { apikey: SVC, Authorization: "Bearer " + tok } });
+  if (!r.ok) return null;
+  return (await r.json()).id || null;
+}
+async function handleAiDraft(req, res, bodyStr) {
+  const hdr = corsHeaders(req);
+  try {
+    if (!GEMINI_KEY) { res.writeHead(503, hdr); res.end(JSON.stringify({ error: "AI isn’t configured yet (GEMINI_API_KEY missing)" })); return; }
+    const uid = await verifyUser(req);
+    if (!uid) { res.writeHead(401, hdr); res.end(JSON.stringify({ error: "Not signed in" })); return; }
+    const entryId = (JSON.parse(bodyStr || "{}").entry_id || "").replace(/[^a-zA-Z0-9-]/g, "");
+    if (!entryId) { res.writeHead(400, hdr); res.end(JSON.stringify({ error: "entry_id required" })); return; }
+    const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,venue:venues(name,city,state,venue_type,ticket_type,pay_range,clientele,notes),contact:contacts(name,title)`);
+    if (!entries.length || entries[0].artist_id !== uid) { res.writeHead(404, hdr); res.end(JSON.stringify({ error: "Entry not found" })); return; }
+    const e = entries[0], v = e.venue || {}, c = e.contact || {};
+    const arts = await sGet(`artists?id=eq.${uid}&select=display_name,genre,oneliner,website,epk,spotify,draw_claim,typical_crowd,set_formats,notable,markets,phone`);
+    const a = arts[0] || {};
+    const acts = await sGet(`activities?pipeline_entry_id=eq.${entryId}&kind=in.(email_in,email_out,note)&order=created_at.desc&limit=8&select=kind,body`);
+    const convo = acts.reverse().map((x) => (x.kind === "email_in" ? "THEM: " : x.kind === "email_out" ? "ME: " : "MY NOTE: ") + x.body).join("\n");
+    const draft = await gemini(
+      `Write a booking email from a musician to a venue contact. Plain text only — no subject line, no markdown, no placeholders/brackets, under 170 words, warm and direct, sounds like a working musician (not marketing copy). Sign off with the artist's first name and phone.\n\n` +
+      `ARTIST: ${a.display_name || ""} — ${a.genre || ""}. ${a.oneliner || ""} Draw: ${a.draw_claim || "n/a"}. Crowd: ${a.typical_crowd || "n/a"}. Formats: ${a.set_formats || "n/a"}. Notable rooms: ${a.notable || "n/a"}. Site: ${a.website || ""} ${a.epk ? "EPK: " + a.epk : ""} ${a.spotify ? "Spotify: " + a.spotify : ""} Phone: ${a.phone || ""}\n` +
+      `VENUE: ${v.name || ""} (${v.venue_type || ""}, ${v.ticket_type || "soft"} ticket) in ${v.city || ""}, ${v.state || ""}. ${v.clientele ? "Clientele: " + v.clientele + "." : ""} ${v.notes ? "My notes on this venue: " + v.notes : ""}\n` +
+      `CONTACT: ${c.name || "the booker"}${c.title ? " (" + c.title + ")" : ""}\n` +
+      `DEAL STAGE: ${e.status} (lead/pitched = first-touch pitch; talks = continue the conversation naturally; hold = confirm date details)\n` +
+      (convo ? `CONVERSATION SO FAR:\n${convo}\n` : "") +
+      `\nWrite only the email body.`, false);
+    res.writeHead(200, hdr);
+    res.end(JSON.stringify({ draft }));
+  } catch (err) {
+    console.error("ai/draft", err.message);
+    res.writeHead(500, hdr);
+    res.end(JSON.stringify({ error: "Draft failed: " + err.message.slice(0, 120) }));
+  }
+}
+
+// HTTP: health + the Pub/Sub push webhook + AI drafting.
 http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
+  if (req.method === "OPTIONS") { res.writeHead(204, corsHeaders(req)); res.end(); return; }
   if (req.method === "GET" && u.pathname === "/") { res.writeHead(200); res.end("ok"); return; }
+  if (req.method === "POST" && u.pathname === "/ai/draft") {
+    let body = "";
+    req.on("data", (d) => (body += d));
+    req.on("end", () => { handleAiDraft(req, res, body); });
+    return;
+  }
   if (req.method === "POST" && u.pathname === "/gmail/push") {
     if (PUSH_TOKEN && u.searchParams.get("token") !== PUSH_TOKEN) { res.writeHead(403); res.end("forbidden"); return; }
     let body = "";

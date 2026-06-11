@@ -8,11 +8,13 @@ This document is maintained by Claude. After any session where a screen is added
 
 Sticky, 54px. Always visible.
 
-- **Left:** brand mark (amber rounded square, music icon) + "Gig Collective" wordmark
+- **Left:** brand mark + "Gig Collective" wordmark — **tappable, goes Home**
 - **Right:** hamburger button, then avatar chip outermost (photo if set, else initials — opens Profile)
-- **Hamburger dropdown:** Home · Pipeline · Discover · Profile · Settings · [divider] · + Add venue (amber)
+- **Hamburger dropdown:** Discover · Pipeline · Settings · [divider] · **Add venue as a filled amber button** (no Home/Profile items — brand and avatar cover those)
 - Dropdown closes on outside click
 - Avatar gets an amber border ring when profile screen is active
+
+**Desktop island** (UX-agent spec'd) — at ≥600px in a browser (NOT PWA standalone), `body` switches to `--bg-page` (darker outside surface, light `#dddbd5` / dark `#0c0b0a`) and the 480px `.app` column gets hairline side borders, bottom-only 20px radius, and a soft shadow. Phone + standalone are pixel-identical to before; scroll stays on the page; `min-height:100vh` keeps short screens from bleeding.
 
 **Routing** — every screen is a URL hash: `#home #pipeline #discover #add #profile #settings`, pipeline detail = `#entry/<uuid>`, venue detail = `#venue/<uuid>`. Refresh restores the screen (deep routes wait for data via a pending-route retry), browser back/forward work, and detail links are shareable within the app.
 
@@ -65,7 +67,7 @@ The worker auto-advances stages from Gmail: outbound pitch to the contact ⇒ Le
 
 **Priority list** (grouping was tried and rejected) — one flat list sorted by `priorityScore`: replies awaiting response (In talks, ≥1d) → follow-up overdue (Pitched ≥7d) → Pitched aging → fresh replies → Lead/Hold going stale → Booked → Played → Passed/Dead at bottom.
 
-**Search** — always-visible input above the list (venue/contact/city, live filter). **Stage filter chips** — horizontally scrollable pill row (All + each stage present, with counts), single-select, composes with search.
+**Search** — always-visible input above the list; matches venue/contact/city **plus stage names and the deal's notes + conversation text**. **Stage filter chips** — horizontally scrollable pill row (All + each stage present, with counts), **tinted with each stage's colors** for instant differentiation; single-select, composes with search. **Filter + search reset to All/empty on every visit** (deliberate). **Sort** — header select: Priority (default) / Recent / Name. **View toggle** — list or 2-col grid cards (compact: venue, contact, badge, time); choice persists in localStorage.
 
 Each row:
 - Building icon in a square chip
@@ -93,14 +95,18 @@ Full CRM view for one venue. Accessed from My pipeline.
 
 **Contact card** — contact initials avatar, name, title. Email and phone shown below. Email + call icon buttons (right side).
 
-**Outreach templates → editable draft** — 4 tabs: Cold outreach · Follow-up · Full pitch · Check-in, rendering into an editable `textarea` (dashed border; solid amber on focus). Suggested tab pre-selected from stage. Copy / Open in email use the edited text.
+**Section order:** header/tracker/close-out → Contact → **Notes** → **Draft** → **Conversation**.
+
+**Draft outreach (editable)** — 4 tabs: Cold outreach · Follow-up · Full pitch · Check-in, rendering into an editable `textarea`. Suggested tab pre-selected from stage. Actions: Copy · Open in email · **Draft with AI** (calls the worker's `/ai/draft`, Gemini writes from profile + venue + conversation; fills the textarea for the artist to edit).
+
+**Locked scheduled draft** — once a send is scheduled the editor is replaced by a read-only "Scheduled draft" card: lock header ("Locked — sends exactly as written" / "Awaiting your review"), the exact body that will go out, and an **Edit draft** button (textarea + Save/Discard, saves back to the scheduled message). Template tabs hide while a send is pending.
 
 **Schedule this draft (slice B)** — chips: Tomorrow 9am · In 3 days · In 7 days → "Schedule send" inserts a `scheduled_messages` row. States rendered in place:
 - *scheduled*: card "Scheduled for {when}" + Cancel; notes it cancels itself if the contact replies first, and that auto-send-off means it waits for review
 - *ready* (due while auto-send off): amber card "Ready to send" + Open in email / Mark sent / Cancel
 - Worker behavior at send time: reply since scheduling ⇒ canceled (+ system activity); auto-send ON ⇒ sent from the artist's Gmail (logged, lead→pitched); OFF ⇒ flips to ready. Live-updates via Realtime.
 
-**Conversation** — the email thread with the venue, both directions prominent as cards: inbound "{Contact} → you" (blue rail, booker's words via cleaned Gmail snippet) and outbound "You → {Contact}" (amber rail, subject). System events (stage moves, cancellations) are muted grey single lines interleaved. Empty state explains emails appear automatically. Live via Realtime.
+**Conversation** — the email thread with the venue, both directions prominent as cards: inbound "{Contact} → you" (blue rail) and outbound "You → {Contact}" (amber rail). When the worker's Gemini enrichment ran, the card headline is the **AI one-line summary** with the raw words dimmer beneath; AI intent proposals ("reads like a pass…", "they're talking dates…") appear as grey system lines — proposals only, never auto-moves. Empty state explains emails appear automatically. Live via Realtime.
 
 **Notes** — separate comments-style section below Conversation: your private notes with timestamps + the "Add a note" input (Enter to save).
 

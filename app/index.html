@@ -45,6 +45,7 @@
     --outreach-bg: #F1EFE8; --outreach-text: #5F5E5A;
     --dead-bg: #FCEBEB; --dead-text: #A32D2D;
     /* Staging spine */
+    --bg-page: #dddbd5; /* outside-island surface (desktop) */
     --lead-bg: #F1EFE8; --lead-text: #5F5E5A;
     --pitched-bg: #FAEEDA; --pitched-text: #854F0B;
     --talks-bg: #E6F1FB; --talks-text: #185FA5;
@@ -63,6 +64,7 @@
       --text-tertiary: #6b6a66;
       --border-light: rgba(255,255,255,0.07);
       --border-mid: rgba(255,255,255,0.13);
+      --bg-page: #0c0b0a;
     }
   }
   body {
@@ -75,6 +77,17 @@
 
   /* ── App shell ── */
   .app { max-width: 480px; margin: 0 auto; min-height: 100vh; background: var(--bg-tertiary); position: relative; }
+
+  /* Desktop: mobile-first island (UX-spec'd). Phones + PWA standalone = zero diff. */
+  @media (min-width: 600px) and (not (display-mode: standalone)) {
+    body { background: var(--bg-page); overscroll-behavior-y: none; }
+    .app {
+      border-left: 0.5px solid var(--border-mid);
+      border-right: 0.5px solid var(--border-mid);
+      border-radius: 0 0 20px 20px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+    }
+  }
 
   /* ── Nav ── */
   .nav {
@@ -131,8 +144,9 @@
   .dd-item:hover { background: var(--bg-secondary); }
   .dd-item.active { background: var(--amber-50); color: var(--amber-800); font-weight: 500; }
   .dd-divider { height: 0.5px; background: var(--border-light); margin: 4px 0; }
-  .dd-add { color: var(--amber-800); font-weight: 500; }
-  .dd-add:hover { background: var(--amber-50); }
+  .dd-add { margin: 6px 10px 8px; width: calc(100% - 20px); border-radius: 10px; background: var(--amber-800); color: #fff; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; }
+  .dd-add:hover { background: var(--amber-900, #5a3304); }
+  .dd-add i { font-size: 15px; }
 
   /* ── Screens ── */
   .screen { display: none; padding: 20px 16px; }
@@ -321,8 +335,18 @@
   .pipe-search:focus { outline: none; border-color: var(--amber-400); background: var(--bg-primary); }
   .pipe-filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 10px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .pipe-filters::-webkit-scrollbar { display: none; }
-  .pf-chip { flex-shrink: 0; font-size: 12px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border-mid); color: var(--text-secondary); cursor: pointer; background: none; font-family: inherit; }
-  .pf-chip.on { background: var(--amber-50); border-color: var(--amber-400); color: var(--amber-800); font-weight: 500; }
+  .pf-chip { flex-shrink: 0; font-size: 12px; padding: 5px 11px; border-radius: 999px; border: 1px solid transparent; color: var(--text-secondary); cursor: pointer; background: var(--bg-secondary); font-family: inherit; opacity: 0.85; }
+  .pf-chip.on { border-color: currentColor; font-weight: 600; opacity: 1; }
+  .pipe-sort { font-size: 12px; font-family: inherit; color: var(--text-secondary); background: var(--bg-secondary); border: none; border-radius: 8px; padding: 6px 8px; }
+  .view-btn { width: 30px; height: 30px; border-radius: 8px; border: none; background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .view-btn.on { background: var(--amber-50); color: var(--amber-800); }
+  .view-btn i { font-size: 16px; }
+  #pipe-list.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: none; border: none; box-shadow: none; padding: 0; }
+  .pipe-card { background: var(--bg-primary); border: 0.5px solid var(--border-light); border-radius: 14px; padding: 12px; cursor: pointer; min-width: 0; }
+  .pipe-card:hover { border-color: var(--amber-400); }
+  .pipe-card .pc-venue { font-size: 13.5px; font-weight: 500; margin: 0 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pipe-card .pc-sub { font-size: 11.5px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 8px; }
+  .pipe-card .pc-meta { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 
   /* Contact card */
   .contact-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid var(--border-light); }
@@ -378,6 +402,9 @@
   .sched-card .grow { flex: 1; min-width: 0; }
   .sched-card .sub { font-size: 11px; color: var(--text-secondary); margin-top: 1px; }
   .sched-x { background: none; border: none; font-family: inherit; font-size: 12px; color: var(--dead-text); cursor: pointer; flex-shrink: 0; }
+  .locked-head { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-tertiary); display: flex; align-items: center; gap: 5px; margin-bottom: 8px; }
+  .locked-body { font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; background: var(--bg-secondary); border-radius: 10px; padding: 11px 12px; }
+  .act-raw { font-size: 12px; color: var(--text-tertiary); margin-top: 6px; white-space: pre-wrap; word-break: break-word; }
   .act-dot-sm { width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary); margin-right: 10px; flex-shrink: 0; opacity: 0.55; }
   .act-line { flex: 1; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
   .act-action-text { font-size: 12px; color: var(--text-tertiary); }
@@ -506,7 +533,7 @@
 
   <!-- NAV -->
   <nav class="nav">
-    <div class="nav-brand">
+    <div class="nav-brand" onclick="go('home')" role="button" title="Home" style="cursor:pointer">
       <img src="/logo.png" alt="" class="logo-img" style="width:30px;height:30px">
       <span class="nav-name">Gig Collective</span>
     </div>
@@ -517,13 +544,11 @@
       <div class="nav-avatar" id="avatar-btn" onclick="goProfile()" title="Profile">NR</div>
     </div>
     <div class="nav-dropdown" id="nav-menu" role="menu">
-      <button class="dd-item" id="nav-home" onclick="go('home')" role="menuitem">Home</button>
-      <button class="dd-item" id="nav-pipeline" onclick="go('pipeline')" role="menuitem">Pipeline</button>
       <button class="dd-item" id="nav-discover" onclick="go('discover')" role="menuitem">Discover</button>
-      <button class="dd-item" onclick="goProfile()" role="menuitem">Profile</button>
-      <button class="dd-item" onclick="go('settings')" role="menuitem">Settings</button>
+      <button class="dd-item" id="nav-pipeline" onclick="go('pipeline')" role="menuitem">Pipeline</button>
+      <button class="dd-item" id="nav-settings" onclick="go('settings')" role="menuitem">Settings</button>
       <div class="dd-divider"></div>
-      <button class="dd-item dd-add" onclick="go('add')" role="menuitem">+ Add venue</button>
+      <button class="dd-item dd-add" onclick="go('add')" role="menuitem"><i class="ti ti-plus"></i> Add venue</button>
     </div>
   </nav>
 
@@ -582,11 +607,19 @@
 
   <!-- PIPELINE LIST -->
   <div class="screen" id="screen-pipeline">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px">
       <div class="page-title" style="margin-bottom:0">Pipeline</div>
-      <span style="font-size:12px;color:var(--text-secondary)" id="pipe-count">0 venues</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <select class="pipe-sort" id="pipe-sort" onchange="pipeSort=this.value;renderPipeline()" title="Sort">
+          <option value="priority">Priority</option>
+          <option value="recent">Recent</option>
+          <option value="name">Name</option>
+        </select>
+        <button class="view-btn" id="view-list" onclick="setPipeView('list')" title="List view"><i class="ti ti-list"></i></button>
+        <button class="view-btn" id="view-grid" onclick="setPipeView('grid')" title="Grid view"><i class="ti ti-layout-grid"></i></button>
+      </div>
     </div>
-    <input class="pipe-search" id="pipe-search" type="search" placeholder="Search venues, contacts, cities…" oninput="pipeQuery=this.value;renderPipeline()">
+    <input class="pipe-search" id="pipe-search" type="search" placeholder="Search venues, stages, notes, conversations…" oninput="pipeQuery=this.value;renderPipeline()">
     <div class="pipe-filters" id="pipe-filters"></div>
     <div class="card card-flush" id="pipe-list"></div>
   </div>
@@ -824,7 +857,12 @@ function go(screen) {
   document.getElementById('avatar-btn').classList.remove('active');
   currentScreen = screen;
   if (screen === 'discover') renderDiscover();
-  if (screen === 'pipeline') renderPipeline();
+  if (screen === 'pipeline') {
+    // Fresh view every visit: filter back to All, search cleared (view type persists).
+    pipeFilter = 'all'; pipeQuery = '';
+    var psi = document.getElementById('pipe-search'); if (psi) psi.value = '';
+    renderPipeline();
+  }
   if (screen === 'add') renderWizard(1, null, {});
   if (screen === 'profile') { renderMarkets(); renderNotables(); updateProfilePreview(); updateCompleteness(); }
   syncHash(screen);
@@ -928,23 +966,49 @@ function renderPipeline() {
   var rows = pipeline.filter(function(p){
     if (pipeFilter !== 'all' && p.s !== pipeFilter) return false;
     if (!q) return true;
-    return (p.venue + ' ' + p.contact + ' ' + p.city + ' ' + p.state).toLowerCase().indexOf(q) >= 0;
+    // Searches the whole deal: venue, contact, place, stage name, notes + conversation.
+    var blob = p.venue + ' ' + p.contact + ' ' + p.city + ' ' + p.state + ' ' + (statusLabel[p.s]||p.s) + ' '
+      + (p.activity||[]).map(function(a){ return a.text; }).join(' ');
+    return blob.toLowerCase().indexOf(q) >= 0;
   });
-  rows.sort(function(a,b){ return priorityScore(b) - priorityScore(a); });
+  if (pipeSort === 'recent') rows.sort(function(a,b){ return a.days - b.days; });
+  else if (pipeSort === 'name') rows.sort(function(a,b){ return a.venue.localeCompare(b.venue); });
+  else rows.sort(function(a,b){ return priorityScore(b) - priorityScore(a); });
   function dLabel(d){ return d===0 ? 'today' : (d===1 ? 'yesterday' : d + 'd ago'); }
-  document.getElementById('pipe-list').innerHTML = rows.length ? rows.map(function(p){
-    var meta = followupDue(p)
+  function metaFor(p){
+    return followupDue(p)
       ? '<div style="font-size:11px;font-weight:500;color:var(--pitched-text)">Follow up</div><div class="pipe-date">' + (p.days-7) + 'd overdue</div>'
       : (p.s==='talks' && p.days>=1
         ? '<div style="font-size:11px;font-weight:500;color:var(--talks-text)">Reply waiting</div><div class="pipe-date">' + dLabel(p.days) + '</div>'
         : '<div class="pipe-date">' + dLabel(p.days) + '</div>');
+  }
+  var list = document.getElementById('pipe-list');
+  list.classList.toggle('grid', pipeView==='grid');
+  document.querySelectorAll('.view-btn').forEach(function(b){ b.classList.remove('on'); });
+  var vb = document.getElementById('view-' + pipeView); if (vb) vb.classList.add('on');
+  var sortSel = document.getElementById('pipe-sort'); if (sortSel) sortSel.value = pipeSort;
+  if (!rows.length) { list.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">Nothing matches.</p>'; return; }
+  if (pipeView === 'grid') {
+    list.innerHTML = rows.map(function(p){
+      return '<div class="pipe-card" onclick="openDetail(' + p.id + ')">'
+        + '<div class="pc-venue">' + esc(p.venue) + '</div>'
+        + '<div class="pc-sub">' + esc(p.contact) + ' · ' + esc(p.city) + '</div>'
+        + '<div class="pc-meta"><span class="badge badge-' + p.s + '" style="font-size:10px;padding:2px 7px">' + statusLabel[p.s] + '</span><span class="pipe-date">' + dLabel(p.days) + '</span></div>'
+        + '</div>';
+    }).join('');
+    return;
+  }
+  list.innerHTML = rows.map(function(p){
     return '<div class="pipe-item" onclick="openDetail(' + p.id + ')">'
     + '<div class="pipe-icon"><i class="ti ti-building-store"></i></div>'
     + '<div class="pipe-info"><div class="pipe-venue">' + esc(p.venue) + ' <span class="badge badge-' + p.s + '" style="font-size:10px;padding:2px 7px">' + statusLabel[p.s] + '</span></div><div class="pipe-contact">' + esc(p.contact) + ' · ' + esc(p.city) + (p.state ? ', ' + esc(p.state) : '') + '</div></div>'
-    + '<div class="pipe-meta">' + meta + '</div>'
+    + '<div class="pipe-meta">' + metaFor(p) + '</div>'
     + '</div>';
-  }).join('') : '<p style="color:var(--text-secondary);font-size:13px;padding:10px 0">Nothing matches.</p>';
+  }).join('');
 }
+var pipeSort = 'priority';
+var pipeView = (function(){ try { return localStorage.getItem('gc_pipe_view') || 'list'; } catch(e){ return 'list'; } })();
+function setPipeView(v){ pipeView = v; try { localStorage.setItem('gc_pipe_view', v); } catch(e){} renderPipeline(); }
 // Urgency model (designer-spec'd): who needs attention right now?
 function priorityScore(p) {
   if (p.s === 'talks' && p.days >= 1) return 100 + p.days; // they replied; you haven't moved
@@ -963,7 +1027,8 @@ function renderPipeFilters(){
   var order = ['talks','hold','pitched','lead','booked','played','passed','dead'].filter(function(s){ return present[s]; });
   var html = '<button class="pf-chip' + (pipeFilter==='all'?' on':'') + '" onclick="pipeFilter=\'all\';renderPipeline()">All ' + pipeline.length + '</button>';
   order.forEach(function(s){
-    html += '<button class="pf-chip' + (pipeFilter===s?' on':'') + '" onclick="pipeFilter=\'' + s + '\';renderPipeline()">' + statusLabel[s] + ' ' + present[s] + '</button>';
+    // Stage-colored chips: instant visual priority read.
+    html += '<button class="pf-chip' + (pipeFilter===s?' on':'') + '" style="background:var(--' + s + '-bg);color:var(--' + s + '-text)" onclick="pipeFilter=\'' + s + '\';renderPipeline()">' + statusLabel[s] + ' ' + present[s] + '</button>';
   });
   el.innerHTML = html;
 }
@@ -996,10 +1061,14 @@ function openDetail(id) {
       var inbound = a.kind==='email_in';
       var label = inbound ? esc(first) + ' → you' : 'You → ' + esc(first);
       var text = inbound ? a.text : a.text.replace(/^Sent:\s*/,'');
+      // AI summary (when present) is the headline; the raw words sit under it.
+      var content = a.summary
+        ? '<div class="act-ctx">' + esc(a.summary) + '</div><div class="act-raw">' + esc(text) + '</div>'
+        : '<div class="act-ctx">' + esc(text) + '</div>';
       return '<div class="activity-item ctx">'
         + '<div class="act-rail" style="background:' + a.dot + '"></div>'
         + '<div class="act-body"><div class="act-kind" style="color:' + a.dot + '">' + label + '<span class="act-time">' + a.time + '</span></div>'
-        + '<div class="act-ctx">' + esc(text) + '</div></div></div>';
+        + content + '</div></div>';
     }
     return '<div class="activity-item action">'
       + '<div class="act-dot-sm"></div>'
@@ -1048,20 +1117,41 @@ function openDetail(id) {
       + '</div></div>';
   }
 
-  var tplSection = (p.s!=='passed'&&p.s!=='dead') ? (
-    '<div class="section-label" style="margin-top:4px">Outreach templates</div>'
-    + '<div class="card" style="margin-bottom:12px">'
-    + '<div class="tpl-tabs" id="tpl-tabs-' + id + '">' + tplTabsHtml + '</div>'
-    + '<textarea class="tpl-body" id="tpl-body-' + id + '" spellcheck="false">' + esc(templates[activeTpl[id]](p)) + '</textarea>'
-    + '<div class="tpl-actions">'
-    + '<button class="btn-primary btn-sm" onclick="copyTpl(' + id + ')"><i class="ti ti-copy"></i> Copy</button>'
-    + '<button class="btn-secondary btn-sm" onclick="emailTpl(' + id + ')"><i class="ti ti-mail"></i> Open in email</button>'
-    + '</div>'
-    + '<div style="border-top:0.5px solid var(--border-light);padding-top:12px;margin-top:12px">'
-    + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Schedule this draft</div>'
-    + schedBlock
-    + '</div></div>'
-  ) : '';
+  // Once a send is scheduled the draft LOCKS: you see exactly what will go out
+  // (read-only), with an explicit Edit step. The editor only shows pre-schedule.
+  var tplSection = '';
+  if (p.s!=='passed' && p.s!=='dead') {
+    if (p.sched) {
+      var draftBlock;
+      if (schedEditing[id]) {
+        draftBlock = '<textarea class="tpl-body" id="sched-edit-' + id + '" spellcheck="false">' + esc(p.sched.body) + '</textarea>'
+          + '<div class="tpl-actions">'
+          + '<button class="btn-primary btn-sm" onclick="saveSchedEdit(' + id + ')"><i class="ti ti-check"></i> Save draft</button>'
+          + '<button class="btn-secondary btn-sm" onclick="cancelSchedEdit(' + id + ')">Discard changes</button></div>';
+      } else {
+        draftBlock = '<div class="locked-head"><i class="ti ti-lock"></i> ' + (p.sched.status==='ready' ? 'Awaiting your review' : 'Locked — sends exactly as written') + '</div>'
+          + '<div class="locked-body">' + esc(p.sched.body) + '</div>'
+          + '<div class="tpl-actions"><button class="btn-secondary btn-sm" onclick="editSched(' + id + ')"><i class="ti ti-pencil"></i> Edit draft</button></div>';
+      }
+      tplSection = '<div class="section-label" style="margin-top:4px">Scheduled draft</div>'
+        + '<div class="card" style="margin-bottom:12px">' + draftBlock
+        + '<div style="border-top:0.5px solid var(--border-light);padding-top:12px;margin-top:12px">' + schedBlock + '</div></div>';
+    } else {
+      tplSection = '<div class="section-label" style="margin-top:4px">Draft outreach</div>'
+        + '<div class="card" style="margin-bottom:12px">'
+        + '<div class="tpl-tabs" id="tpl-tabs-' + id + '">' + tplTabsHtml + '</div>'
+        + '<textarea class="tpl-body" id="tpl-body-' + id + '" spellcheck="false">' + esc(templates[activeTpl[id]](p)) + '</textarea>'
+        + '<div class="tpl-actions">'
+        + '<button class="btn-primary btn-sm" onclick="copyTpl(' + id + ')"><i class="ti ti-copy"></i> Copy</button>'
+        + '<button class="btn-secondary btn-sm" onclick="emailTpl(' + id + ')"><i class="ti ti-mail"></i> Open in email</button>'
+        + '<button class="btn-secondary btn-sm" onclick="aiDraft(' + id + ')"><i class="ti ti-sparkles"></i> Draft with AI</button>'
+        + '</div>'
+        + '<div style="border-top:0.5px solid var(--border-light);padding-top:12px;margin-top:12px">'
+        + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Schedule this draft</div>'
+        + schedBlock
+        + '</div></div>';
+    }
+  }
 
   document.getElementById('detail-container').innerHTML =
     '<button class="back-btn" onclick="go(\'pipeline\')"><i class="ti ti-arrow-left"></i> Pipeline</button>'
@@ -1078,13 +1168,13 @@ function openDetail(id) {
     + '<div class="contact-actions"><div class="btn-icon" title="Email"><i class="ti ti-mail"></i></div><div class="btn-icon" title="Call"><i class="ti ti-phone"></i></div></div></div>'
     + '<div style="padding:8px 0 4px"><div style="font-size:12px;color:var(--text-secondary);margin-bottom:2px">' + p.email + '</div><div style="font-size:12px;color:var(--text-secondary)">' + p.phone + '</div></div>'
     + '</div>'
+    + '<div class="section-label">Notes</div>'
+    + '<div class="card card-flush" style="margin-bottom:12px">' + notesHtml
+    + '<div><input class="note-input" placeholder="Add a note… press Enter to save" onkeydown="addNote(event,' + id + ')"></div>'
+    + '</div>'
     + tplSection
     + '<div class="section-label">Conversation</div>'
-    + '<div class="card card-flush" style="margin-bottom:12px">' + actHtml + '</div>'
-    + '<div class="section-label">Notes</div>'
-    + '<div class="card card-flush" style="margin-bottom:20px">' + notesHtml
-    + '<div><input class="note-input" placeholder="Add a note… press Enter to save" onkeydown="addNote(event,' + id + ')"></div>'
-    + '</div>';
+    + '<div class="card card-flush" style="margin-bottom:20px">' + actHtml + '</div>';
 
   go('detail');
 }
@@ -1101,6 +1191,28 @@ function copyTpl(id) {
   showToast();
 }
 function defaultSubject(){ return profile.name + ' — booking inquiry'; }
+
+// ── Slice C: AI drafting (Gemini lives in the worker; the key never reaches the browser) ──
+var WORKER_URL = 'https://gig-worker-production.up.railway.app';
+function aiDraft(id) {
+  var p = pipeline[id];
+  showToast('Drafting with AI…');
+  sb.auth.getSession().then(function(s){
+    var tok = s.data && s.data.session && s.data.session.access_token;
+    if (!tok) { showToast('Not signed in', true); return; }
+    fetch(WORKER_URL + '/ai/draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+      body: JSON.stringify({ entry_id: p.uuid })
+    }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
+      .then(function(x){
+        if (!x.ok) { showToast(x.j.error || 'AI draft failed', true); return; }
+        var ta = document.getElementById('tpl-body-' + id);
+        if (ta) { ta.value = x.j.draft || ''; showToast('Draft ready — make it yours before sending'); }
+      })
+      .catch(function(e){ showToast('AI draft failed: ' + e.message, true); });
+  });
+}
 function emailTpl(id) {
   var p = pipeline[id];
   var body = document.getElementById('tpl-body-' + id).value;
@@ -1109,6 +1221,18 @@ function emailTpl(id) {
 
 // ── Slice B: schedule the draft ──
 var sendChipDays = {};
+var schedEditing = {};
+function editSched(id){ schedEditing[id] = true; openDetail(id); }
+function cancelSchedEdit(id){ delete schedEditing[id]; openDetail(id); }
+function saveSchedEdit(id){
+  var p = pipeline[id]; if(!p.sched) return;
+  var body = document.getElementById('sched-edit-' + id).value.trim();
+  if(!body){ showToast('Draft is empty', true); return; }
+  sb.from('scheduled_messages').update({ body: body }).eq('id', p.sched.id).then(function(r){
+    if(r.error){ showToast('Could not save: ' + r.error.message, true); return; }
+    p.sched.body = body; delete schedEditing[id]; openDetail(id); showToast('Draft updated');
+  });
+}
 function pickSendChip(id, days) {
   sendChipDays[id] = days;
   var chips = document.querySelectorAll('#send-chips-' + id + ' .fu-chip');
@@ -1569,7 +1693,7 @@ function loadActivities(ids){
   sb.from('activities').select('*').in('pipeline_entry_id',ids).order('created_at',{ascending:false}).then(function(r){
     var byEntry={};
     (r.data||[]).forEach(function(a){
-      (byEntry[a.pipeline_entry_id]=byEntry[a.pipeline_entry_id]||[]).push({kind:a.kind, dot:dotFor(a.kind), text:a.body||'', time:relTime(a.created_at)});
+      (byEntry[a.pipeline_entry_id]=byEntry[a.pipeline_entry_id]||[]).push({kind:a.kind, dot:dotFor(a.kind), text:a.body||'', time:relTime(a.created_at), summary:a.summary||''});
     });
     pipeline.forEach(function(p){ p.activity = byEntry[p.uuid]||[]; });
     rerenderOpenDetail();

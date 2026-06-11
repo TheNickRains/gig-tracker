@@ -17,6 +17,25 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-11 — Slice C v1 (Gemini) + locked drafts + desktop island + nav/pipeline polish
+**Slice C:** worker gained `gemini()` (env GEMINI_API_KEY + GEMINI_MODEL, default gemini-2.5-flash —
+override via env if Google renames; logs "Gemini: OFF" when keyless and all AI paths no-op gracefully).
+(a) `aiEnrich` on each NEW inbound reply: one-line summary + intent → `activities.summary`/`ai_intent`
+(migration 012); decline/date_offer add grey "AI: …" proposal lines — NEVER auto-move stages.
+(b) `POST /ai/draft` on the worker: CORS-allowlisted to the app origins, auths the caller's supabase
+access token via /auth/v1/user, loads entry+profile+venue+last-8 conversation server-side, Gemini writes
+the email; app's "Draft with AI" button fills the textarea (key never touches the browser).
+**Locked drafts (Nick's call):** once scheduled, the editor is REPLACED by a read-only "Scheduled
+draft" card (lock header + exact outgoing body) with an explicit Edit-draft → Save flow writing back to
+scheduled_messages.body. Conversation ≠ automation: detail order is now Contact → Notes → Draft →
+Conversation. **Desktop island** per the ux-agent spec (persona from .claude/agents/ux.md, GitKB parts
+N/A here): ≥600px non-standalone gets --bg-page outside a bordered/shadowed 480px island; phone/PWA
+zero-diff. **Nav:** brand tap = Home; menu = Discover/Pipeline/Settings + filled "Add venue" button
+(Home/Profile items removed — brand/avatar cover them). **Pipeline:** search now matches stage names +
+notes + conversation text; sort select (Priority/Recent/Name); list⇄grid toggle persisted in
+localStorage (gc_pipe_view); filter+search intentionally RESET to All/empty on every visit; stage chips
+tinted with stage colors.
+
 ## 2026-06-11 — Slice B shipped (draft + schedule + intelligent disconnect) + UX round
 **Slice B:** template box is now an editable textarea (the draft); "Schedule this draft" chips
 (Tomorrow/3d/7d, 9am local) insert into `scheduled_messages` (migration 011, RLS own-rows, in the
