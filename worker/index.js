@@ -66,8 +66,13 @@ async function gmailSearch(token, q) {
   return r.ok ? (await r.json()).messages || [] : [];
 }
 async function gmailGet(token, id) {
-  const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject`, { headers: { Authorization: "Bearer " + token } });
+  // format=full gives the snippet (the reply's content preview) + body, which we
+  // surface as activity context now and will summarize with Gemini in slice C.
+  const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`, { headers: { Authorization: "Bearer " + token } });
   return r.ok ? r.json() : null;
+}
+function decodeEntities(s) {
+  return (s || "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ");
 }
 async function gmailHistory(token, startHistoryId) {
   const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/history?startHistoryId=${startHistoryId}&historyTypes=messageAdded&maxResults=100`, { headers: { Authorization: "Bearer " + token } });
@@ -89,7 +94,9 @@ async function applyMessage(entry, full, contactEmail) {
   const subject = header(full, "Subject") || "(no subject)";
   const inbound = from.includes(contactEmail.toLowerCase());
   if (inbound) {
-    const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_in", body: "Reply: " + subject, source: "email_sync", email_message_id: full.id });
+    const snippet = decodeEntities((full.snippet || "").trim());
+    const body = snippet ? snippet.slice(0, 600) : "Reply: " + subject;
+    const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_in", body: body, source: "email_sync", email_message_id: full.id });
     console.log("  inbound reply on entry", entry.id, "newly logged:", isNew);
     if (isNew) {
       const patch = { last_activity_at: new Date().toISOString() };
