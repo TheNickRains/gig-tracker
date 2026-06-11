@@ -1,0 +1,12 @@
+{
+  "name": "gig-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Gig Collective backend worker — reads Gmail, advances the pipeline",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

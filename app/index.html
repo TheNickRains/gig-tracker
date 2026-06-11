@@ -681,7 +681,7 @@
     <div class="card card-flush" style="margin-bottom:20px">
       <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-bell"></i></div><div class="setting-label">Notifications <span class="soon">soon</span></div><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-map-pin"></i></div><div class="setting-label">Home market <span class="soon">soon</span></div><i class="ti ti-chevron-right"></i></div>
-      <div class="setting-row" onclick="connectGoogle()"><div class="setting-icon"><i class="ti ti-brand-google"></i></div><div class="setting-label">Gmail &amp; Calendar</div><span class="setting-value" id="google-conn-status">Connect</span><i class="ti ti-chevron-right"></i></div>
+      <div class="setting-row" onclick="googleRowClick()"><div class="setting-icon"><i class="ti ti-brand-google"></i></div><div class="setting-label">Gmail &amp; Calendar</div><span class="setting-value" id="google-conn-status">Connect</span><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row" onclick="signOut()"><div class="setting-icon"><i class="ti ti-logout"></i></div><div class="setting-label" style="color:var(--dead-text)">Sign out</div></div>
     </div>
   </div>
@@ -1171,8 +1171,22 @@ function captureGoogleToken(session){
 }
 function setGoogleConnectedUI(connected){
   if(connected) googleConnected = true;   // sticky: a stale profile read can't downgrade it
+  renderGoogleStatus();
+}
+function renderGoogleStatus(){
   var el=document.getElementById('google-conn-status');
-  if(el) el.textContent = googleConnected ? 'Connected ✓' : 'Connect';
+  if(!el) return;
+  el.textContent = googleConnected ? 'Disconnect' : 'Connect';
+  el.style.color = googleConnected ? 'var(--dead-text)' : '';
+}
+function googleRowClick(){ if(googleConnected) disconnectGoogle(); else connectGoogle(); }
+function disconnectGoogle(){
+  sb.from('google_connections').delete().eq('artist_id', ME).then(function(r){
+    if(r.error){ showToast('Could not disconnect: ' + r.error.message, true); return; }
+    sb.from('artists').update({ gmail_connected: false }).eq('id', ME);
+    googleConnected = false; renderGoogleStatus();
+    showToast('Gmail & Calendar disconnected');
+  });
 }
 function signOut(){ sb.auth.signOut().then(function(){ location.reload(); }); }
 
