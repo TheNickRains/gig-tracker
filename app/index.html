@@ -681,7 +681,7 @@
     <div class="card card-flush" style="margin-bottom:20px">
       <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-bell"></i></div><div class="setting-label">Notifications <span class="soon">soon</span></div><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-map-pin"></i></div><div class="setting-label">Home market <span class="soon">soon</span></div><i class="ti ti-chevron-right"></i></div>
-      <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-brand-google"></i></div><div class="setting-label">Gmail auto-tracking <span class="soon">soon</span></div><i class="ti ti-chevron-right"></i></div>
+      <div class="setting-row" onclick="connectGoogle()"><div class="setting-icon"><i class="ti ti-brand-google"></i></div><div class="setting-label">Gmail &amp; Calendar</div><span class="setting-value" id="google-conn-status">Connect</span><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row" onclick="signOut()"><div class="setting-icon"><i class="ti ti-logout"></i></div><div class="setting-label" style="color:var(--dead-text)">Sign out</div></div>
     </div>
   </div>
@@ -1139,6 +1139,35 @@ function signInGoogle(){
     if(r.error) gateMsg(r.error.message);
   });
 }
+
+// ── Connect Gmail + Calendar (incremental OAuth; separate from base login) ──
+var GOOGLE_SCOPES = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.events';
+function connectGoogle(){
+  try { sessionStorage.setItem('gc_connecting','1'); } catch(e){}
+  sb.auth.signInWithOAuth({ provider:'google', options:{
+    redirectTo: window.location.origin + '/app',
+    scopes: GOOGLE_SCOPES,
+    queryParams: { access_type: 'offline', prompt: 'consent' }
+  }}).then(function(r){ if(r.error){ try{sessionStorage.removeItem('gc_connecting');}catch(e){} alert('Could not start Google connect: ' + r.error.message); } });
+}
+// Runs on the redirect back from connectGoogle: stash the refresh token (worker uses it).
+function captureGoogleToken(session){
+  var connecting=false; try { connecting = sessionStorage.getItem('gc_connecting')==='1'; } catch(e){}
+  if(!connecting) return;
+  var rt = session && session.provider_refresh_token;
+  if(!rt || !session.user) return;  // no refresh token surfaced this round
+  try { sessionStorage.removeItem('gc_connecting'); } catch(e){}
+  sb.from('google_connections').upsert({ artist_id: session.user.id, refresh_token: rt, scope: GOOGLE_SCOPES, updated_at: new Date().toISOString() }).then(function(r){
+    if(r.error){ alert('Connected to Google, but saving the connection failed: ' + r.error.message); return; }
+    sb.from('artists').update({ gmail_connected: true }).eq('id', session.user.id);
+    setGoogleConnectedUI(true);
+    alert('Gmail & Calendar connected ✓');
+  });
+}
+function setGoogleConnectedUI(connected){
+  var el=document.getElementById('google-conn-status');
+  if(el) el.textContent = connected ? 'Connected ✓' : 'Connect';
+}
 function signOut(){ sb.auth.signOut().then(function(){ location.reload(); }); }
 
 function showApp(session){
@@ -1162,6 +1191,7 @@ function loadProfile(){
     profile.draw=a.draw_claim||''; profile.crowd=a.typical_crowd||''; profile.formats=a.set_formats||''; profile.notable=a.notable||'';
     markets = a.markets || [];
     notables = (profile.notable||'').split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+    setGoogleConnectedUI(!!a.gmail_connected);
     fillProfileDom(); renderMarkets(); renderNotables(); updateProfilePreview(); updateHomeStats();
   });
 }
@@ -1409,7 +1439,7 @@ if(!window.GIG_CONFIG || !window.GIG_CONFIG.SUPABASE_URL || window.GIG_CONFIG.SU
     if (authErr) gateMsg(decodeURIComponent(authErr).replace(/\+/g,' '));
   } catch(e){}
   sb.auth.getSession().then(function(r){ if(r.data && r.data.session) showApp(r.data.session); });
-  sb.auth.onAuthStateChange(function(_event, session){ if(session) showApp(session); });
+  sb.auth.onAuthStateChange(function(_event, session){ if(session){ showApp(session); captureGoogleToken(session); } });
 }
 </script>
 </body>
