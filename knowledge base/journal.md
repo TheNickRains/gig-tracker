@@ -17,6 +17,20 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-11 — Real-time Gmail PUSH live (Pub/Sub) + the partial-index gotcha
+Replaced polling-as-primary with Gmail push: `users.watch` (worker re-arms when <2 days
+to the ~7-day expiry) → Pub/Sub topic `projects/gig-collective/topics/gmail-push` → push
+subscription → worker `POST /gmail/push?token=…` (the worker now also runs an HTTP server
+on PORT; Railway gave it the domain `gig-worker-production.up.railway.app`) → history API →
+process only new messages. Poll stays as a 10-min fallback. App uses Supabase **Realtime**
+(websockets, migration 007) so the pipeline updates live on screen. Migrations 008 (watch
+state) + 009 (see below). **GOTCHA that cost an hour:** the `activities` dedup index on
+`email_message_id` was created PARTIAL (`where email_message_id is not null`), and **PostgREST
+cannot use a partial index as an `on_conflict` target** → every worker insert failed with
+`42P10 "no unique or exclusion constraint matching the ON CONFLICT specification"`, silently,
+so replies never logged. Fix = migration 009: recreate the index NON-partial. If on_conflict
+ever 42P10s again, that's the cause. Worker now logs insert failures + the push match result.
+
 ## 2026-06-11 — Slice A live: Google connect + worker reading Gmail end-to-end
 Settings → "Gmail & Calendar → Connect" runs incremental Google OAuth (offline) and stores the
 refresh token via the `store_google_token()` SECURITY DEFINER RPC (migrations 003/004; 005 = disconnect;
