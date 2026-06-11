@@ -462,7 +462,7 @@
       <span class="nav-name">Gig Collective</span>
     </div>
     <div class="nav-right">
-      <div class="nav-avatar" id="avatar-btn" onclick="toggleProfile()" title="Profile">NR</div>
+      <div class="nav-avatar" id="avatar-btn" onclick="goProfile()" title="Profile">NR</div>
       <button class="nav-hamburger" id="hbtn" onclick="toggleMenu()" aria-label="Menu" aria-expanded="false">
         <i class="ti ti-menu-2"></i>
       </button>
@@ -471,7 +471,8 @@
       <button class="dd-item" id="nav-home" onclick="go('home')" role="menuitem">Home</button>
       <button class="dd-item" id="nav-pipeline" onclick="go('pipeline')" role="menuitem">My pipeline</button>
       <button class="dd-item" id="nav-discover" onclick="go('discover')" role="menuitem">Discover</button>
-      <button class="dd-item" onclick="toggleProfile()" role="menuitem">Profile &amp; settings</button>
+      <button class="dd-item" onclick="goProfile()" role="menuitem">Profile</button>
+      <button class="dd-item" onclick="go('settings')" role="menuitem">Settings</button>
       <div class="dd-divider"></div>
       <button class="dd-item dd-add" onclick="go('add')" role="menuitem">+ Add venue</button>
     </div>
@@ -685,8 +686,11 @@
       <div class="ph-caption">Your bandmates appear here once they join the collective.</div>
     </div>
 
-    <!-- Settings -->
-    <div class="section-label">Settings</div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="screen" id="screen-settings">
+    <div class="page-title" style="margin-bottom:16px">Settings</div>
     <div class="card card-flush" style="margin-bottom:20px">
       <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-bell"></i></div><div class="setting-label">Notifications <span class="soon">soon</span></div><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-map-pin"></i></div><div class="setting-label">Home market <span class="soon">soon</span></div><i class="ti ti-chevron-right"></i></div>
@@ -782,17 +786,14 @@ document.addEventListener('click', function(e) {
   if (menuOpen && !e.target.closest('.nav')) closeMenu();
 });
 
-function toggleProfile() {
-  if (currentScreen === 'profile') { go('home'); }
-  else {
-    closeMenu();
-    document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
-    document.getElementById('screen-profile').classList.add('active');
-    document.querySelectorAll('.dd-item').forEach(function(b){ b.classList.remove('active'); });
-    document.getElementById('avatar-btn').classList.add('active');
-    currentScreen = 'profile';
-    renderMarkets(); renderNotables(); updateProfilePreview(); updateCompleteness();
-  }
+function goProfile() {
+  closeMenu();
+  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+  document.getElementById('screen-profile').classList.add('active');
+  document.querySelectorAll('.dd-item').forEach(function(b){ b.classList.remove('active'); });
+  document.getElementById('avatar-btn').classList.add('active');
+  currentScreen = 'profile';
+  renderMarkets(); renderNotables(); updateProfilePreview(); updateCompleteness();
 }
 
 // ── Discover ────────────────────────────────────────────
