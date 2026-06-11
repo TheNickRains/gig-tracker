@@ -1439,7 +1439,10 @@ if(!window.GIG_CONFIG || !window.GIG_CONFIG.SUPABASE_URL || window.GIG_CONFIG.SU
     if (authErr) gateMsg(decodeURIComponent(authErr).replace(/\+/g,' '));
   } catch(e){}
   sb.auth.getSession().then(function(r){ if(r.data && r.data.session) showApp(r.data.session); });
-  sb.auth.onAuthStateChange(function(_event, session){ if(session){ showApp(session); captureGoogleToken(session); } });
+  // Defer the token write out of the auth callback: supabase-js holds an internal
+  // lock during onAuthStateChange, so a nested DB write goes out unauthenticated
+  // (auth.uid() = null) and trips RLS. setTimeout(0) lets the session attach first.
+  sb.auth.onAuthStateChange(function(_event, session){ if(session){ showApp(session); setTimeout(function(){ captureGoogleToken(session); }, 0); } });
 }
 </script>
 </body>
