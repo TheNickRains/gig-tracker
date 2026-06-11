@@ -44,6 +44,7 @@ async function logActivity(row) {
   const r = await fetch(`${SUPA}/rest/v1/activities?on_conflict=email_message_id`, {
     method: "POST", headers: { ...sHeaders, Prefer: "resolution=ignore-duplicates,return=representation" }, body: JSON.stringify(row),
   });
+  if (!r.ok) { console.error("activity insert failed", r.status, (await r.text()).slice(0, 200)); return false; }
   const j = await r.json().catch(() => []);
   return Array.isArray(j) && j.length > 0;
 }
