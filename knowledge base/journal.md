@@ -17,6 +17,16 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-11 — Public landing + legal pages; app moved to /app
+Added a public marketing landing at `/`, moved the app to `/app`, and added `/terms` + `/privacy`
+(privacy carries the Google API **Limited Use** disclosure + the Gmail/Calendar/Gemini data flows).
+`server.js` ROUTES map handles these; app asset refs made absolute (`/config.js`, `/logo.png`); auth
+`redirectTo` and PWA `start_url`/`scope` now `/app`. Built for Google OAuth **brand** verification
+(homepage is no longer the login screen). IMPORTANT: restricted Gmail scopes still need the **CASA**
+security assessment for production — staying in **Testing** (≤100 test users) for now; do not assume the
+pages alone unblock Gmail. Supabase redirect allowlist must include `https://gig.nicholasrains.com/**`
+so `/app` login keeps working.
+
 ## 2026-06-10 — Slice 2 started: read-only inbox agent (apps-script/email-agent.gs)
 Gmail watcher runs inside booking@'s Apps Script on a 10-min trigger. READ-ONLY on
 the inbox; writes only to Supabase via the service_role key (Script Properties, never

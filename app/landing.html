@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gig Collective — the booking pipeline for working musicians</title>
+<meta name="description" content="Gig Collective is a personal booking assistant for independent and touring musicians: track venues and contacts, run your outreach pipeline, draft and send booking emails, and keep your gig calendar in sync.">
+<link rel="icon" type="image/png" href="/logo.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#eeece7;--surface:#ffffff;--text:#1a1917;--muted:#6b6a66;--faint:#a09f9b;
+    --line:rgba(0,0,0,0.10);--amber-50:#FAEEDA;--amber-600:#854F0B;--amber-800:#633806;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#141413;--surface:#1e1d1b;--text:#f0ede8;--muted:#9b9890;--faint:#6b6a66;--line:rgba(255,255,255,0.10);
+  }}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:680px;margin:0 auto;padding:0 22px}
+  .logo{width:64px;height:64px;object-fit:contain;display:block;margin:0 auto}
+  @media (prefers-color-scheme:dark){.logo{filter:invert(1) brightness(1.75)}}
+  header{padding:64px 0 8px;text-align:center}
+  h1{font-size:34px;font-weight:600;letter-spacing:-0.02em;margin:18px 0 6px}
+  .tag{font-size:18px;color:var(--muted);max-width:30ch;margin:0 auto}
+  .cta{display:inline-flex;align-items:center;gap:8px;background:var(--amber-800);color:var(--amber-50);
+    text-decoration:none;font-weight:500;font-size:16px;padding:13px 26px;border-radius:10px;margin-top:26px}
+  .cta:hover{background:var(--amber-600)}
+  section{margin-top:48px}
+  .lead{font-size:17px;color:var(--text)}
+  .lead .muted{color:var(--muted)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px}
+  @media (max-width:560px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:0.5px solid var(--line);border-radius:14px;padding:18px}
+  .card i{font-size:22px;color:var(--amber-800)}
+  @media (prefers-color-scheme:dark){.card i{color:var(--amber-50)}}
+  .card h3{font-size:15px;font-weight:600;margin:10px 0 4px}
+  .card p{font-size:14px;color:var(--muted)}
+  .note{background:var(--surface);border:0.5px solid var(--line);border-radius:14px;padding:18px 20px;font-size:14px;color:var(--muted);margin-top:22px}
+  .note strong{color:var(--text);font-weight:600}
+  footer{margin:56px 0 40px;text-align:center;font-size:13px;color:var(--faint)}
+  footer a{color:var(--muted);text-decoration:none}
+  footer a:hover{color:var(--text)}
+  .sect-label{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);margin-bottom:6px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <img class="logo" src="/logo.png" alt="Gig Collective">
+      <h1>Gig Collective</h1>
+      <div class="tag">The booking pipeline for working musicians.</div>
+      <a class="cta" href="/app"><i class="ti ti-arrow-right"></i> Open the app</a>
+    </header>
+
+    <section>
+      <p class="lead">Gig Collective is a personal booking assistant for independent and touring
+      musicians. <span class="muted">Track the venues and contacts you're working, run your outreach
+      pipeline, draft and send booking emails, and keep your gig calendar in sync — so you can spend
+      less time chasing and more time playing.</span></p>
+    </section>
+
+    <section>
+      <div class="grid">
+        <div class="card"><i class="ti ti-building-store"></i><h3>Venue &amp; contact book</h3><p>Capture every venue, booker, and business card in one organized place.</p></div>
+        <div class="card"><i class="ti ti-arrows-right"></i><h3>A pipeline that moves itself</h3><p>Outreach, waiting, follow-up, won — your pipeline advances as the conversation does.</p></div>
+        <div class="card"><i class="ti ti-mail"></i><h3>Email-aware outreach</h3><p>Draft and send booking emails, and let replies update your pipeline automatically.</p></div>
+        <div class="card"><i class="ti ti-calendar"></i><h3>Calendar &amp; availability</h3><p>See your real availability and avoid double-booking when proposing dates.</p></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sect-label">How it uses your Google account</div>
+      <div class="note">
+        With your permission, Gig Collective connects to your Google account to <strong>send booking
+        emails from your Gmail</strong>, <strong>read replies</strong> so your pipeline stays current,
+        and <strong>sync your Google Calendar</strong> for availability. Your Google data is used only
+        to provide these features — never sold, never used for advertising. See our
+        <a href="/privacy" style="color:var(--amber-800)">Privacy Policy</a> for the full details,
+        including our Google API Limited Use commitment.
+      </div>
+    </section>
+
+    <footer>
+      © 2026 Nick Rains · Gig Collective<br>
+      <a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms of Service</a> · <a href="mailto:booking@nicholasrains.com">booking@nicholasrains.com</a>
+    </footer>
+  </div>
+</body>
+</html>

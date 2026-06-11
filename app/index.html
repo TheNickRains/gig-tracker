@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gig Collective</title>
-<link rel="icon" type="image/png" href="logo.png">
+<link rel="icon" type="image/png" href="/logo.png">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#1a1917">
 <meta name="mobile-web-app-capable" content="yes">
@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-title" content="Gigs">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
-<script src="config.js"></script>
+<script src="/config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   /* ── Reset & base ── */
@@ -432,7 +432,7 @@
 <!-- AUTH GATE -->
 <div id="auth-gate" style="max-width:380px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:24px">
   <div style="text-align:center;margin-bottom:24px">
-    <img src="logo.png" alt="Nick Rains" class="logo-img" style="width:76px;height:76px;margin:0 auto 14px">
+    <img src="/logo.png" alt="Nick Rains" class="logo-img" style="width:76px;height:76px;margin:0 auto 14px">
     <div style="font-size:22px;font-weight:500">Gig Collective</div>
     <div style="font-size:14px;color:var(--text-secondary);margin-top:4px">Sign in to your booking pipeline</div>
   </div>
@@ -451,7 +451,7 @@
   <!-- NAV -->
   <nav class="nav">
     <div class="nav-brand">
-      <img src="logo.png" alt="" class="logo-img" style="width:30px;height:30px">
+      <img src="/logo.png" alt="" class="logo-img" style="width:30px;height:30px">
       <span class="nav-name">Gig Collective</span>
     </div>
     <div class="nav-right">
@@ -1129,13 +1129,13 @@ function sendMagicLink(){
   var email = (document.getElementById('gate-email').value||'').trim();
   if(!email){ gateMsg('Enter your email first.'); return; }
   gateMsg('Sending…', true);
-  sb.auth.signInWithOtp({ email: email, options:{ emailRedirectTo: window.location.origin + '/', shouldCreateUser: true } }).then(function(r){
+  sb.auth.signInWithOtp({ email: email, options:{ emailRedirectTo: window.location.origin + '/app', shouldCreateUser: true } }).then(function(r){
     if(r.error) gateMsg(r.error.message);
     else gateMsg('Sent. Open the NEWEST link in your inbox (check spam). Links are one-time use.', true);
   });
 }
 function signInGoogle(){
-  sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: window.location.origin + '/' } }).then(function(r){
+  sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: window.location.origin + '/app' } }).then(function(r){
     if(r.error) gateMsg(r.error.message);
   });
 }

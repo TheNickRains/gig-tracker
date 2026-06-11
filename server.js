@@ -35,6 +35,17 @@ function configJs() {
   }
 }
 
+// Public landing at "/", the app at "/app", legal pages at "/terms" and "/privacy".
+const ROUTES = {
+  "/": "landing.html",
+  "/app": "index.html",
+  "/app/": "index.html",
+  "/terms": "terms.html",
+  "/terms/": "terms.html",
+  "/privacy": "privacy.html",
+  "/privacy/": "privacy.html",
+};
+
 http
   .createServer((req, res) => {
     let urlPath = decodeURIComponent((req.url || "/").split("?")[0]);
@@ -45,7 +56,7 @@ http
       return;
     }
 
-    if (urlPath === "/") urlPath = "/index.html";
+    if (ROUTES[urlPath]) urlPath = "/" + ROUTES[urlPath];
 
     // Resolve safely inside ROOT (no path traversal).
     const filePath = path.join(ROOT, path.normalize(urlPath));
@@ -57,8 +68,8 @@ http
 
     fs.readFile(filePath, (err, data) => {
       if (err) {
-        // SPA-style fallback to index.html for unknown routes.
-        fs.readFile(path.join(ROOT, "index.html"), (e2, idx) => {
+        // Unknown route -> public landing page.
+        fs.readFile(path.join(ROOT, "landing.html"), (e2, idx) => {
           if (e2) {
             res.writeHead(404);
             res.end("Not found");
