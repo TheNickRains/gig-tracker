@@ -41,8 +41,14 @@ async function sPatch(path, body) {
 async function sDelete(path) { await fetch(`${SUPA}/rest/v1/${path}`, { method: "DELETE", headers: sHeaders }); }
 // Insert activity; unique index on email_message_id dedupes. Returns true if new.
 async function logActivity(row) {
-  const r = await fetch(`${SUPA}/rest/v1/activities?on_conflict=email_message_id`, {
-    method: "POST", headers: { ...sHeaders, Prefer: "resolution=ignore-duplicates,return=representation" }, body: JSON.stringify(row),
+  // Dedup with a plain lookup instead of ON CONFLICT — avoids the partial-index
+  // incompatibility entirely, works regardless of the index state.
+  if (row.email_message_id) {
+    const existing = await sGet(`activities?select=id&email_message_id=eq.${encodeURIComponent(row.email_message_id)}&limit=1`);
+    if (existing.length) return false;
+  }
+  const r = await fetch(`${SUPA}/rest/v1/activities`, {
+    method: "POST", headers: { ...sHeaders, Prefer: "return=representation" }, body: JSON.stringify(row),
   });
   if (!r.ok) { console.error("activity insert failed", r.status, (await r.text()).slice(0, 200)); return false; }
   const j = await r.json().catch(() => []);
