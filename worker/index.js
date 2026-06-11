@@ -83,6 +83,7 @@ async function applyMessage(entry, full, contactEmail) {
   const inbound = from.includes(contactEmail.toLowerCase());
   if (inbound) {
     const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_in", body: "Reply: " + subject, source: "email_sync", email_message_id: full.id });
+    console.log("  inbound reply on entry", entry.id, "newly logged:", isNew);
     if (isNew) {
       const patch = { last_activity_at: new Date().toISOString() };
       if (entry.status === "outreach") patch.status = "waiting";
@@ -132,6 +133,8 @@ async function handlePush(emailAddress, notifHistoryId) {
       const blob = ((header(full, "From") || "") + " " + (header(full, "To") || "")).toLowerCase();
       let entry = null, cemail = null;
       for (const em in map) { if (blob.includes(em)) { entry = map[em]; cemail = em; break; } }
+      var fromAddr = ((header(full, "From") || "").match(/[\w.+-]+@[\w.-]+/) || ["?"])[0];
+      console.log("push msg from", fromAddr, entry ? ("-> matched entry " + entry.id + " (status " + entry.status + ")") : ("-> NO MATCH; pipeline contacts=[" + Object.keys(map).join(", ") + "]"));
       if (entry) await applyMessage(entry, full, cemail);
     }
     console.log("push: processed", ids.length, "new msg(s) for", emailAddress);
