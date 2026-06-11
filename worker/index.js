@@ -25,11 +25,19 @@ if (!SUPA || !SVC || !GCID || !GCS) {
   process.exit(1);
 }
 
+// Self-check: the SUPABASE_SERVICE_KEY must be the service_role key (not anon),
+// or RLS hides the token rows and we silently read 0 connections.
+function keyRole(jwt) {
+  try { return JSON.parse(Buffer.from(jwt.split(".")[1], "base64").toString()).role; } catch (e) { return "unknown"; }
+}
+console.log("Supabase key role:", keyRole(SVC), "(must be 'service_role')");
+
 const sHeaders = { apikey: SVC, Authorization: "Bearer " + SVC, "Content-Type": "application/json" };
 
 async function sGet(path) {
   const r = await fetch(`${SUPA}/rest/v1/${path}`, { headers: sHeaders });
-  return r.ok ? r.json() : [];
+  if (!r.ok) { console.error("Supabase GET failed", path.split("?")[0], r.status, (await r.text()).slice(0, 200)); return []; }
+  return r.json();
 }
 async function sPatch(path, body) {
   await fetch(`${SUPA}/rest/v1/${path}`, { method: "PATCH", headers: { ...sHeaders, Prefer: "return=minimal" }, body: JSON.stringify(body) });
