@@ -422,6 +422,13 @@
   .setting-value { font-size: 13px; color: var(--text-secondary); }
   .setting-row i.ti-chevron-right { font-size: 14px; color: var(--text-tertiary); }
   .save-row { display: flex; gap: 8px; margin-top: 12px; }
+  /* Toggle switch */
+  .switch { position: relative; width: 38px; height: 22px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch span { position: absolute; inset: 0; background: var(--border-mid); border-radius: 22px; transition: 0.2s; cursor: pointer; }
+  .switch span::before { content: ''; position: absolute; width: 18px; height: 18px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: 0.2s; }
+  .switch input:checked + span { background: var(--amber-400); }
+  .switch input:checked + span::before { transform: translateX(16px); }
 
   /* ── Toast ── */
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #27500A; color: #EAF3DE; padding: 9px 20px; border-radius: 20px; font-size: 13px; display: none; z-index: 999; white-space: nowrap; }
@@ -464,6 +471,7 @@
       <button class="dd-item" id="nav-home" onclick="go('home')" role="menuitem">Home</button>
       <button class="dd-item" id="nav-pipeline" onclick="go('pipeline')" role="menuitem">My pipeline</button>
       <button class="dd-item" id="nav-discover" onclick="go('discover')" role="menuitem">Discover</button>
+      <button class="dd-item" onclick="toggleProfile()" role="menuitem">Profile &amp; settings</button>
       <div class="dd-divider"></div>
       <button class="dd-item dd-add" onclick="go('add')" role="menuitem">+ Add venue</button>
     </div>
@@ -549,7 +557,8 @@
   <!-- PROFILE -->
   <div class="screen" id="screen-profile">
     <div class="profile-hero">
-      <div class="profile-av-lg">NR</div>
+      <div class="profile-av-lg" id="profile-av" onclick="document.getElementById('avatar-file').click()" title="Change photo" style="cursor:pointer">NR</div>
+      <input type="file" id="avatar-file" accept="image/*" style="display:none" onchange="uploadAvatar(event)">
       <div>
         <div class="profile-name" id="p-display-name">Nick Rains</div>
         <div class="profile-email">thenickrains@gmail.com</div>
@@ -682,6 +691,7 @@
       <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-bell"></i></div><div class="setting-label">Notifications <span class="soon">soon</span></div><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-map-pin"></i></div><div class="setting-label">Home market <span class="soon">soon</span></div><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row" onclick="googleRowClick()"><div class="setting-icon"><i class="ti ti-brand-google"></i></div><div class="setting-label">Gmail &amp; Calendar</div><span class="setting-value" id="google-conn-status">Connect</span><i class="ti ti-chevron-right"></i></div>
+      <div class="setting-row"><div class="setting-icon"><i class="ti ti-send"></i></div><div class="setting-label">Let the assistant send email<div class="section-sub" style="margin-top:2px">Off — it drafts only; you send</div></div><label class="switch"><input type="checkbox" id="auto-send-toggle" onchange="saveAutoSend()"><span></span></label></div>
       <div class="setting-row" onclick="signOut()"><div class="setting-icon"><i class="ti ti-logout"></i></div><div class="setting-label" style="color:var(--dead-text)">Sign out</div></div>
     </div>
   </div>
@@ -1188,6 +1198,36 @@ function disconnectGoogle(){
     showToast('Gmail & Calendar disconnected');
   });
 }
+
+// ── Preference: assistant send ──
+function saveAutoSend(){
+  var on = document.getElementById('auto-send-toggle').checked;
+  sb.from('artists').update({ allow_auto_send: on }).eq('id', ME).then(function(r){
+    if(r.error){ showToast('Could not save: ' + r.error.message, true); return; }
+    showToast(on ? 'Assistant can send email' : 'Assistant will draft only');
+  });
+}
+
+// ── Profile picture (Supabase Storage) ──
+function applyAvatar(url){
+  [document.getElementById('avatar-btn'), document.getElementById('profile-av')].forEach(function(el){
+    if(!el) return;
+    if(url){ el.style.backgroundImage = 'url("' + url + '")'; el.style.backgroundSize='cover'; el.style.backgroundPosition='center'; el.textContent=''; }
+    else { el.style.backgroundImage=''; el.textContent = initials(profile.name); }
+  });
+}
+function uploadAvatar(e){
+  var file = e.target.files && e.target.files[0]; if(!file) return;
+  if(file.size > 5*1024*1024){ showToast('Image too large (max 5MB)', true); return; }
+  showToast('Uploading photo…');
+  sb.storage.from('avatars').upload(ME + '/avatar', file, { upsert: true, contentType: file.type }).then(function(r){
+    if(r.error){ showToast('Upload failed: ' + r.error.message, true); return; }
+    var url = sb.storage.from('avatars').getPublicUrl(ME + '/avatar').data.publicUrl + '?t=' + Date.now();
+    profile.avatar_url = url; applyAvatar(url);
+    sb.from('artists').update({ avatar_url: url }).eq('id', ME);
+    showToast('Photo updated');
+  });
+}
 function signOut(){ sb.auth.signOut().then(function(){ location.reload(); }); }
 
 function showApp(session){
@@ -1212,6 +1252,8 @@ function loadProfile(){
     markets = a.markets || [];
     notables = (profile.notable||'').split(',').map(function(s){ return s.trim(); }).filter(Boolean);
     setGoogleConnectedUI(!!a.gmail_connected);
+    profile.avatar_url = a.avatar_url || '';
+    var ast = document.getElementById('auto-send-toggle'); if(ast) ast.checked = !!a.allow_auto_send;
     fillProfileDom(); renderMarkets(); renderNotables(); updateProfilePreview(); updateHomeStats();
   });
 }
@@ -1224,8 +1266,7 @@ function fillProfileDom(){
   setVal('fi-web',profile.web); setVal('fi-epk',profile.epk); setVal('fi-spotify',profile.spotify);
   setVal('fi-draw',profile.draw); setVal('fi-crowd',profile.crowd); setVal('fi-formats',profile.formats);
   setText('p-display-name', profile.name||'—');
-  var av=document.getElementById('avatar-btn'); if(av) av.textContent=initials(profile.name);
-  var avlg=document.querySelector('.profile-av-lg'); if(avlg) avlg.textContent=initials(profile.name);
+  applyAvatar(profile.avatar_url);
   updateCompleteness();
 }
 function saveProfile(){
