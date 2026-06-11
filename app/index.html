@@ -846,6 +846,7 @@ function renderPipeline() {
 // ── Pipeline detail ─────────────────────────────────────
 function openDetail(id) {
   var p = pipeline[id];
+  currentDetailUuid = p ? p.uuid : null;
   var stageIdx = stages.indexOf(p.s);
   var stageDots = stages.map(function(s,i){
     var cls = i<stageIdx ? 'done' : (i===stageIdx ? 'current' : '');
@@ -1238,11 +1239,26 @@ function showApp(session){
   document.getElementById('auth-gate').style.display='none';
   document.getElementById('app-shell').style.display='block';
   var pe=document.querySelector('.profile-email'); if(pe) pe.textContent = session.user.email || '';
+  try { if(sb.realtime && session.access_token) sb.realtime.setAuth(session.access_token); } catch(e){}
   loadAll();
 }
 
 // ── Load ────────────────────────────────────────────────
-function loadAll(){ loadProfile(); loadVenues(); loadPipeline(); }
+function loadAll(){ loadProfile(); loadVenues(); loadPipeline(); subscribeRealtime(); }
+
+// Live updates over websockets: when the worker writes a reply/stage change,
+// Supabase Realtime pushes it here and we refresh — no manual reload. RLS means
+// each user only receives their own rows.
+var rtSubscribed = false;
+var currentDetailUuid = null;
+function subscribeRealtime(){
+  if(rtSubscribed || !sb.channel) return;
+  rtSubscribed = true;
+  sb.channel('pipeline-rt')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, function(){ loadPipeline(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'pipeline_entries' }, function(){ loadPipeline(); })
+    .subscribe();
+}
 
 function loadProfile(){
   sb.from('artists').select('*').eq('id',ME).single().then(function(r){
@@ -1318,6 +1334,10 @@ function loadActivities(ids){
       (byEntry[a.pipeline_entry_id]=byEntry[a.pipeline_entry_id]||[]).push({dot:dotFor(a.kind), text:a.body||'', time:relTime(a.created_at)});
     });
     pipeline.forEach(function(p){ p.activity = byEntry[p.uuid]||[]; });
+    // If the user is watching a venue, re-render it live with the new activity.
+    if(currentScreen==='detail' && currentDetailUuid){
+      for(var i=0;i<pipeline.length;i++){ if(pipeline[i].uuid===currentDetailUuid){ openDetail(i); break; } }
+    }
   });
 }
 
