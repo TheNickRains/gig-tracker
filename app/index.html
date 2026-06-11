@@ -312,13 +312,17 @@
   .stage-step { cursor: pointer; }
   .stage-step:hover .stage-dot:not(.current) { border-color: var(--amber-400); }
   .stage-step:hover .stage-label { color: var(--amber-800); }
-  .exit-row { display: flex; gap: 16px; justify-content: flex-end; margin: -6px 2px 16px; }
-  .exit-btn { font-size: 12px; color: var(--text-tertiary); cursor: pointer; background: none; border: none; padding: 2px 0; font-family: inherit; }
-  .exit-btn:hover { text-decoration: underline; color: var(--passed-text); }
-  .exit-btn.dead:hover { color: var(--dead-text); }
-  .pipe-group-h { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin: 16px 0 2px; display: flex; gap: 7px; align-items: baseline; }
-  .pipe-group-h:first-child { margin-top: 2px; }
-  .pipe-group-h .gcount { color: var(--text-tertiary); font-weight: 500; }
+  .closeout { display: flex; gap: 8px; margin: 0 0 16px; }
+  .closeout-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 10px; border: 1px solid var(--border-mid); border-radius: 10px; background: none; font-size: 12.5px; font-family: inherit; color: var(--text-secondary); cursor: pointer; }
+  .closeout-btn i { font-size: 14px; }
+  .closeout-btn.passed:hover { background: var(--passed-bg); border-color: var(--passed-text); color: var(--passed-text); }
+  .closeout-btn.deadend:hover { background: var(--dead-bg); border-color: var(--dead-text); color: var(--dead-text); }
+  .pipe-search { width: 100%; padding: 9px 12px; border: 1px solid transparent; border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13.5px; font-family: inherit; margin-bottom: 8px; }
+  .pipe-search:focus { outline: none; border-color: var(--amber-400); background: var(--bg-primary); }
+  .pipe-filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 10px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .pipe-filters::-webkit-scrollbar { display: none; }
+  .pf-chip { flex-shrink: 0; font-size: 12px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border-mid); color: var(--text-secondary); cursor: pointer; background: none; font-family: inherit; }
+  .pf-chip.on { background: var(--amber-50); border-color: var(--amber-400); color: var(--amber-800); font-weight: 500; }
 
   /* Contact card */
   .contact-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid var(--border-light); }
@@ -365,6 +369,15 @@
   .act-kind { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .act-ctx { font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
   .activity-item.action { padding: 6px 0; align-items: center; }
+  .note-item { padding: 10px 12px; border-bottom: 0.5px solid var(--border-light); }
+  .note-item:last-of-type { border-bottom: none; }
+  textarea.tpl-body { width: 100%; min-height: 200px; border: 1px dashed var(--border-mid); border-radius: 10px; padding: 10px; background: transparent; color: inherit; font: inherit; font-size: 13px; line-height: 1.5; resize: vertical; }
+  textarea.tpl-body:focus { outline: none; border-color: var(--amber-400); border-style: solid; }
+  .sched-card { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 10px; background: var(--bg-secondary); margin-top: 12px; font-size: 13px; }
+  .sched-card i { font-size: 16px; color: var(--amber-800); flex-shrink: 0; }
+  .sched-card .grow { flex: 1; min-width: 0; }
+  .sched-card .sub { font-size: 11px; color: var(--text-secondary); margin-top: 1px; }
+  .sched-x { background: none; border: none; font-family: inherit; font-size: 12px; color: var(--dead-text); cursor: pointer; flex-shrink: 0; }
   .act-dot-sm { width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary); margin-right: 10px; flex-shrink: 0; opacity: 0.55; }
   .act-line { flex: 1; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
   .act-action-text { font-size: 12px; color: var(--text-tertiary); }
@@ -498,10 +511,10 @@
       <span class="nav-name">Gig Collective</span>
     </div>
     <div class="nav-right">
-      <div class="nav-avatar" id="avatar-btn" onclick="goProfile()" title="Profile">NR</div>
       <button class="nav-hamburger" id="hbtn" onclick="toggleMenu()" aria-label="Menu" aria-expanded="false">
         <i class="ti ti-menu-2"></i>
       </button>
+      <div class="nav-avatar" id="avatar-btn" onclick="goProfile()" title="Profile">NR</div>
     </div>
     <div class="nav-dropdown" id="nav-menu" role="menu">
       <button class="dd-item" id="nav-home" onclick="go('home')" role="menuitem">Home</button>
@@ -569,10 +582,12 @@
 
   <!-- PIPELINE LIST -->
   <div class="screen" id="screen-pipeline">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
       <div class="page-title" style="margin-bottom:0">Pipeline</div>
       <span style="font-size:12px;color:var(--text-secondary)" id="pipe-count">0 venues</span>
     </div>
+    <input class="pipe-search" id="pipe-search" type="search" placeholder="Search venues, contacts, cities…" oninput="pipeQuery=this.value;renderPipeline()">
+    <div class="pipe-filters" id="pipe-filters"></div>
     <div class="card card-flush" id="pipe-list"></div>
   </div>
 
@@ -905,25 +920,52 @@ function renderPipeline() {
     document.getElementById('pipe-list').innerHTML = '<p style="color:var(--text-secondary);font-size:14px;padding:8px 0">No venues yet. Open the menu → <strong>Add venue</strong> to log your first business card.</p>';
     return;
   }
-  // Grouped by stage (the group header carries the stage, so rows stay clean).
-  var groups = {};
-  pipeline.forEach(function(p){ (groups[p.s] = groups[p.s] || []).push(p); });
-  var order = ['talks','hold','pitched','lead','booked','played','passed','dead'];
-  Object.keys(groups).forEach(function(k){ if(order.indexOf(k)<0) order.push(k); }); // legacy keys pre-migration
+  // Flat list, priority-ordered: follow-up-due first, then hottest stage, then
+  // most recent activity. Search + stage filter chips above. (Deeper view-type
+  // exploration is with the designer.)
+  renderPipeFilters();
+  var q = (pipeQuery || '').toLowerCase();
+  var rows = pipeline.filter(function(p){
+    if (pipeFilter !== 'all' && p.s !== pipeFilter) return false;
+    if (!q) return true;
+    return (p.venue + ' ' + p.contact + ' ' + p.city + ' ' + p.state).toLowerCase().indexOf(q) >= 0;
+  });
+  rows.sort(function(a,b){ return priorityScore(b) - priorityScore(a); });
   function dLabel(d){ return d===0 ? 'today' : (d===1 ? 'yesterday' : d + 'd ago'); }
-  document.getElementById('pipe-list').innerHTML = order.map(function(st){
-    var g = groups[st]; if(!g || !g.length) return '';
-    g.sort(function(a,b){ return a.days - b.days; });
-    return '<div class="pipe-group-h" style="color:var(--' + st + '-text, var(--text-secondary))">' + statusLabel[st] + ' <span class="gcount">' + g.length + '</span></div>'
-      + g.map(function(p){
-        var alert = followupDue(p) ? '<i class="ti ti-alert-circle" style="font-size:13px;color:var(--pitched-text)"></i>' : '';
-        return '<div class="pipe-item" onclick="openDetail(' + p.id + ')">'
-        + '<div class="pipe-icon"><i class="ti ti-building-store"></i></div>'
-        + '<div class="pipe-info"><div class="pipe-venue">' + esc(p.venue) + alert + '</div><div class="pipe-contact">' + esc(p.contact) + ' · ' + esc(p.city) + (p.state ? ', ' + esc(p.state) : '') + '</div></div>'
-        + '<div class="pipe-meta"><div class="pipe-date">' + dLabel(p.days) + '</div></div>'
-        + '</div>';
-      }).join('');
-  }).join('');
+  document.getElementById('pipe-list').innerHTML = rows.length ? rows.map(function(p){
+    var meta = followupDue(p)
+      ? '<div style="font-size:11px;font-weight:500;color:var(--pitched-text)">Follow up</div><div class="pipe-date">' + (p.days-7) + 'd overdue</div>'
+      : (p.s==='talks' && p.days>=1
+        ? '<div style="font-size:11px;font-weight:500;color:var(--talks-text)">Reply waiting</div><div class="pipe-date">' + dLabel(p.days) + '</div>'
+        : '<div class="pipe-date">' + dLabel(p.days) + '</div>');
+    return '<div class="pipe-item" onclick="openDetail(' + p.id + ')">'
+    + '<div class="pipe-icon"><i class="ti ti-building-store"></i></div>'
+    + '<div class="pipe-info"><div class="pipe-venue">' + esc(p.venue) + ' <span class="badge badge-' + p.s + '" style="font-size:10px;padding:2px 7px">' + statusLabel[p.s] + '</span></div><div class="pipe-contact">' + esc(p.contact) + ' · ' + esc(p.city) + (p.state ? ', ' + esc(p.state) : '') + '</div></div>'
+    + '<div class="pipe-meta">' + meta + '</div>'
+    + '</div>';
+  }).join('') : '<p style="color:var(--text-secondary);font-size:13px;padding:10px 0">Nothing matches.</p>';
+}
+// Urgency model (designer-spec'd): who needs attention right now?
+function priorityScore(p) {
+  if (p.s === 'talks' && p.days >= 1) return 100 + p.days; // they replied; you haven't moved
+  if (followupDue(p))                 return 80 + p.days;  // pitched, gone quiet
+  if (p.s === 'pitched')              return 60 + p.days;  // clock running
+  if (p.s === 'talks')                return 55;           // fresh reply today
+  if (p.s === 'lead' || p.s === 'hold') return 40 + p.days;
+  if (p.s === 'booked')               return 5;
+  if (p.s === 'played')               return 3;
+  return -1; // passed, dead
+}
+var pipeQuery = '', pipeFilter = 'all';
+function renderPipeFilters(){
+  var el = document.getElementById('pipe-filters'); if(!el) return;
+  var present = {}; pipeline.forEach(function(p){ present[p.s] = (present[p.s]||0) + 1; });
+  var order = ['talks','hold','pitched','lead','booked','played','passed','dead'].filter(function(s){ return present[s]; });
+  var html = '<button class="pf-chip' + (pipeFilter==='all'?' on':'') + '" onclick="pipeFilter=\'all\';renderPipeline()">All ' + pipeline.length + '</button>';
+  order.forEach(function(s){
+    html += '<button class="pf-chip' + (pipeFilter===s?' on':'') + '" onclick="pipeFilter=\'' + s + '\';renderPipeline()">' + statusLabel[s] + ' ' + present[s] + '</button>';
+  });
+  el.innerHTML = html;
 }
 
 // ── Pipeline detail ─────────────────────────────────────
@@ -944,36 +986,61 @@ function openDetail(id) {
     return '<div class="tpl-tab' + (activeTpl[id]===k?' active':'') + '" onclick="switchTpl(' + id + ',\'' + k + '\')">' + tplLabels[i] + '</div>';
   }).join('');
 
+  // Conversation = the thread with the venue (both directions, prominent).
+  // System events stay grey lines. Notes live in their own section below.
   var first = (p.contact||'').split(' ')[0] || 'venue';
-  var actHtml = p.activity.map(function(a){
-    if (a.kind==='email_in' || a.kind==='note') {
-      // Direction is explicit: "Marcy → you" = their words; notes are yours.
-      var label = a.kind==='email_in' ? esc(first) + ' → you' : 'Your note';
+  var convo = p.activity.filter(function(a){ return a.kind!=='note'; });
+  var notes = p.activity.filter(function(a){ return a.kind==='note'; });
+  var actHtml = convo.map(function(a){
+    if (a.kind==='email_in' || a.kind==='email_out') {
+      var inbound = a.kind==='email_in';
+      var label = inbound ? esc(first) + ' → you' : 'You → ' + esc(first);
+      var text = inbound ? a.text : a.text.replace(/^Sent:\s*/,'');
       return '<div class="activity-item ctx">'
         + '<div class="act-rail" style="background:' + a.dot + '"></div>'
         + '<div class="act-body"><div class="act-kind" style="color:' + a.dot + '">' + label + '<span class="act-time">' + a.time + '</span></div>'
-        + '<div class="act-ctx">' + esc(a.text) + '</div></div></div>';
+        + '<div class="act-ctx">' + esc(text) + '</div></div></div>';
     }
-    var line = a.text;
-    if (a.kind==='email_out') line = 'You → ' + first + ': ' + line.replace(/^Sent:\s*/,'');
     return '<div class="activity-item action">'
       + '<div class="act-dot-sm"></div>'
-      + '<div class="act-line"><span class="act-action-text">' + esc(line) + '</span><span class="act-time">' + a.time + '</span></div></div>';
+      + '<div class="act-line"><span class="act-action-text">' + esc(a.text) + '</span><span class="act-time">' + a.time + '</span></div></div>';
+  }).join('') || '<p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">No conversation yet — emails with ' + esc(first) + ' appear here automatically.</p>';
+  var notesHtml = notes.map(function(a){
+    return '<div class="note-item"><div class="act-ctx">' + esc(a.text) + '</div><div class="activity-time">' + a.time + '</div></div>';
   }).join('');
 
-  var chips = ['3 days','7 days','14 days','1 month'].map(function(d){
-    return '<div class="fu-chip' + (selectedFollowup[id]===d?' selected':'') + '" onclick="selectFollowup(' + id + ',\'' + d + '\')">' + d + '</div>';
-  }).join('');
+  // Slice B: schedule the draft. One pending send per entry; the worker fires it
+  // (or marks it 'ready' when auto-send is off; reply first = auto-cancel).
+  var schedBlock;
+  if (p.sched && p.sched.status === 'scheduled') {
+    schedBlock = '<div class="sched-card"><i class="ti ti-clock-hour-4"></i><div class="grow">Scheduled for <strong>' + fmtWhen(p.sched.send_at) + '</strong>'
+      + '<div class="sub">Cancels itself if ' + esc((p.contact||'').split(' ')[0]) + ' replies first' + (autoSendOn() ? '' : ' · auto-send is off — it will wait for your review') + '</div></div>'
+      + '<button class="sched-x" onclick="cancelScheduled(' + id + ')">Cancel</button></div>';
+  } else if (p.sched && p.sched.status === 'ready') {
+    schedBlock = '<div class="sched-card" style="background:var(--pitched-bg)"><i class="ti ti-bell-ringing" style="color:var(--pitched-text)"></i><div class="grow"><strong>Ready to send</strong> — auto-send is off'
+      + '<div class="sub">Review the draft, then send it yourself</div></div></div>'
+      + '<div style="display:flex;gap:8px;margin-top:8px">'
+      + '<button class="btn-primary btn-sm" onclick="openScheduledInEmail(' + id + ')"><i class="ti ti-mail"></i> Open in email</button>'
+      + '<button class="btn-secondary btn-sm" onclick="markScheduledSent(' + id + ')">Mark sent</button>'
+      + '<button class="sched-x" onclick="cancelScheduled(' + id + ')">Cancel</button></div>';
+  } else {
+    var chipsDef = [['Tomorrow 9am',1],['In 3 days',3],['In 7 days',7]];
+    schedBlock = '<div class="followup-chips" id="send-chips-' + id + '">'
+      + chipsDef.map(function(c){ return '<div class="fu-chip' + (sendChipDays[id]===c[1]?' selected':'') + '" onclick="pickSendChip(' + id + ',' + c[1] + ')">' + c[0] + '</div>'; }).join('')
+      + '</div><div style="display:flex;gap:8px;margin-top:10px;align-items:center">'
+      + '<button class="btn-secondary btn-sm" onclick="scheduleSend(' + id + ')"><i class="ti ti-clock-hour-4"></i> Schedule send</button>'
+      + '<span style="font-size:11px;color:var(--text-tertiary)">9am local · cancels if they reply first</span></div>';
+  }
 
   var wonBanner = (p.s==='booked'||p.s==='played'||p.s==='won') ? '<div class="won-banner"><i class="ti ti-' + (p.s==='played'?'music':'trophy') + '"></i><div><div class="won-banner-title">' + (p.s==='played'?'Played':'Booked') + '</div><div class="won-banner-sub">' + p.venue + '</div></div></div>' : '';
 
-  // Tracker dots ARE the stage control. Exits sit quietly under it; from a
-  // terminal state the full chip row returns so you can move back.
+  // Tracker dots ARE the stage control. Closing out is a deliberate act, so it
+  // gets real buttons; from a terminal state the full chip row returns instead.
   var statusActions;
   if (stageIdx >= 0) {
-    statusActions = '<div class="exit-row">'
-      + '<button class="exit-btn" onclick="setStatus(' + id + ',\'passed\')">Mark passed</button>'
-      + '<button class="exit-btn dead" onclick="setStatus(' + id + ',\'dead\')">Dead end</button></div>';
+    statusActions = '<div class="closeout">'
+      + '<button class="closeout-btn passed" onclick="setStatus(' + id + ',\'passed\')"><i class="ti ti-archive"></i> Mark passed</button>'
+      + '<button class="closeout-btn deadend" onclick="setStatus(' + id + ',\'dead\')"><i class="ti ti-circle-x"></i> Dead end</button></div>';
   } else {
     var allStatuses = stagesFor(p).concat(['passed','dead']);
     statusActions = '<div class="section-label">Move stage</div><div class="card" style="margin-bottom:12px"><div class="followup-chips">'
@@ -985,14 +1052,14 @@ function openDetail(id) {
     '<div class="section-label" style="margin-top:4px">Outreach templates</div>'
     + '<div class="card" style="margin-bottom:12px">'
     + '<div class="tpl-tabs" id="tpl-tabs-' + id + '">' + tplTabsHtml + '</div>'
-    + '<div class="tpl-body" id="tpl-body-' + id + '">' + templates[activeTpl[id]](p) + '</div>'
+    + '<textarea class="tpl-body" id="tpl-body-' + id + '" spellcheck="false">' + esc(templates[activeTpl[id]](p)) + '</textarea>'
     + '<div class="tpl-actions">'
     + '<button class="btn-primary btn-sm" onclick="copyTpl(' + id + ')"><i class="ti ti-copy"></i> Copy</button>'
     + '<button class="btn-secondary btn-sm" onclick="emailTpl(' + id + ')"><i class="ti ti-mail"></i> Open in email</button>'
     + '</div>'
     + '<div style="border-top:0.5px solid var(--border-light);padding-top:12px;margin-top:12px">'
-    + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Schedule follow-up reminder</div>'
-    + '<div class="followup-chips" id="fu-chips-' + id + '">' + chips + '</div>'
+    + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Schedule this draft</div>'
+    + schedBlock
     + '</div></div>'
   ) : '';
 
@@ -1012,8 +1079,10 @@ function openDetail(id) {
     + '<div style="padding:8px 0 4px"><div style="font-size:12px;color:var(--text-secondary);margin-bottom:2px">' + p.email + '</div><div style="font-size:12px;color:var(--text-secondary)">' + p.phone + '</div></div>'
     + '</div>'
     + tplSection
-    + '<div class="section-label">Activity</div>'
-    + '<div class="card card-flush" style="margin-bottom:20px">' + actHtml
+    + '<div class="section-label">Conversation</div>'
+    + '<div class="card card-flush" style="margin-bottom:12px">' + actHtml + '</div>'
+    + '<div class="section-label">Notes</div>'
+    + '<div class="card card-flush" style="margin-bottom:20px">' + notesHtml
     + '<div><input class="note-input" placeholder="Add a note… press Enter to save" onkeydown="addNote(event,' + id + ')"></div>'
     + '</div>';
 
@@ -1024,19 +1093,72 @@ function switchTpl(id, key) {
   activeTpl[id] = key;
   var p = pipeline[id];
   document.querySelectorAll('#tpl-tabs-' + id + ' .tpl-tab').forEach(function(t,i){ t.classList.toggle('active', tplKeys[i]===key); });
-  document.getElementById('tpl-body-' + id).textContent = templates[key](p);
+  document.getElementById('tpl-body-' + id).value = templates[key](p);
 }
 function copyTpl(id) {
-  var txt = document.getElementById('tpl-body-' + id).textContent;
+  var txt = document.getElementById('tpl-body-' + id).value;
   navigator.clipboard.writeText(txt).catch(function(){});
   showToast();
 }
+function defaultSubject(){ return profile.name + ' — booking inquiry'; }
 function emailTpl(id) {
   var p = pipeline[id];
-  var body = document.getElementById('tpl-body-' + id).textContent;
-  window.open('mailto:' + p.email + '?subject=' + encodeURIComponent(profile.name + ' — booking inquiry') + '&body=' + encodeURIComponent(body));
+  var body = document.getElementById('tpl-body-' + id).value;
+  window.open('mailto:' + p.email + '?subject=' + encodeURIComponent(defaultSubject()) + '&body=' + encodeURIComponent(body));
 }
-function selectFollowup(id, val) {
+
+// ── Slice B: schedule the draft ──
+var sendChipDays = {};
+function pickSendChip(id, days) {
+  sendChipDays[id] = days;
+  var chips = document.querySelectorAll('#send-chips-' + id + ' .fu-chip');
+  var map = {1:0, 3:1, 7:2};
+  chips.forEach(function(c,i){ c.classList.toggle('selected', i===map[days]); });
+}
+function fmtWhen(ts){
+  var d = new Date(ts);
+  return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) + ', ' + d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+}
+function autoSendOn(){ return !!profile.allow_auto_send; }
+function scheduleSend(id) {
+  var p = pipeline[id];
+  var days = sendChipDays[id];
+  if (!days) { showToast('Pick when to send first', true); return; }
+  if (!p.email) { showToast('This contact has no email', true); return; }
+  var body = document.getElementById('tpl-body-' + id).value.trim();
+  if (!body) { showToast('Draft is empty', true); return; }
+  var at = new Date(); at.setDate(at.getDate() + days); at.setHours(9, 0, 0, 0);
+  sb.from('scheduled_messages').insert({
+    artist_id: ME, pipeline_entry_id: p.uuid, to_email: p.email,
+    subject: defaultSubject(), body: body, send_at: at.toISOString()
+  }).select().single().then(function(r){
+    if (r.error) { showToast('Could not schedule: ' + r.error.message, true); return; }
+    p.sched = r.data;
+    openDetail(id);
+    showToast('Scheduled for ' + fmtWhen(at.toISOString()));
+  });
+}
+function cancelScheduled(id) {
+  var p = pipeline[id]; if (!p.sched) return;
+  sb.from('scheduled_messages').update({ status:'canceled', cancel_reason:'Canceled by you' }).eq('id', p.sched.id).then(function(r){
+    if (r.error) { showToast('Could not cancel: ' + r.error.message, true); return; }
+    p.sched = null; openDetail(id); showToast('Send canceled');
+  });
+}
+function openScheduledInEmail(id) {
+  var p = pipeline[id]; if (!p.sched) return;
+  window.open('mailto:' + p.sched.to_email + '?subject=' + encodeURIComponent(p.sched.subject) + '&body=' + encodeURIComponent(p.sched.body));
+}
+function markScheduledSent(id) {
+  var p = pipeline[id]; if (!p.sched) return;
+  var subj = p.sched.subject;
+  sb.from('scheduled_messages').update({ status:'sent', sent_at:new Date().toISOString() }).eq('id', p.sched.id).then(function(r){
+    if (r.error) { showToast('Could not update: ' + r.error.message, true); return; }
+    sb.from('activities').insert({ pipeline_entry_id:p.uuid, kind:'email_out', body:'Sent: ' + subj, source:'manual' }).then(function(){ loadPipeline(); });
+    p.sched = null; openDetail(id); showToast('Marked sent');
+  });
+}
+function legacySelectFollowup(id, val) {
   selectedFollowup[id] = val;
   document.querySelectorAll('#fu-chips-' + id + ' .fu-chip').forEach(function(c){ c.classList.toggle('selected', c.textContent===val); });
 }
@@ -1313,6 +1435,7 @@ function saveAutoSend(){
   var on = document.getElementById('auto-send-toggle').checked;
   sb.from('artists').update({ allow_auto_send: on }).eq('id', ME).then(function(r){
     if(r.error){ showToast('Could not save: ' + r.error.message, true); return; }
+    profile.allow_auto_send = on;
     showToast(on ? 'Assistant can send email' : 'Assistant will draft only');
   });
 }
@@ -1368,6 +1491,7 @@ function subscribeRealtime(){
   sb.channel('pipeline-rt')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, function(){ loadPipeline(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pipeline_entries' }, function(){ loadPipeline(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'scheduled_messages' }, function(){ loadPipeline(); })
     .subscribe();
 }
 
@@ -1382,6 +1506,7 @@ function loadProfile(){
     setGoogleConnectedUI(!!a.gmail_connected);
     profile.avatar_url = a.avatar_url || '';
     var ast = document.getElementById('auto-send-toggle'); if(ast) ast.checked = !!a.allow_auto_send;
+    profile.allow_auto_send = !!a.allow_auto_send;
     fillProfileDom(); renderMarkets(); renderNotables(); updateProfilePreview(); updateHomeStats();
   });
 }
@@ -1437,7 +1562,7 @@ function loadPipeline(){
       if(currentScreen==='pipeline') renderPipeline();
       retryPendingRoute();
       var ids = rows.map(function(e){ return e.id; });
-      if(ids.length) loadActivities(ids);
+      if(ids.length) { loadActivities(ids); loadScheduled(ids); }
     });
 }
 function loadActivities(ids){
@@ -1447,11 +1572,22 @@ function loadActivities(ids){
       (byEntry[a.pipeline_entry_id]=byEntry[a.pipeline_entry_id]||[]).push({kind:a.kind, dot:dotFor(a.kind), text:a.body||'', time:relTime(a.created_at)});
     });
     pipeline.forEach(function(p){ p.activity = byEntry[p.uuid]||[]; });
-    // If the user is watching a venue, re-render it live with the new activity.
-    if(currentScreen==='detail' && currentDetailUuid){
-      for(var i=0;i<pipeline.length;i++){ if(pipeline[i].uuid===currentDetailUuid){ openDetail(i); break; } }
-    }
+    rerenderOpenDetail();
   });
+}
+function loadScheduled(ids){
+  sb.from('scheduled_messages').select('*').in('pipeline_entry_id',ids).in('status',['scheduled','ready']).order('created_at',{ascending:false}).then(function(r){
+    var byEntry={};
+    (r.data||[]).forEach(function(m){ if(!byEntry[m.pipeline_entry_id]) byEntry[m.pipeline_entry_id]=m; });
+    pipeline.forEach(function(p){ p.sched = byEntry[p.uuid]||null; });
+    rerenderOpenDetail();
+  });
+}
+// If the user is watching a venue, re-render it live with fresh data.
+function rerenderOpenDetail(){
+  if(currentScreen==='detail' && currentDetailUuid){
+    for(var i=0;i<pipeline.length;i++){ if(pipeline[i].uuid===currentDetailUuid){ openDetail(i); break; } }
+  }
 }
 
 function updateHomeStats(){

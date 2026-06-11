@@ -17,6 +17,22 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-11 — Slice B shipped (draft + schedule + intelligent disconnect) + UX round
+**Slice B:** template box is now an editable textarea (the draft); "Schedule this draft" chips
+(Tomorrow/3d/7d, 9am local) insert into `scheduled_messages` (migration 011, RLS own-rows, in the
+realtime publication). Worker `processScheduled()` each tick: reply since scheduling ⇒ **canceled**
+("They replied first" + system activity = the intelligent disconnect); `artists.allow_auto_send`
+false ⇒ **ready** (detail view shows amber "Ready to send" card with Open-in-email / Mark sent);
+true ⇒ **sent from the artist's Gmail** (`gmailSend` raw RFC822 + RFC2047 subject, email_message_id
+saved so push-dedup doesn't double-log; lead→pitched). Send granularity = POLL_MINUTES (10 min).
+**UX round from Nick's feedback:** pipeline GROUPING REJECTED → flat priority list per designer
+sub-agent consult (priorityScore tiers: reply-waiting > follow-up overdue > pitched aging > fresh
+reply > lead/hold > booked > played > exits; recommendation doc'd the no-kanban-on-mobile call);
+always-visible search + scrollable stage-filter chips with counts; detail Activity split into
+**Conversation** (both email directions as prominent cards, system lines grey) and **Notes**
+(comments-style section with the input); close-out = two real outlined buttons (Mark passed /
+Dead end), not whisper links; nav order now hamburger→avatar (avatar outermost).
+
 ## 2026-06-11 — Polish batch: hash routing, tappable tracker, grouped pipeline, activity direction
 (1) **Hash routing**: every screen is a `#hash` (`#entry/<uuid>`, `#venue/<uuid>`, `#pipeline`…) —
 refresh/back/deep-links work; deep routes retry after data load (pendingRoute). (2) **Tracker IS the

@@ -9,7 +9,7 @@ This document is maintained by Claude. After any session where a screen is added
 Sticky, 54px. Always visible.
 
 - **Left:** brand mark (amber rounded square, music icon) + "Gig Collective" wordmark
-- **Right:** avatar chip (photo if set, else initials — opens Profile) + hamburger button
+- **Right:** hamburger button, then avatar chip outermost (photo if set, else initials — opens Profile)
 - **Hamburger dropdown:** Home · Pipeline · Discover · Profile · Settings · [divider] · + Add venue (amber)
 - Dropdown closes on outside click
 - Avatar gets an amber border ring when profile screen is active
@@ -63,13 +63,15 @@ Personal CRM. Stages (the spine): **Lead → Pitched → In talks → Hold → B
 
 The worker auto-advances stages from Gmail: outbound pitch to the contact ⇒ Lead → Pitched; their reply ⇒ → In talks (also resurrects Passed); never auto-moves Hold/Booked/Played/Dead.
 
-**Grouped list** — rows are grouped under stage headers (stage-colored uppercase label + count), group order: In talks → Hold → Pitched → Lead → Booked → Played → Passed → Dead end. Within a group, most-recent activity first. No per-row status badge (the header carries the stage).
+**Priority list** (grouping was tried and rejected) — one flat list sorted by `priorityScore`: replies awaiting response (In talks, ≥1d) → follow-up overdue (Pitched ≥7d) → Pitched aging → fresh replies → Lead/Hold going stale → Booked → Played → Passed/Dead at bottom.
+
+**Search** — always-visible input above the list (venue/contact/city, live filter). **Stage filter chips** — horizontally scrollable pill row (All + each stage present, with counts), single-select, composes with search.
 
 Each row:
 - Building icon in a square chip
-- Venue name (+ orange alert icon when Pitched ≥ 7 days with no reply)
+- Venue name + small inline stage badge
 - Contact · City, State
-- Last activity (right-aligned: today / yesterday / Nd ago)
+- Right meta: "Follow up / Nd overdue" (amber) when due, "Reply waiting / Nd ago" (blue) for unanswered replies, else relative time
 
 Tapping a row opens Pipeline detail.
 
@@ -85,18 +87,22 @@ Full CRM view for one venue. Accessed from My pipeline.
 
 **Stage tracker (tappable — it IS the stage control)** — the happy path: Lead → Pitched → In talks → (Hold, hard-ticket only) → Booked → Played. Completed steps filled amber, current step has amber dot, future steps hollow; tapping any step moves the entry there. Hidden when status is Passed or Dead end (badge carries the state).
 
-**Exit row** — quiet right-aligned text buttons under the tracker: "Mark passed" · "Dead end" (red on hover). When the entry IS in a terminal state, a full Move-stage chip row appears instead so it can be moved back.
+**Close-out buttons** — two half-width outlined buttons under the tracker: "Mark passed" (archive icon, warm hover) and "Dead end" (circle-x icon, red hover) — deliberate actions, visually distinct from the progress tracker. When the entry IS in a terminal state, a full Move-stage chip row appears instead so it can be moved back.
 
 **Booked/Played banner** — green banner when status = Booked (trophy) or Played (music icon).
 
 **Contact card** — contact initials avatar, name, title. Email and phone shown below. Email + call icon buttons (right side).
 
-**Outreach templates** — 4 tabs: Cold outreach · Follow-up · Full pitch · Check-in. Each template is dynamically populated from the artist's profile fields (see Profile). Suggested tab is pre-selected based on current status.
-- Copy button → copies to clipboard + shows toast
-- Open in email → opens mailto: with subject and body pre-filled
-- Follow-up reminder chips: 3 days · 7 days · 14 days · 1 month (tap to select)
+**Outreach templates → editable draft** — 4 tabs: Cold outreach · Follow-up · Full pitch · Check-in, rendering into an editable `textarea` (dashed border; solid amber on focus). Suggested tab pre-selected from stage. Copy / Open in email use the edited text.
 
-**Activity log** — two visual tiers: **context pops, actions recede**. Replies (email_in) and notes render as prominent cards — colored left rail, direction-explicit label ("{Contact} → you" / "Your note"), full content text (the worker stores the booker's words via the Gmail snippet, with quoted thread tails stripped). System events are muted grey single lines with a small dot; outbound email reads "You → {Contact}: {subject}". Note input at bottom — press Enter to save and prepend to log. Updates live via Supabase Realtime when the worker logs email.
+**Schedule this draft (slice B)** — chips: Tomorrow 9am · In 3 days · In 7 days → "Schedule send" inserts a `scheduled_messages` row. States rendered in place:
+- *scheduled*: card "Scheduled for {when}" + Cancel; notes it cancels itself if the contact replies first, and that auto-send-off means it waits for review
+- *ready* (due while auto-send off): amber card "Ready to send" + Open in email / Mark sent / Cancel
+- Worker behavior at send time: reply since scheduling ⇒ canceled (+ system activity); auto-send ON ⇒ sent from the artist's Gmail (logged, lead→pitched); OFF ⇒ flips to ready. Live-updates via Realtime.
+
+**Conversation** — the email thread with the venue, both directions prominent as cards: inbound "{Contact} → you" (blue rail, booker's words via cleaned Gmail snippet) and outbound "You → {Contact}" (amber rail, subject). System events (stage moves, cancellations) are muted grey single lines interleaved. Empty state explains emails appear automatically. Live via Realtime.
+
+**Notes** — separate comments-style section below Conversation: your private notes with timestamps + the "Add a note" input (Enter to save).
 
 ---
 

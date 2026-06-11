@@ -95,6 +95,16 @@ function header(msg, name) {
   const h = hs.find((x) => x.name.toLowerCase() === name.toLowerCase());
   return h ? h.value : "";
 }
+function b64url(s) { return Buffer.from(s).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
+function mimeWord(s) { return /[^\x20-\x7E]/.test(s) ? "=?UTF-8?B?" + Buffer.from(s).toString("base64") + "?=" : s; }
+async function gmailSend(token, to, subject, body) {
+  const raw = b64url(`To: ${to}\r\nSubject: ${mimeWord(subject)}\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset="UTF-8"\r\n\r\n${body}`);
+  const r = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify({ raw }),
+  });
+  if (!r.ok) throw new Error(`send ${r.status}: ${(await r.text()).slice(0, 150)}`);
+  return (await r.json()).id;
+}
 
 // Shared: given a pipeline entry + a Gmail message, log it and advance the stage.
 async function applyMessage(entry, full, contactEmail) {
@@ -184,8 +194,50 @@ async function pollArtist(artistId, token) {
   }
 }
 
+// Slice B: fire due scheduled messages.
+// reply since scheduling -> cancel (intelligent disconnect); auto-send off -> 'ready'
+// (the app surfaces "review & send"); auto-send on -> send from the artist's Gmail.
+async function processScheduled() {
+  const due = await sGet(`scheduled_messages?status=eq.scheduled&send_at=lte.${encodeURIComponent(new Date().toISOString())}&select=*`);
+  for (const m of due) {
+    try {
+      const replies = await sGet(`activities?pipeline_entry_id=eq.${m.pipeline_entry_id}&kind=eq.email_in&created_at=gte.${encodeURIComponent(m.created_at)}&select=id&limit=1`);
+      if (replies.length) {
+        await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "canceled", cancel_reason: "They replied first" });
+        await logActivity({ pipeline_entry_id: m.pipeline_entry_id, kind: "system", body: "Scheduled follow-up canceled — they replied first", source: "email_sync" });
+        console.log("scheduled: canceled (reply arrived)", m.id);
+        continue;
+      }
+      const arts = await sGet(`artists?id=eq.${m.artist_id}&select=allow_auto_send`);
+      if (!arts.length || !arts[0].allow_auto_send) {
+        await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "ready" });
+        console.log("scheduled: ready for review (auto-send off)", m.id);
+        continue;
+      }
+      const conns = await sGet(`google_connections?artist_id=eq.${m.artist_id}&select=refresh_token`);
+      if (!conns.length) {
+        await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "failed", cancel_reason: "Gmail not connected" });
+        continue;
+      }
+      const token = await refreshAccessToken(conns[0].refresh_token);
+      const gid = await gmailSend(token, m.to_email, m.subject, m.body);
+      await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "sent", sent_at: new Date().toISOString() });
+      await logActivity({ pipeline_entry_id: m.pipeline_entry_id, kind: "email_out", body: "Sent: " + m.subject, source: "email_sync", email_message_id: gid });
+      const entries = await sGet(`pipeline_entries?id=eq.${m.pipeline_entry_id}&select=status`);
+      const patch = { last_activity_at: new Date().toISOString() };
+      if (entries.length && ["lead", "outreach"].includes(entries[0].status)) patch.status = "pitched";
+      await sPatch(`pipeline_entries?id=eq.${m.pipeline_entry_id}`, patch);
+      console.log("scheduled: SENT", m.id, "->", m.to_email);
+    } catch (e) {
+      console.error("scheduled error", m.id, e.message);
+      await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "failed", cancel_reason: (e.message || "error").slice(0, 180) });
+    }
+  }
+}
+
 async function tick() {
   try {
+    await processScheduled();
     const conns = await sGet("google_connections?select=artist_id,refresh_token,history_id,watch_expiry");
     console.log(new Date().toISOString(), "poll", conns.length, "connection(s)");
     for (const c of conns) {
