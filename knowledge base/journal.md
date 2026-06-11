@@ -17,6 +17,19 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-11 — Slice A live: Google connect + worker reading Gmail end-to-end
+Settings → "Gmail & Calendar → Connect" runs incremental Google OAuth (offline) and stores the
+refresh token via the `store_google_token()` SECURITY DEFINER RPC (migrations 003/004; 005 = disconnect;
+006 = send pref + avatar bucket). A SEPARATE Railway service **`gig-worker`** (service root = `worker/`,
+deployed with `railway up worker --path-as-root --service gig-worker --ci`) polls every 10 min:
+refreshes each artist's Google access token (needs GOOGLE_CLIENT_ID/SECRET), reads Gmail for pipeline
+contacts' replies, logs activities + advances outreach→waiting, dedups via activities.email_message_id;
+on token-refresh failure it drops the connection so the app re-prompts. Worker env (Railway dashboard,
+not git): SUPABASE_URL, SUPABASE_SERVICE_KEY (service_role), GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+POLL_MINUTES. **Gotcha that ate ~an hour:** a trailing **comma** on the pasted service key → Supabase 401
+"Invalid API key" (payload still decoded fine; `.trim()` doesn't strip commas). Worker logs key
+role/ref/len for diagnosis. Only the read path is built; send (Slice B) is next.
+
 ## 2026-06-11 — Public landing + legal pages; app moved to /app
 Added a public marketing landing at `/`, moved the app to `/app`, and added `/terms` + `/privacy`
 (privacy carries the Google API **Limited Use** disclosure + the Gmail/Calendar/Gemini data flows).
