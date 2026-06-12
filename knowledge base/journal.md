@@ -27,6 +27,14 @@ tokens expire ~7 days idle (Settings flips to "Connect" — just reconnect); Gem
 caps (upgrade the key's project to billed before the roster leans on AI drafting); push notifications
 are per-device opt-in.
 
+## 2026-06-12 — DESIGN IDENTITY LOCKED: "Ink on paper"
+Nick: "That's it — ink on paper." The settled language after brown → violet → sage: warm paper
+neutrals, ink (#2E2A24) as the only chrome authority, stage pastels as the sole color voices
+(doctrine in design-system.md: chrome is ink, color is meaning). Header shares the page sheet
+(bg-tertiary, no divider) — the mobile card reads as one continuous piece of paper. Avatar ring =
+status light (grey rest / amber needs-you / ink on-profile). Do NOT re-introduce saturated chrome
+accents; argue with the doctrine, not taste.
+
 ## 2026-06-12 — RETHEME II: PAPER & SAGE (the keeper). Violet rejected in 9 minutes
 Nick on the violet: "no fucking violet is gross. it needs to feel like PAPER" + IDE screenshots (Solar
 Light theme: cream paper surfaces, sage-green accent, ink text). Applied directly from the reference:
