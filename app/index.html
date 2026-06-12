@@ -1866,9 +1866,8 @@ function openDetail(id) {
         + '</select>'
         + '<textarea class="tpl-body" id="tpl-body-' + id + '" spellcheck="false" placeholder="' + esc(ph) + '" oninput="draftText[\'' + p.uuid + '\']=this.value">' + esc(draftVal) + '</textarea>'
         + '<div class="tpl-actions">'
-        + (p.email
-          ? '<button class="btn-primary btn-sm" onclick="sendNowInline(' + id + ')"><i class="ti ti-send"></i> Send now</button>'
-          : (p.phone ? '<button class="btn-primary btn-sm" onclick="textDraft(' + id + ')"><i class="ti ti-message"></i> Text it</button>' : ''))
+        + (p.email ? '<button class="btn-primary btn-sm" onclick="sendNowInline(' + id + ')"><i class="ti ti-send"></i> Send now</button>' : '')
+        + (p.phone ? '<button class="btn-' + (p.email ? 'secondary' : 'primary') + ' btn-sm" onclick="textDraft(' + id + ')"><i class="ti ti-message"></i> Text it</button>' : '')
         + '<button class="btn-secondary btn-sm" onclick="copyTpl(' + id + ')"><i class="ti ti-copy"></i> Copy</button>'
         + '<button class="btn-secondary btn-sm" onclick="aiDraft(' + id + ')"><i class="ti ti-sparkles"></i> Draft with AI</button>'
         + '</div>'
