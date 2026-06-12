@@ -246,6 +246,27 @@ async function ensureWatch(artistId, conn, token) {
   console.log("watch armed", artistId, "exp", patch.watch_expiry);
 }
 
+// Any contact at the venue speaks for the deal: map every venue-contact email
+// to the artist's entry there (Yeti-card case: two emails, one room, one deal).
+async function venueContactMap(artistId) {
+  const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&select=id,status,venue_id,contact:contacts(email)`);
+  const map = {};
+  const byVenue = {};
+  entries.forEach((e) => {
+    if (e.venue_id && !byVenue[e.venue_id]) byVenue[e.venue_id] = e;
+    const em = e.contact && e.contact.email;
+    if (em) map[em.toLowerCase()] = e;
+  });
+  const venueIds = [...new Set(entries.map((e) => e.venue_id).filter(Boolean))];
+  if (venueIds.length) {
+    const extra = await sGet(`contacts?venue_id=in.(${venueIds.join(",")})&select=email,venue_id`);
+    extra.forEach((c) => {
+      if (c.email && byVenue[c.venue_id] && !map[c.email.toLowerCase()]) map[c.email.toLowerCase()] = byVenue[c.venue_id];
+    });
+  }
+  return map;
+}
+
 // PUSH path: a Pub/Sub notification arrived for emailAddress.
 async function handlePush(emailAddress, notifHistoryId) {
   const arts = await sGet(`artists?email=eq.${encodeURIComponent(emailAddress)}&select=id`);
@@ -259,9 +280,7 @@ async function handlePush(emailAddress, notifHistoryId) {
   if (!conn.history_id) { await sPatch(`google_connections?artist_id=eq.${artistId}`, { history_id: String(notifHistoryId) }); return; }
   const ids = await gmailHistory(token, conn.history_id);
   if (ids.length) {
-    const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&select=id,status,contact:contacts(email)`);
-    const map = {};
-    entries.forEach((e) => { if (e.contact && e.contact.email) map[e.contact.email.toLowerCase()] = e; });
+    const map = await venueContactMap(artistId);
     for (const id of ids) {
       const full = await gmailGet(token, id);
       if (!full) continue;
@@ -279,14 +298,12 @@ async function handlePush(emailAddress, notifHistoryId) {
 
 // POLL path (fallback): scan each connection's pipeline contacts for recent mail.
 async function pollArtist(artistId, token) {
-  const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&select=id,status,contact:contacts(email)`);
-  for (const e of entries) {
-    const email = e.contact && e.contact.email;
-    if (!email) continue;
+  const map = await venueContactMap(artistId);
+  for (const [email, entry] of Object.entries(map)) {
     const msgs = await gmailSearch(token, `(from:${email} OR to:${email}) newer_than:3d`);
     for (const m of msgs) {
       const full = await gmailGet(token, m.id);
-      if (full) await applyMessage(e, full, email, artistId);
+      if (full) await applyMessage(entry, full, email, artistId);
     }
   }
 }
