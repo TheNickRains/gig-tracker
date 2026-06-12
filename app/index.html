@@ -166,7 +166,11 @@
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; border: 1.5px solid transparent; transition: border-color 0.15s;
   }
-  .nav-avatar:hover, .nav-avatar.active { border-color: var(--amber-400); }
+  /* The ring is a status light: quiet grey at rest, amber when the war room
+     needs you, ink while you're on the profile. */
+  .nav-avatar { transition: border-color 0.25s, box-shadow 0.25s; }
+  .nav-avatar.attn { border-color: var(--pitched-text); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--pitched-text) 30%, transparent); }
+  .nav-avatar:hover, .nav-avatar.active { border-color: var(--amber-800); }
   .nav-hamburger {
     width: 34px; height: 34px; border-radius: var(--radius-md);
     background: none; border: 0.5px solid var(--border-mid);
@@ -1448,6 +1452,8 @@ function renderHome(){
   items.sort(function(a,b){ return a.tier - b.tier || b.p.days - a.p.days; });
   var MAX_WAR = 8, overflow = items.length - MAX_WAR;
   var shown = items.slice(0, MAX_WAR);
+  var avb = document.getElementById('avatar-btn');
+  if (avb) avb.classList.toggle('attn', items.length > 0);
   // The clear-the-room moment deserves a nod.
   if (warPrevCount > 0 && items.length === 0 && currentScreen === 'home') showToast('War room cleared — go play 🎸');
   warPrevCount = items.length;
