@@ -249,18 +249,24 @@ async function ensureWatch(artistId, conn, token) {
 // Any contact at the venue speaks for the deal: map every venue-contact email
 // to the artist's entry there (Yeti-card case: two emails, one room, one deal).
 async function venueContactMap(artistId) {
-  // Most-recently-active first: when one email (a multi-room talent buyer)
-  // maps to several deals, the live conversation wins.
-  const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&order=last_activity_at.desc&select=id,status,venue_id,last_activity_at,contact:contacts(email)`);
+  // PEOPLE-first: the deal's person, then everyone linked to the deal's room.
+  // Most-recently-active deal wins when one human (a buyer) spans several.
+  const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&order=last_activity_at.desc&select=id,status,venue_id,last_activity_at,person:people(email),contact:contacts(email)`);
   const map = {};
   const byVenue = {};
   entries.forEach((e) => {
     if (e.venue_id && !byVenue[e.venue_id]) byVenue[e.venue_id] = e;
-    const em = e.contact && e.contact.email;
+    const em = (e.person && e.person.email) || (e.contact && e.contact.email);
     if (em && !map[em.toLowerCase()]) map[em.toLowerCase()] = e;
   });
   const venueIds = [...new Set(entries.map((e) => e.venue_id).filter(Boolean))];
   if (venueIds.length) {
+    const links = await sGet(`venue_people?venue_id=in.(${venueIds.join(",")})&select=venue_id,person:people(email)`);
+    links.forEach((l) => {
+      const em = l.person && l.person.email;
+      if (em && byVenue[l.venue_id] && !map[em.toLowerCase()]) map[em.toLowerCase()] = byVenue[l.venue_id];
+    });
+    // legacy contacts still answer during transition
     const extra = await sGet(`contacts?venue_id=in.(${venueIds.join(",")})&select=email,venue_id`);
     extra.forEach((c) => {
       if (c.email && byVenue[c.venue_id] && !map[c.email.toLowerCase()]) map[c.email.toLowerCase()] = byVenue[c.venue_id];
@@ -562,9 +568,15 @@ async function handleAiDraft(req, res, bodyStr) {
     const parsed = JSON.parse(bodyStr || "{}");
     const entryId = (parsed.entry_id || "").replace(/[^a-zA-Z0-9-]/g, "");
     if (!entryId) { res.writeHead(400, hdr); res.end(JSON.stringify({ error: "entry_id required" })); return; }
-    const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,gig_date,ticket_type,venue:venues(name,city,state,venue_type,ticket_type,pay_range,clientele,notes),contact:contacts(name,title)`);
+    const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,gig_date,ticket_type,person_id,venue:venues(name,city,state,venue_type,ticket_type,pay_range,clientele,notes),person:people(name,title,org),contact:contacts(name,title)`);
     if (!entries.length || entries[0].artist_id !== uid) { res.writeHead(404, hdr); res.end(JSON.stringify({ error: "Entry not found" })); return; }
-    const e = entries[0], v = e.venue || {}, c = e.contact || {};
+    const e = entries[0], v = e.venue || {}, c = e.person || e.contact || {};
+    let otherRooms = "";
+    if (e.person_id) {
+      const links = await sGet(`venue_people?person_id=eq.${e.person_id}&select=venue:venues(name)&limit=5`);
+      const names = links.map((l) => l.venue && l.venue.name).filter((n) => n && n !== v.name);
+      if (names.length) otherRooms = " — also books " + names.join(", ");
+    }
     const arts = await sGet(`artists?id=eq.${uid}&select=display_name,genre,oneliner,website,epk,spotify,draw_claim,typical_crowd,set_formats,notable,markets,phone,tone_profile,rate_soft,rate_hard,home_market`);
     const a = arts[0] || {};
     const rateLine = (a.rate_soft || a.rate_hard)
@@ -591,7 +603,7 @@ async function handleAiDraft(req, res, bodyStr) {
       (lastInbound ? `THEIR LAST MESSAGE (answer this):\n"""${lastInbound.slice(0, 600)}"""\n` : "") +
       (convo ? `CONVERSATION SO FAR:\n${convo}\n` : "") +
       `VENUE: ${v.name || ""} (${v.venue_type || ""}, ${e.ticket_type || v.ticket_type || "soft"} ticket — quote the matching rate) in ${v.city || ""}, ${v.state || ""}. ${v.clientele ? "Clientele: " + v.clientele + "." : ""} ${v.notes ? "My notes on this venue: " + v.notes : ""}\n` +
-      `CONTACT: ${c.name || "the booker"}${c.title ? " (" + c.title + ")" : ""}\n` +
+      `CONTACT: ${c.name || "the booker"}${c.title ? " (" + c.title + ")" : ""}${c.org ? " of " + c.org : ""}${otherRooms}\n` +
       rateLine +
       (firstTouch
         ? `ARTIST (use what's relevant — this is a first touch): ${a.display_name || ""} — ${a.genre || ""}. ${a.oneliner || ""} Draw: ${a.draw_claim || "n/a"}. Crowd: ${a.typical_crowd || "n/a"}. Formats: ${a.set_formats || "n/a"}. Notable rooms: ${a.notable || "n/a"}. Home market: ${a.home_market || "n/a"}. Site: ${a.website || ""} ${a.epk ? "EPK: " + a.epk : ""} ${a.spotify ? "Spotify: " + a.spotify : ""} Phone: ${a.phone || ""}\n`

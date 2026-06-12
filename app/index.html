@@ -1001,6 +1001,9 @@
   <!-- EVENT (gig) -->
   <div class="screen" id="screen-event"><div id="event-container"></div></div>
 
+  <!-- PERSON -->
+  <div class="screen" id="screen-person"><div id="person-container"></div></div>
+
   <!-- SETTINGS -->
   <div class="screen" id="screen-settings">
     <div class="page-title" style="margin-bottom:16px">Settings</div>
@@ -1085,7 +1088,7 @@ var tplKeys = ['outreach','followup','pitch','checkin'];
 var tplLabels = ['Cold outreach','Follow-up','Full pitch','Check-in'];
 
 // ── Navigation ──────────────────────────────────────────
-var TAB_FOR = { home:'home', pipeline:'pipeline', detail:'pipeline', discover:'discover', venue:'discover', calendar:'calendar', event:'calendar', settings:'settings' };
+var TAB_FOR = { home:'home', pipeline:'pipeline', detail:'pipeline', discover:'discover', venue:'discover', calendar:'calendar', event:'calendar', person:'pipeline', settings:'settings' };
 function setActiveTab(screen){
   document.querySelectorAll('.bnav-item, .bnav-home').forEach(function(b){ b.classList.remove('active'); });
   var t = TAB_FOR[screen];
@@ -1122,6 +1125,7 @@ function syncHash(screen){
   var h = screen;
   if (screen === 'detail') { if (!currentDetailUuid) return; h = 'entry/' + currentDetailUuid; }
   if (screen === 'event')  { if (!currentEventUuid)  return; h = 'event/' + currentEventUuid; }
+  if (screen === 'person') { if (!currentPersonId)   return; h = 'person/' + currentPersonId; }
   if (screen === 'venue')  { if (!currentVenueId)  return; h = 'venue/' + currentVenueId; }
   if (location.hash !== '#' + h) {
     var prev = (location.hash || '').replace(/^#/, '') || 'home';
@@ -1149,6 +1153,9 @@ function applyRoute(){
       var eu = h.slice(6);
       if (pipeline.some(function(x){ return x.uuid === eu; })) { if (currentScreen !== 'event' || currentEventUuid !== eu) openEventView(eu); }
       else pendingRoute = true;
+    } else if (h.indexOf('person/') === 0) {
+      var pu = h.slice(7);
+      if (currentScreen !== 'person' || currentPersonId !== pu) openPersonView(pu);
     } else if (h.indexOf('venue/') === 0) {
       var vid = h.slice(6);
       if (venues.some(function(x){ return x.id === vid; })) { if (currentScreen !== 'venue' || currentVenueId !== vid) openVenueDetail(vid); }
@@ -1534,6 +1541,46 @@ function linkUrl(v, kind){
   if (kind === 'linkedin') return 'https://' + v.replace(/^\/+/, '');
   return 'https://' + v;
 }
+// ── Person page: one human, all their rooms, all your deals with them ──
+var currentPersonId = null;
+function openPersonView(pid){
+  currentPersonId = pid;
+  var el = document.getElementById('person-container');
+  el.innerHTML = '<button class="back-btn" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button><p style="color:var(--text-secondary);font-size:13px">Loading…</p>';
+  go('person');
+  Promise.all([
+    sb.from('people').select('*').eq('id', pid).single(),
+    sb.from('venue_people').select('role, venue:venues(id,name,city)').eq('person_id', pid)
+  ]).then(function(rs){
+    var per = rs[0].data; if (!per) { el.innerHTML = '<button class="back-btn" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button><p style="padding:10px 0;color:var(--text-secondary)">Person not found.</p>'; return; }
+    var rooms = (rs[1].data || []).filter(function(x){ return x.venue; });
+    var deals = pipeline.filter(function(pp){ return pp.personId === pid; });
+    var icons = ''
+      + (per.email ? '<a class="btn-icon" title="Email" href="mailto:' + esc(per.email) + '"><i class="ti ti-mail"></i></a>' : '')
+      + (per.phone ? '<a class="btn-icon" title="Call" href="tel:' + esc(per.phone).replace(/[^+0-9]/g,'') + '"><i class="ti ti-phone"></i></a>' : '')
+      + (per.linkedin ? '<a class="btn-icon" title="LinkedIn" target="_blank" rel="noopener" href="' + esc(linkUrl(per.linkedin,'linkedin')) + '"><i class="ti ti-brand-linkedin"></i></a>' : '')
+      + (per.instagram ? '<a class="btn-icon" title="Instagram" target="_blank" rel="noopener" href="' + esc(linkUrl(per.instagram,'instagram')) + '"><i class="ti ti-brand-instagram"></i></a>' : '');
+    el.innerHTML = '<button class="back-btn" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>'
+      + '<div style="display:flex;gap:13px;align-items:center;margin-bottom:4px">' + avatarHtml(per.name, null, 44)
+      + '<div style="flex:1;min-width:0"><div class="page-title" style="margin-bottom:0">' + esc(per.name || per.email || 'Contact') + '</div>'
+      + '<div style="font-size:12.5px;color:var(--text-secondary)">' + esc([per.title, per.org].filter(Boolean).join(' · ') || '—') + '</div></div>'
+      + '<div class="contact-actions">' + icons + '</div></div>'
+      + (per.email ? '<div style="font-size:12px;color:var(--text-tertiary);margin-bottom:16px;overflow-wrap:anywhere">' + esc(per.email) + (per.phone ? ' · ' + esc(per.phone) : '') + '</div>' : '<div style="margin-bottom:16px"></div>')
+      + '<div class="section-label">Books these rooms</div>'
+      + (rooms.length
+        ? '<div class="followup-chips" style="margin:0 0 18px">' + rooms.map(function(x){ return '<div class="fu-chip" onclick="openVenueDetail(\'' + x.venue.id + '\')">' + esc(x.venue.name) + (x.venue.city ? ' · ' + esc(x.venue.city) : '') + '</div>'; }).join('') + '</div>'
+        : '<div class="card" style="margin-bottom:18px;font-size:13px;color:var(--text-secondary)">No rooms linked yet.</div>')
+      + '<div class="section-label">Your deals with them</div>'
+      + (deals.length
+        ? '<div class="card card-flush" style="margin-bottom:20px">' + deals.map(function(pp){
+            return '<div class="war-row" onclick="openDetail(' + pp.id + ')"><div class="war-ic" style="background:var(--' + pp.s + '-bg);color:var(--' + pp.s + '-text)"><i class="ti ti-building-store"></i></div>'
+              + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(pp.venue) + '</div><div class="war-sub">' + statusLabel[pp.s] + (pp.gig_date ? ' · ' + new Date(pp.gig_date).toLocaleDateString(undefined,{month:'short',day:'numeric'}) : '') + '</div></div>'
+              + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
+          }).join('') + '</div>'
+        : '<div class="card" style="margin-bottom:20px;font-size:13px;color:var(--text-secondary)">No deals yet — add one of their rooms to your pipeline.</div>');
+  });
+}
+
 // ── Contact management: edit, switch, add — straight from the deal ──
 var contactEditing = {};   // entry uuid -> contact id being edited ('new' = adding)
 function contactSection(p, id){
@@ -1545,17 +1592,17 @@ function contactSection(p, id){
     h += contactForm(p, id, (p.contactsAll||[]).filter(function(c){ return c.id===editing; })[0] || {});
   } else {
     h += '<div class="contact-row"><div class="contact-av">' + esc(initials(p.contact)) + '</div>'
-      + '<div style="flex:1;min-width:0"><div class="contact-name">' + esc(p.contact) + '</div><div class="contact-title">' + esc(p.title || '') + '</div>'
+      + '<div style="flex:1;min-width:0"><div class="contact-name" ' + (p.personId ? 'style="cursor:pointer" onclick="openPersonView(\'' + p.personId + '\')"' : '') + '>' + esc(p.contact) + (p.personId ? ' <i class="ti ti-chevron-right" style="font-size:11px;color:var(--text-tertiary)"></i>' : '') + '</div><div class="contact-title">' + esc([p.title, p.org].filter(Boolean).join(' · ')) + '</div>'
       + '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px;overflow-wrap:anywhere">' + esc(p.email || 'no email') + (p.phone ? ' · ' + esc(p.phone) : '') + '</div></div>'
       + '<div class="contact-actions">'
       + (p.email ? '<a class="btn-icon" title="Email" href="mailto:' + esc(p.email) + '"><i class="ti ti-mail"></i></a>' : '')
       + (p.phone ? '<a class="btn-icon" title="Call" href="tel:' + esc(p.phone).replace(/[^+0-9]/g,'') + '"><i class="ti ti-phone"></i></a>' : '')
       + (p.linkedin ? '<a class="btn-icon" title="LinkedIn" target="_blank" rel="noopener" href="' + esc(linkUrl(p.linkedin, 'linkedin')) + '"><i class="ti ti-brand-linkedin"></i></a>' : '')
       + (p.instagram ? '<a class="btn-icon" title="Instagram" target="_blank" rel="noopener" href="' + esc(linkUrl(p.instagram, 'instagram')) + '"><i class="ti ti-brand-instagram"></i></a>' : '')
-      + '<button class="btn-icon" title="Edit contact" onclick="startContactEdit(' + id + ',\'' + (p.contactId||'') + '\')"><i class="ti ti-pencil"></i></button>'
+      + '<button class="btn-icon" title="Edit contact" onclick="startContactEdit(' + id + ',\'' + (p.personId||'') + '\')"><i class="ti ti-pencil"></i></button>'
       + '</div></div>';
     // other contacts at this venue -> tap to make primary for this deal
-    var others = (p.contactsAll||[]).filter(function(c){ return c.id !== p.contactId; });
+    var others = (p.contactsAll||[]).filter(function(c){ return c.id !== p.personId; });
     if (others.length) {
       h += '<div style="padding:8px 12px 10px"><div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">Also at this venue — tap to use for this deal:</div><div class="followup-chips" style="margin:0">'
         + others.map(function(c){ return '<div class="fu-chip" onclick="switchContact(' + id + ',\'' + c.id + '\')">' + esc(c.name || c.email || 'contact') + (c.title ? ' · ' + esc(c.title) : '') + '</div>'; }).join('')
@@ -1570,7 +1617,8 @@ function contactForm(p, id, c){
   var isNew = !c.id;
   return '<div style="padding:12px">'
     + '<div class="field-row"><span class="field-label">Name</span><input class="form-input" id="cf-name" placeholder="Marcy Hayes" value="' + esc(c.name||'') + '"></div>'
-    + '<div class="field-row"><span class="field-label">Role / title</span><input class="form-input" id="cf-title" placeholder="Booking manager" value="' + esc(c.title||'') + '"></div>'
+    + '<div class="field-row"><span class="field-label">Role / title</span><input class="form-input" id="cf-title" placeholder="Talent buyer" value="' + esc(c.title||'') + '"></div>'
+    + '<div class="field-row"><span class="field-label">Org <span style="font-weight:400;color:var(--text-tertiary)">(optional)</span></span><input class="form-input" id="cf-org" placeholder="ATG Entertainment" value="' + esc(c.org||'') + '"></div>'
     + '<div class="field-row"><span class="field-label">Email</span><input class="form-input" id="cf-email" placeholder="marcy@venue.com" value="' + esc(c.email||'') + '"></div>'
     + '<div class="field-row"><span class="field-label">Phone</span><input class="form-input" id="cf-phone" placeholder="(512) 555-0100" value="' + esc(c.phone||'') + '"></div>'
     + '<div class="field-row"><span class="field-label">LinkedIn <span style="font-weight:400;color:var(--text-tertiary)">(optional)</span></span><input class="form-input" id="cf-linkedin" placeholder="linkedin.com/in/marcyhayes" value="' + esc(c.linkedin||'') + '"></div>'
@@ -1578,13 +1626,14 @@ function contactForm(p, id, c){
     + '<div class="save-row"><button class="btn-primary btn-sm" onclick="saveContact(' + id + ',\'' + (c.id||'') + '\')">' + (isNew ? 'Add contact' : 'Save') + '</button>'
     + '<button class="btn-secondary btn-sm" onclick="cancelContactEdit(' + id + ')">Cancel</button></div></div>';
 }
-function startContactEdit(id, cid){ var p = pipeline[id]; contactEditing[p.uuid] = cid || p.contactId; openDetail(id); }
+function startContactEdit(id, cid){ var p = pipeline[id]; contactEditing[p.uuid] = cid || p.personId; openDetail(id); }
 function cancelContactEdit(id){ var p = pipeline[id]; delete contactEditing[p.uuid]; openDetail(id); }
 function saveContact(id, cid){
   var p = pipeline[id];
   var row = {
     name: document.getElementById('cf-name').value.trim(),
     title: document.getElementById('cf-title').value.trim() || null,
+    org: document.getElementById('cf-org').value.trim() || null,
     email: document.getElementById('cf-email').value.trim() || null,
     phone: document.getElementById('cf-phone').value.trim() || null,
     linkedin: document.getElementById('cf-linkedin').value.trim() || null,
@@ -1593,33 +1642,51 @@ function saveContact(id, cid){
   if (!row.name && !row.email) { showToast('Need at least a name or an email', true); return; }
   delete contactEditing[p.uuid];
   if (cid) {
-    sb.from('contacts').update(row).eq('id', cid).then(function(r){
+    // Editing a PERSON updates them everywhere they book — that's the point.
+    sb.from('people').update(row).eq('id', cid).then(function(r){
       if (r.error) { showToast('Could not save: ' + r.error.message, true); return; }
-      showToast('Contact updated'); loadPipeline(); fetchVenueContacts(p);
+      showToast('Updated — everywhere they book'); loadPipeline(); fetchVenueContacts(p);
     });
   } else {
-    row.venue_id = p.venueId;
-    sb.from('contacts').insert(row).select().single().then(function(r){
-      if (r.error) { showToast('Could not add: ' + r.error.message, true); return; }
-      // New contact becomes this deal's contact immediately.
-      sb.from('pipeline_entries').update({ contact_id: r.data.id }).eq('id', p.uuid).then(function(){
-        showToast('Contact added'); loadPipeline(); fetchVenueContacts(p);
+    linkPersonToDeal(p, row, function(){ loadPipeline(); fetchVenueContacts(p); });
+  }
+}
+// One human, many rooms: find-or-create the person, link them to this room,
+// point the deal at them.
+function linkPersonToDeal(p, row, done){
+  var finish = function(personId, recognized){
+    sb.from('venue_people').upsert({ venue_id: p.venueId, person_id: personId, role: row.title || null }).then(function(){
+      sb.from('pipeline_entries').update({ person_id: personId }).eq('id', p.uuid).then(function(){
+        showToast(recognized ? 'Recognized ' + (row.name || 'them') + ' — same person, new room ✓' : 'Contact added');
+        if (done) done();
       });
     });
-  }
+  };
+  var maybeMatch = row.email
+    ? sb.from('people').select('id,name').ilike('email', row.email).limit(1)
+    : Promise.resolve({ data: [] });
+  maybeMatch.then(function(r){
+    var existing = r.data && r.data[0];
+    if (existing) { finish(existing.id, true); return; }
+    row.created_by = ME;
+    sb.from('people').insert(row).select().single().then(function(ir){
+      if (ir.error) { showToast('Could not add: ' + ir.error.message, true); return; }
+      finish(ir.data.id, false);
+    });
+  });
 }
 function switchContact(id, cid){
   var p = pipeline[id];
-  sb.from('pipeline_entries').update({ contact_id: cid }).eq('id', p.uuid).then(function(r){
+  sb.from('pipeline_entries').update({ person_id: cid }).eq('id', p.uuid).then(function(r){
     if (r.error) { showToast('Could not switch: ' + r.error.message, true); return; }
     showToast('Contact switched for this deal'); loadPipeline();
   });
 }
 function fetchVenueContacts(p){
   if (!p.venueId) return;
-  sb.from('contacts').select('id,name,title,email,phone,linkedin,instagram').eq('venue_id', p.venueId).then(function(r){
+  sb.from('venue_people').select('person:people(id,name,title,org,email,phone,linkedin,instagram)').eq('venue_id', p.venueId).then(function(r){
     if (r.error) return;
-    p.contactsAll = r.data || [];
+    p.contactsAll = (r.data || []).map(function(x){ return x.person; }).filter(Boolean);
     rerenderOpenDetail();
   });
 }
@@ -2696,12 +2763,12 @@ function saveProfile(){
 }
 
 function loadVenues(){
-  sb.from('venues').select('*, contacts(name)').order('created_at',{ascending:false}).then(function(r){
+  sb.from('venues').select('*, venue_people(person:people(name)), contacts(name)').order('created_at',{ascending:false}).then(function(r){
     var rows=r.data||[]; cities={};
     venues = rows.map(function(v){
       if(v.state){ cities[v.state]=cities[v.state]||[]; if(v.city && cities[v.state].indexOf(v.city)<0) cities[v.state].push(v.city); }
       return {id:v.id, name:v.name, city:v.city||'', state:v.state||'', type:v.ticket_type||'soft', createdAt:v.created_at||null, createdBy:v.created_by||null, createdByName:v.created_by_name||'',
-              vtype:v.venue_type||'', pay:v.pay_range||'—', contact:(v.contacts&&v.contacts[0]?v.contacts[0].name:'—'),
+              vtype:v.venue_type||'', pay:v.pay_range||'—', contact:((v.venue_people&&v.venue_people[0]&&v.venue_people[0].person&&v.venue_people[0].person.name) || (v.contacts&&v.contacts[0]?v.contacts[0].name:'—')),
               address:v.address||'', clientele:v.clientele||'', notes:v.notes||''};
     });
     if(currentScreen==='discover') renderDiscover();
@@ -2711,14 +2778,14 @@ function loadVenues(){
 
 function loadPipeline(){
   sb.from('pipeline_entries')
-    .select('id,status,prev_status,venue_id,contact_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs,ticket_type, venue:venues(name,city,state,venue_type,pay_range,ticket_type), contact:contacts(name,title,email,phone,linkedin,instagram)')
+    .select('id,status,prev_status,venue_id,contact_id,person_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs,ticket_type, venue:venues(name,city,state,venue_type,pay_range,ticket_type), person:people(name,title,org,email,phone,linkedin,instagram), contact:contacts(name,title,email,phone,linkedin,instagram)')
     .order('last_activity_at',{ascending:false}).then(function(r){
       if(r.error){ console.error('loadPipeline', r.error); return; }
       var rows=r.data||[];
       pipeline = rows.map(function(e,i){
-        var v=e.venue||{}, c=e.contact||{};
+        var v=e.venue||{}, c=e.person||e.contact||{};
         return {id:i, uuid:e.id, venue:v.name||'(unknown venue)', city:v.city||'', state:v.state||'',
-                contact:c.name||'(no contact)', title:c.title||'', email:c.email||'', phone:c.phone||'', linkedin:c.linkedin||'', instagram:c.instagram||'',
+                contact:c.name||'(no contact)', title:c.title||'', org:c.org||'', email:c.email||'', phone:c.phone||'', linkedin:c.linkedin||'', instagram:c.instagram||'', personId:e.person_id||null,
                 vtype:v.venue_type||'', pay:v.pay_range||'—', t:(e.ticket_type||v.ticket_type||'soft'), tOverride:e.ticket_type||null, s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, contactId:e.contact_id||null, gig_date:e.gig_date||null, gigPay:e.gig_pay||'', gigCosts:e.gig_costs||'', days:daysAgo(e.last_activity_at), activity:[]};
       });
       updateHomeStats();
@@ -2862,12 +2929,24 @@ function wizSubmit(ticket){
     if(vr.error){ alert('Could not save venue: ' + vr.error.message); if(btn){ btn.disabled=false; btn.textContent='Add to collective ↗'; } return; }
     var venueId=vr.data.id;
     var needContact = wizData.contactName || cEmail || cPhone || wizData.contactTitle || wizData.contactLinkedin || wizData.contactInstagram;
-    var contactStep = needContact
-      ? sb.from('contacts').insert({venue_id:venueId, name:wizData.contactName||null, title:wizData.contactTitle||null, email:cEmail, phone:cPhone, linkedin:wizData.contactLinkedin||null, instagram:wizData.contactInstagram||null, verified_by:ME, verified_at:new Date().toISOString()}).select().single()
-      : Promise.resolve({data:null});
-    contactStep.then(function(cr){
-      var contactId = (cr && cr.data) ? cr.data.id : null;
-      sb.from('pipeline_entries').insert({artist_id:ME, venue_id:venueId, contact_id:contactId, status:'lead'}).select().single().then(function(pr){
+    // Find-or-create the PERSON (same email anywhere = same human), link to room.
+    var contactStep;
+    if (!needContact) contactStep = Promise.resolve(null);
+    else {
+      var prow = { name: wizData.contactName||null, title: wizData.contactTitle||null, org: wizData.contactOrg||null, email: cEmail, phone: cPhone, linkedin: wizData.contactLinkedin||null, instagram: wizData.contactInstagram||null, created_by: ME };
+      contactStep = (cEmail ? sb.from('people').select('id,name').ilike('email', cEmail).limit(1) : Promise.resolve({ data: [] }))
+        .then(function(r){
+          var existing = r.data && r.data[0];
+          if (existing) { showToast('Recognized ' + (existing.name || 'them') + ' — same person, new room ✓'); return existing.id; }
+          return sb.from('people').insert(prow).select().single().then(function(ir){ return ir.data ? ir.data.id : null; });
+        })
+        .then(function(pid){
+          if (!pid) return null;
+          return sb.from('venue_people').upsert({ venue_id: venueId, person_id: pid, role: wizData.contactTitle||null }).then(function(){ return pid; });
+        });
+    }
+    contactStep.then(function(personId){
+      sb.from('pipeline_entries').insert({artist_id:ME, venue_id:venueId, person_id:personId, status:'lead'}).select().single().then(function(pr){
         if(pr.error){ alert('Venue saved, but could not start your pipeline: ' + pr.error.message); loadVenues(); loadPipeline(); renderWizard(5, null, {}); return; }
         sb.from('activities').insert({pipeline_entry_id:pr.data.id, kind:'system', body:'Added to pipeline', source:'manual'}).then(function(){});
         loadVenues(); loadPipeline();

@@ -27,6 +27,20 @@ tokens expire ~7 days idle (Settings flips to "Connect" — just reconnect); Gem
 caps (upgrade the key's project to billed before the roster leans on AI drafting); push notifications
 are per-device opt-in.
 
+## 2026-06-12 — THE PROMOTION SHIPPED: People × Rooms × Deals (migration 026)
+Trigger fired early — Nick holds THREE talent buyers + a stack of rooms, and said the words: "I have
+slept on this outreach for over a year… we need the full promotion for contacts." Built: `people`
+(first-class: name/title/ORG/email/phone/socials; unique on lower(email) — same email anywhere = same
+HUMAN) + `venue_people` join (person↔room, per-room role) + `pipeline_entries.person_id`. Backfill
+dedupes contacts by email into people, builds room links, points deals at people; legacy contacts
+table kept read-only for fallback. **Find-or-create everywhere:** wizard + deal Add-contact check email
+first → "Recognized {name} — same person, new room ✓" (the magic moment); editing a person updates them
+EVERYWHERE they book. **Person page** (#person/<id>): identity + org, social/email icons, "Books these
+rooms" chips, "Your deals with them." Worker: matching via person+room links (legacy contacts still
+answer); /ai/draft knows the person's ORG and OTHER ROOMS ("also books Empire Theatre") = buyer-aware
+drafting. Venue cards read people first. Intake gained Org. RLS: people/venue_people = shared collective
+graph (read/write all authed), same doctrine as venues/contacts.
+
 ## 2026-06-12 — ARCHITECTURE NORTH STAR: People × Rooms × Deals (migrate on trigger, not taste)
 Nick spotted the model truth: the business is PEOPLE (buyers/GMs, who span rooms) × ROOMS (venue facts)
 × DEALS (person+room+terms; soft/hard lives HERE as of migration 025). Session evolved the schema ~85%
