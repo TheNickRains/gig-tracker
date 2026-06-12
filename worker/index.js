@@ -89,8 +89,13 @@ async function aiEnrich(entry, activityId, replyText) {
     if (j.summary) patch.summary = String(j.summary).slice(0, 200);
     if (j.intent) patch.ai_intent = String(j.intent).slice(0, 30);
     if (Object.keys(patch).length) await sPatch(`activities?id=eq.${activityId}`, patch);
-    if (j.intent === "decline") await logActivity({ pipeline_entry_id: entry.id, kind: "system", body: "AI: reads like a pass — consider Mark passed", source: "email_sync" });
-    else if (j.intent === "date_offer") await logActivity({ pipeline_entry_id: entry.id, kind: "system", body: "AI: they're talking dates — possible hold", source: "email_sync" });
+    // Don't stack the same proposal — once per entry per week is plenty.
+    const proposal = j.intent === "decline" ? "AI: reads like a pass — consider Mark passed"
+      : j.intent === "date_offer" ? "AI: they're talking dates — possible hold" : null;
+    if (proposal) {
+      const recent = await sGet(`activities?pipeline_entry_id=eq.${entry.id}&kind=eq.system&body=eq.${encodeURIComponent(proposal)}&created_at=gte.${encodeURIComponent(new Date(Date.now() - 7 * 86400000).toISOString())}&select=id&limit=1`);
+      if (!recent.length) await logActivity({ pipeline_entry_id: entry.id, kind: "system", body: proposal, source: "email_sync" });
+    }
   } catch (e) { console.error("aiEnrich", e.message); }
 }
 
@@ -179,7 +184,11 @@ async function applyMessage(entry, full, contactEmail, artistId) {
       await aiEnrich(entry, isNew.id, body);
     }
   } else {
-    const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_out", body: "Sent: " + subject, source: "email_sync", email_message_id: full.id });
+    // Store YOUR actual words (not just the subject) — the conversation view and
+    // the AI both need real two-way context to avoid repeating what you've said.
+    const outSnippet = cleanSnippet(full.snippet);
+    const outBody = outSnippet ? outSnippet.slice(0, 600) : "Sent: " + subject;
+    const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_out", body: outBody, source: "email_sync", email_message_id: full.id });
     // You pitched from Gmail like a human -> the card moves itself: Lead -> Pitched.
     if (isNew && ["lead", "outreach"].includes(entry.status)) {
       await sPatch(`pipeline_entries?id=eq.${entry.id}`, { status: "pitched", last_activity_at: new Date().toISOString() });
@@ -349,8 +358,20 @@ async function syncCalendar(artistId, token) {
       }
     } else console.error("calendar list failed", r.status, (await r.text()).slice(0, 120));
     // -- export holds/bookings + flip played --
-    const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&status=in.(hold,booked)&gig_date=not.is.null&select=id,status,gig_date,google_event_id,venue:venues(name)`);
+    // Agent policy: the worker CREATES events on its own, but only EDITS or
+    // DELETES one when the ARTIST changed the date in the app (gig_date_dirty).
+    const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&status=in.(hold,booked,played)&or=(gig_date.not.is.null,google_event_id.not.is.null)&select=id,status,gig_date,google_event_id,gig_date_dirty,venue:venues(name)`);
     for (const e of entries) {
+      const evUrl = (idp) => `https://www.googleapis.com/calendar/v3/calendars/primary/events${idp ? "/" + idp : ""}`;
+      // Date cleared by the artist -> remove the event.
+      if (!e.gig_date) {
+        if (e.google_event_id && e.gig_date_dirty) {
+          await fetch(evUrl(e.google_event_id), { method: "DELETE", headers: { Authorization: "Bearer " + token } }).catch(() => {});
+          await sPatch(`pipeline_entries?id=eq.${e.id}`, { google_event_id: null, gig_date_dirty: false });
+          console.log("calendar: event removed (date cleared)", e.id);
+        }
+        continue;
+      }
       const start = new Date(e.gig_date);
       if (e.status === "booked" && start.getTime() < Date.now() - 6 * 3600000) {
         await sPatch(`pipeline_entries?id=eq.${e.id}`, { status: "played", last_activity_at: new Date().toISOString() });
@@ -358,19 +379,24 @@ async function syncCalendar(artistId, token) {
         console.log("calendar: booked -> played", e.id);
         continue;
       }
-      // Agent policy: the worker CREATES events but never edits existing ones.
-      // (Date changes after the first sync are the artist's to make in Calendar.)
-      if (e.google_event_id) continue;
+      if (e.status === "played") continue;
       const ev = {
         summary: (e.status === "hold" ? "HOLD: " : "Gig: ") + ((e.venue && e.venue.name) || "venue") + " (Gig Collective)",
         start: { dateTime: start.toISOString() },
         end: { dateTime: new Date(start.getTime() + 3 * 3600000).toISOString() },
         status: e.status === "hold" ? "tentative" : "confirmed",
       };
-      const er = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events`, { method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(ev) });
+      if (e.google_event_id) {
+        if (!e.gig_date_dirty) continue; // never touch an existing event unprompted
+        const er = await fetch(evUrl(e.google_event_id), { method: "PATCH", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(ev) });
+        if (er.ok) { await sPatch(`pipeline_entries?id=eq.${e.id}`, { gig_date_dirty: false }); console.log("calendar: event updated (artist edit)", e.id); }
+        else console.error("calendar update failed", e.id, er.status, (await er.text()).slice(0, 120));
+        continue;
+      }
+      const er = await fetch(evUrl(), { method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(ev) });
       if (er.ok) {
         const j = await er.json();
-        if (j.id) await sPatch(`pipeline_entries?id=eq.${e.id}`, { google_event_id: j.id });
+        if (j.id) await sPatch(`pipeline_entries?id=eq.${e.id}`, { google_event_id: j.id, gig_date_dirty: false });
         console.log("calendar:", e.status, "event created", e.id);
       } else console.error("calendar event failed", e.id, er.status, (await er.text()).slice(0, 120));
     }
@@ -411,7 +437,7 @@ async function processScheduled() {
       const thread = await findThread(token, m.to_email).catch(() => null);
       const gid = await gmailSend(token, m.to_email, (thread && thread.subject) || m.subject, m.body, thread);
       await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "sent", sent_at: new Date().toISOString() });
-      await logActivity({ pipeline_entry_id: m.pipeline_entry_id, kind: "email_out", body: "Sent: " + m.subject, source: "email_sync", email_message_id: gid });
+      await logActivity({ pipeline_entry_id: m.pipeline_entry_id, kind: "email_out", body: m.body.slice(0, 600), source: "email_sync", email_message_id: gid });
       const entries = await sGet(`pipeline_entries?id=eq.${m.pipeline_entry_id}&select=status`);
       const patch = { last_activity_at: new Date().toISOString() };
       if (entries.length && ["lead", "outreach"].includes(entries[0].status)) patch.status = "pitched";

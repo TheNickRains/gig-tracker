@@ -17,6 +17,25 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-12 — Context fix (real bodies), date/time pickers, gutter polish, human event edits
+**THE context fix:** outbound activities stored only "Sent: subject" → conversation bubbles looked
+empty/subject-only AND the AI repeated itself (it never saw its own sent words). Now: push/poll
+outbound stores the cleaned snippet of YOUR sent mail; scheduled sends log the FULL draft body;
+aiEnrich proposal lines dedupe (same proposal max once/7d/entry). **Gig-date edits propagate:**
+migration 019 `gig_date_dirty` — app sets it on ✓-save; worker mirrors that one human edit (PATCH) or
+clears (DELETE event) then resets the flag; agent still never touches events unprompted. **Date/time
+UX:** datetime-local replaced by date-picker + 30-min time select (9AM default) for BOTH custom
+schedule and gig date (desktop typing pain gone). **Mobile gutter survives scroll** via .nav::before
+painting --bg-page in the corner notches (z -1 inside nav's stacking context). Desktop Home columns
+reordered per Nick: Needs-you | war room | at-a-glance, grid-auto-flow dense, independent flows.
+Other: placeholder copy reworded ("drafts a message in your voice — try it out!"); profile inputs got
+modeled placeholders; leaving Profile mid-edit CANCELS (cancelAllProfileEdits in go()); Spotify
+"Missing" hint now hides when set + link values ellipsize (fv-ell) instead of wrapping; weekly-block
+confirm label adapts (Confirm unblock / changes / blocks); human "Send now" shows a green "Sending
+now…" card (not "Scheduled"); schedule chips centered (.sched-chips); "In pipeline ✓" chip hidden on
+mobile cards. NOTE: collective feed/roster + Home-market setting remain the deliberate "coming soon"
+placeholders (slice: collective features, post-roster-onboarding).
+
 ## 2026-06-11 — Big feedback round: threads, bubbles, blank canvas, toggles, rates, desktop fix
 **Critical fix:** desktop nav was dead — `#screen-home{display:grid}` wasn't scoped to `.active` so
 Home rendered over every screen; now `#screen-home.active`, and desktop is FULL-WIDTH (≥1100: app

@@ -91,6 +91,9 @@
       box-shadow: 0 -2px 18px rgba(0,0,0,0.12);
     }
     .nav { top: calc(env(safe-area-inset-top, 0px) + 8px); border-radius: 22px 22px 0 0; z-index: 70; }
+    /* The corner notches outside the nav's radius paint --bg-page, so the
+       rounded card + gutter survive scrolling instead of fusing to the top. */
+    .nav::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 22px; background: var(--bg-page); z-index: -1; }
     /* Keep the top gutter clean while scrolling — content can't slide through it. */
     body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: calc(env(safe-area-inset-top, 0px) + 8px); background: var(--bg-page); z-index: 80; pointer-events: none; }
   }
@@ -111,13 +114,15 @@
     .screen { padding-left: 36px; padding-right: 36px; }
     /* Home: 3-zone war room — bookings rail | needs-you stack | stats rail.
        Scoped to .active (the unscoped version glued Home over every screen). */
-    #screen-home.active { display: grid; grid-template-columns: 340px minmax(0, 1fr) 360px; gap: 0 32px; align-items: start; }
+    /* Columns: 1 = Needs you · 2 = the war room (stats/actions/sends/collective)
+       · 3 = at a glance (mini cal + upcoming). Independent vertical flows. */
+    #screen-home.active { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 340px; gap: 0 32px; align-items: start; grid-auto-flow: dense; }
     #screen-home.active > div:first-child { grid-column: 1 / -1; }
-    #screen-home.active #war-cal { display: block; grid-column: 1; }
-    #screen-home.active #war-up { display: block; grid-column: 1; }
-    #screen-home.active #war-needs { grid-column: 2; grid-row: 2 / span 6; }
+    #screen-home.active #war-needs { grid-column: 1; grid-row: 2 / span 8; }
     #screen-home.active .stat-grid, #screen-home.active .war-actions, #screen-home.active #war-sends,
-    #screen-home.active > .section-label, #screen-home.active > .card.placeholder { grid-column: 3; }
+    #screen-home.active > .section-label, #screen-home.active > .card.placeholder { grid-column: 2; }
+    #screen-home.active #war-cal { display: block; grid-column: 3; grid-row: 2; }
+    #screen-home.active #war-up { display: block; grid-column: 3; grid-row: 3 / span 6; }
     /* Detail: two working columns, capped for readability */
     .detail-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; align-items: start; max-width: 1240px; }
     /* Pipeline breathes */
@@ -373,6 +378,7 @@
   .closeout-btn.deadend:hover { background: var(--dead-bg); border-color: var(--dead-text); color: var(--dead-text); }
   .pipe-search { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid transparent; border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13.5px; font-family: inherit; margin-bottom: 8px; }
   .pipe-search:focus { outline: none; border-color: var(--amber-400); background: var(--bg-primary); }
+  @media (max-width: 599px) { .vp-chip { display: none; } } /* mobile cards stay quiet */
   .pipe-filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 10px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .pipe-filters::-webkit-scrollbar { display: none; }
   .pf-chip { flex-shrink: 0; font-size: 12px; padding: 5px 11px; border-radius: 999px; border: 1px solid transparent; color: var(--text-secondary); cursor: pointer; background: var(--bg-secondary); font-family: inherit; opacity: 0.85; }
@@ -433,8 +439,11 @@
   .closeout-btn.on { font-weight: 600; }
   .closeout-btn.on.passed { background: var(--passed-bg); border-color: var(--passed-text); color: var(--passed-text); }
   .closeout-btn.on.deadend { background: var(--dead-bg); border-color: var(--dead-text); color: var(--dead-text); }
-  /* Long URLs (Spotify, EPK) wrap instead of breaking layout */
-  .field-value, .tpl-preview, .act-ctx, .war-sub { overflow-wrap: anywhere; }
+  /* Long URLs truncate cleanly (no layout breakage, no wrap-spam) */
+  .fv-ell { display: inline-block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+  .tpl-preview, .act-ctx, .war-sub, .msg { overflow-wrap: anywhere; }
+  /* Schedule chips: centered, contained */
+  .sched-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 8px; }
   /* Full-row custom schedule button */
   .custom-sched-btn { width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 10px; margin-top: 8px; border: 1px dashed var(--border-mid); border-radius: 10px; background: none; font-family: inherit; font-size: 12.5px; color: var(--text-secondary); cursor: pointer; }
   .custom-sched-btn:hover, .custom-sched-btn.on { border-color: var(--amber-400); color: var(--amber-800); border-style: solid; }
@@ -789,10 +798,10 @@
         <div class="field-row"><span class="field-label">Phone</span><span class="field-value" id="fv-phone">(713) 555-0100</span></div>
       </div>
       <div id="edit-identity" style="display:none">
-        <div class="field-row"><span class="field-label">Display name</span><input class="form-input" id="fi-name" value="Nick Rains"></div>
+        <div class="field-row"><span class="field-label">Display name</span><input class="form-input" id="fi-name" placeholder="Your artist / act name" value="Nick Rains"></div>
         <div class="field-row"><span class="field-label">Genre / style</span><input class="form-input" id="fi-genre" placeholder="e.g. Americana / country singer-songwriter"></div>
         <div class="field-row"><span class="field-label">One-liner</span><input class="form-input" id="fi-oneliner" placeholder="One sentence on your sound — becomes your intro line in outreach"></div>
-        <div class="field-row"><span class="field-label">Phone</span><input class="form-input" id="fi-phone" value="(713) 555-0100"></div>
+        <div class="field-row"><span class="field-label">Phone</span><input class="form-input" id="fi-phone" placeholder="(512) 555-0100" value="(713) 555-0100"></div>
         <div class="save-row"><button class="btn-primary btn-sm" onclick="saveSection('identity')">Save</button><button class="btn-secondary btn-sm" onclick="cancelSection('identity')">Cancel</button></div>
       </div>
     </div>
@@ -804,17 +813,17 @@
         <button class="edit-btn" onclick="editSection('links')"><i class="ti ti-pencil"></i> Edit</button>
       </div>
       <div id="view-links">
-        <div class="field-row"><span class="field-label">Website</span><span class="field-value" style="color:#185FA5" id="fv-web">nickrainsmusic.com</span></div>
-        <div class="field-row"><span class="field-label">EPK</span><span class="field-value" style="color:#185FA5" id="fv-epk">nickrainsmusic.com/epk</span></div>
+        <div class="field-row"><span class="field-label">Website</span><span class="field-value fv-ell" style="color:#185FA5" id="fv-web">nickrainsmusic.com</span></div>
+        <div class="field-row"><span class="field-label">EPK</span><span class="field-value fv-ell" style="color:#185FA5" id="fv-epk">nickrainsmusic.com/epk</span></div>
         <div class="field-row">
           <span class="field-label">Spotify</span>
-          <div style="flex:1"><span class="field-value empty" id="fv-spotify">Not set</span>
-          <div class="field-hint"><i class="ti ti-alert-triangle"></i>Missing — adds credibility to cold outreach</div></div>
+          <div style="flex:1;min-width:0"><span class="field-value fv-ell empty" id="fv-spotify">Not set</span>
+          <div class="field-hint" id="fv-spotify-hint"><i class="ti ti-alert-triangle"></i>Missing — adds credibility to cold outreach</div></div>
         </div>
       </div>
       <div id="edit-links" style="display:none">
-        <div class="field-row"><span class="field-label">Website</span><input class="form-input" id="fi-web" value="nickrainsmusic.com"></div>
-        <div class="field-row"><span class="field-label">EPK</span><input class="form-input" id="fi-epk" value="nickrainsmusic.com/epk"></div>
+        <div class="field-row"><span class="field-label">Website</span><input class="form-input" id="fi-web" placeholder="yoursite.com" value="nickrainsmusic.com"></div>
+        <div class="field-row"><span class="field-label">EPK</span><input class="form-input" id="fi-epk" placeholder="yoursite.com/epk or a Drive link" value="nickrainsmusic.com/epk"></div>
         <div class="field-row"><span class="field-label">Spotify</span><input class="form-input" id="fi-spotify" placeholder="open.spotify.com/artist/..."></div>
         <div class="save-row"><button class="btn-primary btn-sm" onclick="saveSection('links')">Save</button><button class="btn-secondary btn-sm" onclick="cancelSection('links')">Cancel</button></div>
       </div>
@@ -847,9 +856,9 @@
         <div class="field-row"><span class="field-label">Hard-ticket pricing</span><span class="field-value" id="fv-rate-hard">Not set</span></div>
       </div>
       <div id="edit-draw" style="display:none">
-        <div class="field-row"><span class="field-label">Draw claim</span><input class="form-input" id="fi-draw" value="Strong draw in Houston and Austin, building Nashville"></div>
-        <div class="field-row"><span class="field-label">Typical crowd</span><input class="form-input" id="fi-crowd" value="35–55, seated, attentive — good fit for listening rooms"></div>
-        <div class="field-row"><span class="field-label">Lineup options <span style="font-weight:400;color:var(--text-tertiary)">(solo / duo / full band)</span></span><input class="form-input" id="fi-formats" value="Solo acoustic · Full band"></div>
+        <div class="field-row"><span class="field-label">Draw claim</span><input class="form-input" id="fi-draw" placeholder="e.g. 60–80 heads in Austin, growing in Houston" value="Strong draw in Houston and Austin, building Nashville"></div>
+        <div class="field-row"><span class="field-label">Typical crowd</span><input class="form-input" id="fi-crowd" placeholder="e.g. 25–45, drinks well, sings along" value="35–55, seated, attentive — good fit for listening rooms"></div>
+        <div class="field-row"><span class="field-label">Lineup options <span style="font-weight:400;color:var(--text-tertiary)">(solo / duo / full band)</span></span><input class="form-input" id="fi-formats" placeholder="e.g. Solo acoustic · Duo · Full band" value="Solo acoustic · Full band"></div>
         <div class="field-row"><span class="field-label">Soft-ticket rate <span style="font-weight:400;color:var(--text-tertiary)">($/hr or flat — the AI quotes this, never invents)</span></span><input class="form-input" id="fi-rate-soft" placeholder="e.g. $200/hr · 3hr min"></div>
         <div class="field-row"><span class="field-label">Hard-ticket pricing <span style="font-weight:400;color:var(--text-tertiary)">(ticket range + deal, e.g. $15–25 / door split)</span></span><input class="form-input" id="fi-rate-hard" placeholder="e.g. $15–25 tickets · 80/20 door"></div>
         <div class="save-row"><button class="btn-primary btn-sm" onclick="saveSection('draw')">Save</button><button class="btn-secondary btn-sm" onclick="cancelSection('draw')">Cancel</button></div>
@@ -1005,6 +1014,7 @@ function setActiveTab(screen){
   if (t) { var el = document.getElementById('tab-' + t); if (el) el.classList.add('active'); }
 }
 function go(screen) {
+  if (currentScreen === 'profile' && screen !== 'profile') cancelAllProfileEdits();
   document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
   document.getElementById('screen-' + screen).classList.add('active');
   setActiveTab(screen);
@@ -1099,7 +1109,7 @@ function renderDiscover() {
     + '<div class="venue-name">' + esc(v.name) + '</div>'
     + '<div class="venue-loc">' + esc(v.city) + ', ' + esc(v.state) + '</div>'
     + '<span class="badge badge-' + v.type + '">' + esc(v.vtype) + '</span>'
-    + (inPipe[v.id] ? ' <span class="badge" style="background:var(--bg-secondary);color:var(--text-tertiary)">In pipeline ✓</span>' : '')
+    + (inPipe[v.id] ? ' <span class="badge vp-chip" style="background:var(--bg-secondary);color:var(--text-tertiary)">In pipeline ✓</span>' : '')
     + '<div class="venue-tag"><i class="ti ti-currency-dollar"></i>' + esc(v.pay) + '</div>'
     + '<div class="venue-tag"><i class="ti ti-user"></i>' + esc(v.contact) + '</div>'
     + '</div>';
@@ -1344,10 +1354,14 @@ function openDetail(id) {
   // Calendar (hold = tentative, booked = confirmed) and auto-flips played.
   var gigDateBlock = '';
   if (['hold','booked','played'].indexOf(p.s) >= 0) {
+    var gd = p.gig_date ? new Date(p.gig_date) : null;
+    var gdDate = gd ? toLocalDT(p.gig_date).slice(0,10) : '';
+    var gdTime = gd ? toLocalDT(p.gig_date).slice(11,16) : '';
     gigDateBlock = '<div class="card" style="margin-bottom:12px">'
-      + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px"><i class="ti ti-calendar-event" style="color:var(--amber-800);margin-right:5px"></i>Gig date' + (p.s==='hold' ? ' · tentative hold' : '') + ' — confirm with the check, lands on your Google Calendar instantly</div>'
+      + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px"><i class="ti ti-calendar-event" style="color:var(--amber-800);margin-right:5px"></i>Gig date' + (p.s==='hold' ? ' · tentative hold' : '') + ' — confirm with the check; edits & clears mirror to Google Calendar</div>'
       + '<div style="display:flex;gap:8px;align-items:center">'
-      + '<input type="datetime-local" class="pipe-search" style="margin:0;flex:1" id="gig-date-' + id + '" value="' + (p.gig_date ? toLocalDT(p.gig_date) : '') + '">'
+      + '<input type="date" class="pipe-search" style="margin:0;flex:1" id="gig-date-' + id + '" value="' + gdDate + '">'
+      + '<select class="pipe-sort" id="gig-time-' + id + '">' + timeOptions(gdTime) + '</select>'
       + '<button class="btn-primary btn-sm" onclick="saveGigDate(' + id + ')" title="Save gig date"><i class="ti ti-check"></i></button>'
       + '</div></div>';
   }
@@ -1381,7 +1395,10 @@ function openDetail(id) {
   // Slice B: schedule the draft. One pending send per entry; the worker fires it
   // (or marks it 'ready' when auto-send is off; reply first = auto-cancel).
   var schedBlock;
-  if (p.sched && p.sched.status === 'scheduled') {
+  if (p.sched && p.sched.status === 'scheduled' && p.sched.human) {
+    schedBlock = '<div class="sched-card" style="background:var(--booked-bg)"><i class="ti ti-send" style="color:var(--booked-text)"></i><div class="grow"><strong>Sending now…</strong>'
+      + '<div class="sub">Firing from your Gmail — lands in the conversation in seconds</div></div></div>';
+  } else if (p.sched && p.sched.status === 'scheduled') {
     schedBlock = '<div class="sched-card"><i class="ti ti-clock-hour-4"></i><div class="grow">Scheduled for <strong>' + fmtWhen(p.sched.send_at) + '</strong>'
       + '<div class="sub">Cancels itself if ' + esc((p.contact||'').split(' ')[0]) + ' replies first' + (autoSendOn() ? '' : ' · auto-send is off — it will wait for your review') + '</div></div>'
       + '<button class="sched-x" onclick="cancelScheduled(' + id + ')">Cancel</button></div>';
@@ -1395,11 +1412,14 @@ function openDetail(id) {
   } else {
     var chipsDef = [['Tomorrow 9am',1],['In 3 days',3],['In 7 days',7]];
     var sel = sendChipDays[id]; // nothing pre-selected — scheduling is a choice
-    schedBlock = '<div class="followup-chips" id="send-chips-' + id + '">'
+    schedBlock = '<div class="sched-chips" id="send-chips-' + id + '">'
       + chipsDef.map(function(c){ return '<div class="fu-chip' + (sel===c[1]?' selected':'') + '" onclick="pickSendChip(' + id + ',\'' + c[1] + '\')">' + c[0] + '</div>'; }).join('')
       + '</div>'
       + '<button class="custom-sched-btn' + (sel==='custom'?' on':'') + '" onclick="pickSendChip(' + id + ',\'custom\')"><i class="ti ti-calendar-time"></i> Choose a date &amp; time…</button>'
-      + (sel==='custom' ? '<input type="datetime-local" class="pipe-search" id="custom-at-' + id + '" style="margin:8px 0 0">' : '')
+      + (sel==='custom'
+        ? '<div style="display:flex;gap:8px;margin-top:8px"><input type="date" class="pipe-search" id="custom-date-' + id + '" style="margin:0;flex:1">'
+          + '<select class="pipe-sort" id="custom-time-' + id + '">' + timeOptions() + '</select></div>'
+        : '')
       + '<div style="display:flex;gap:8px;margin-top:10px;align-items:center">'
       + '<button class="btn-secondary btn-sm" onclick="scheduleSend(' + id + ')"><i class="ti ti-clock-hour-4"></i> Schedule send</button>'
       + '<span style="font-size:11px;color:var(--text-tertiary)">cancels if they reply first</span></div>';
@@ -1436,7 +1456,7 @@ function openDetail(id) {
       // Blank canvas by default — your words, AI's words, or a loaded template.
       // draftText[uuid] survives every re-render; nothing overwrites it silently.
       var draftVal = draftText[p.uuid] !== undefined ? draftText[p.uuid] : '';
-      var ph = 'Write your message here…\n\n— or —\n\n✨ Draft with AI: reads this conversation, the venue, your profile + rates, and writes in your voice.\n\nOr load a starting point from the template menu above.';
+      var ph = 'Write your message here, or select a template from the dropdown above.\n\n✨ Draft with AI drafts a message in your voice — try it out!';
       tplSection = '<div class="section-label" style="margin-top:4px">Draft outreach</div>'
         + '<div class="card" style="margin-bottom:12px">'
         + '<select class="pipe-sort" style="margin-bottom:10px" onchange="switchTpl(' + id + ',this.value)" title="Load a template">'
@@ -1573,9 +1593,9 @@ function scheduleSend(id) {
   var at, now = sel === 'now';
   if (now) { at = new Date(); }
   else if (sel === 'custom') {
-    var inp = document.getElementById('custom-at-' + id);
-    if (!inp || !inp.value) { showToast('Pick the custom date & time', true); return; }
-    at = new Date(inp.value);
+    var di = document.getElementById('custom-date-' + id), ti = document.getElementById('custom-time-' + id);
+    if (!di || !di.value) { showToast('Pick the date first', true); return; }
+    at = new Date(di.value + 'T' + ((ti && ti.value) || '09:00'));
     if (!(at > new Date())) { showToast('Custom time must be in the future', true); return; }
   } else { at = new Date(); at.setDate(at.getDate() + sel); at.setHours(9, 0, 0, 0); }
   sb.from('scheduled_messages').insert({
@@ -1586,11 +1606,22 @@ function scheduleSend(id) {
     p.sched = r.data;
     delete draftText[p.uuid]; // committed — the scheduled body is the truth now
     openDetail(id);
-    if (now) { showToast('Sending…'); pokeWorker(); }
+    if (now) { showToast('Sending!'); pokeWorker(); }
     else showToast('Scheduled for ' + fmtWhen(at.toISOString()));
   });
 }
-function sendNowInline(id){ sendChipDays[id] = 'now'; scheduleSend(id); }
+function sendNowInline(id){ sendChipDays[id] = 'now'; scheduleSend(id); delete sendChipDays[id]; }
+function timeOptions(selected){
+  var out = '', sel = selected || '09:00';
+  for (var h = 7; h <= 23; h++) {
+    ['00','30'].forEach(function(mm){
+      var v = String(h).padStart(2,'0') + ':' + mm;
+      var label = ((h % 12) || 12) + ':' + mm + (h < 12 ? ' AM' : ' PM');
+      out += '<option value="' + v + '"' + (v===sel ? ' selected' : '') + '>' + label + '</option>';
+    });
+  }
+  return out;
+}
 // "Send now" shouldn't wait for the worker's next cycle — poke it.
 function pokeWorker(){
   sb.auth.getSession().then(function(s){
@@ -1630,13 +1661,13 @@ function toLocalDT(ts){
 }
 function saveGigDate(id){
   var p = pipeline[id];
-  var inp = document.getElementById('gig-date-' + id);
-  var val = inp && inp.value ? new Date(inp.value).toISOString() : null;
-  sb.from('pipeline_entries').update({ gig_date: val }).eq('id', p.uuid).then(function(r){
+  var di = document.getElementById('gig-date-' + id), ti = document.getElementById('gig-time-' + id);
+  var val = (di && di.value) ? new Date(di.value + 'T' + ((ti && ti.value) || '20:00')).toISOString() : null;
+  sb.from('pipeline_entries').update({ gig_date: val, gig_date_dirty: true }).eq('id', p.uuid).then(function(r){
     if (r.error) { showToast('Could not save date: ' + r.error.message, true); return; }
     p.gig_date = val;
-    showToast(val ? 'Gig date saved — sending to your calendar' : 'Gig date cleared');
-    pokeWorker(); // calendar event in seconds, not next poll
+    showToast(val ? 'Gig date saved — syncing to your calendar' : 'Gig date cleared — removing from calendar');
+    pokeWorker(); // calendar mirror in seconds, not next poll
   });
 }
 
@@ -1745,10 +1776,16 @@ function renderDowChips(){
   var names = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   var view = pendingDow || dowRules;
   var dirty = pendingDow && JSON.stringify(Object.keys(pendingDow).sort()) !== JSON.stringify(Object.keys(dowRules).sort());
+  var label = '';
+  if (dirty) {
+    var adds = Object.keys(pendingDow).filter(function(d){ return !dowRules[d]; }).length;
+    var dels = Object.keys(dowRules).filter(function(d){ return !pendingDow[d]; }).length;
+    label = adds && dels ? 'Confirm changes' : (dels ? 'Confirm unblock' : 'Confirm weekly blocks');
+  }
   el.innerHTML = names.map(function(n, d){
     return '<div class="fu-chip' + (view[d] ? ' selected' : '') + '" onclick="stageDowRule(' + d + ')">' + n + '</div>';
   }).join('')
-  + (dirty ? '<div style="width:100%;margin-top:10px;display:flex;gap:8px"><button class="btn-primary btn-sm" onclick="confirmDowRules()"><i class="ti ti-check"></i> Confirm weekly blocks</button><button class="btn-secondary btn-sm" onclick="pendingDow=null;renderCalendar()">Discard</button></div>' : '');
+  + (dirty ? '<div style="width:100%;margin-top:10px;display:flex;gap:8px"><button class="btn-primary btn-sm" onclick="confirmDowRules()"><i class="ti ti-check"></i> ' + label + '</button><button class="btn-secondary btn-sm" onclick="pendingDow=null;renderCalendar()">Discard</button></div>' : '');
 }
 function stageDowRule(d){
   if (!pendingDow) pendingDow = JSON.parse(JSON.stringify(dowRules));
@@ -1944,6 +1981,15 @@ function checkOther() {
 // ── Profile ─────────────────────────────────────────────
 function editSection(s) { document.getElementById('view-'+s).style.display='none'; document.getElementById('edit-'+s).style.display='block'; }
 function cancelSection(s) { document.getElementById('view-'+s).style.display='block'; document.getElementById('edit-'+s).style.display='none'; }
+// Leaving the screen mid-edit = cancel, never half-save.
+function cancelAllProfileEdits(){
+  ['identity','links','draw'].forEach(function(s){
+    var e = document.getElementById('edit-'+s);
+    if (e && e.style.display !== 'none') { cancelSection(s); fillProfileDom(); }
+  });
+  if (marketEditOpen) { marketEditOpen = false; renderMarkets(); }
+  if (notableEditOpen) { notableEditOpen = false; renderNotables(); }
+}
 function saveSection(s) {
   if (s==='identity') {
     profile.name = document.getElementById('fi-name').value.trim();
@@ -1963,7 +2009,8 @@ function saveSection(s) {
     document.getElementById('fv-web').textContent = profile.web;
     document.getElementById('fv-epk').textContent = profile.epk;
     var sp = document.getElementById('fv-spotify');
-    sp.textContent = profile.spotify || 'Not set'; sp.className = 'field-value' + (profile.spotify ? '' : ' empty');
+    sp.textContent = profile.spotify || 'Not set'; sp.className = 'field-value fv-ell' + (profile.spotify ? '' : ' empty');
+    var sph = document.getElementById('fv-spotify-hint'); if (sph) sph.style.display = profile.spotify ? 'none' : '';
   }
   if (s==='draw') {
     profile.draw = document.getElementById('fi-draw').value.trim();
@@ -2225,7 +2272,8 @@ function loadProfile(){
 function fillProfileDom(){
   setText('fv-name',profile.name); setText('fv-genre',profile.genre); setText('fv-oneliner',profile.oneliner); setText('fv-phone',profile.phone);
   setText('fv-web',profile.web); setText('fv-epk',profile.epk);
-  var sp=document.getElementById('fv-spotify'); if(sp){ sp.textContent=profile.spotify||'Not set'; sp.className='field-value'+(profile.spotify?'':' empty'); }
+  var sp=document.getElementById('fv-spotify'); if(sp){ sp.textContent=profile.spotify||'Not set'; sp.className='field-value fv-ell'+(profile.spotify?'':' empty'); }
+  var sph=document.getElementById('fv-spotify-hint'); if(sph) sph.style.display = profile.spotify ? 'none' : '';
   setText('fv-draw',profile.draw); setText('fv-crowd',profile.crowd); setText('fv-formats',profile.formats);
   setText('fv-rate-soft', profile.rate_soft || 'Not set'); setText('fv-rate-hard', profile.rate_hard || 'Not set');
   setVal('fi-rate-soft', profile.rate_soft); setVal('fi-rate-hard', profile.rate_hard);
