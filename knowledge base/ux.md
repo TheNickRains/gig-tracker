@@ -10,7 +10,7 @@ This document is maintained by Claude. After any session where a screen is added
 
 **Floating island nav (bottom)** — THE island is the navigation (YouVersion/Venmo-style): fixed pill, blurred translucent bg, safe-area-aware, centered, max 432px. Items: Pipeline · Discover · **HOME (center throne — raised 52px amber circle)** · Calendar · Settings. Active item gets an amber pill; detail maps to Pipeline's tab, venue detail to Discover's. Add-venue lives on Home (war room quick action). `.app` carries bottom padding so content clears the island.
 
-**The island — everywhere** (per Nick: the island is FOR the mobile PWA). `body` is always `--bg-page` (light `#dddbd5` / dark `#0c0b0a`). On phones (<600px) the app floats in an 8px safe-area-aware gutter: 22px radius, hairline border, soft shadow; the sticky nav offsets to the gutter top and rounds its top corners. On ≥600px it's the centered bordered column (bottom-only radius). Scroll stays on the page.
+**Layout** — mobile/PWA is FULL-BLEED (the gutter-island was an artifact, reverted; the bottom nav is the only island). Desktop ≥600px: centered bordered column on `--bg-page`. Desktop ≥1100px **with Home active**: the app widens to 1060px and Home becomes a 2-col war-room dashboard (`:has()` — Needs-you left, stats/actions/sends right). Viewport pins `maximum-scale=1` + `touch-action: manipulation` (no iOS input-zoom / double-tap zoom).
 
 **Routing** — every screen is a URL hash: `#home #pipeline #discover #add #profile #settings`, pipeline detail = `#entry/<uuid>`, venue detail = `#venue/<uuid>`. Refresh restores the screen (deep routes wait for data via a pending-route retry), browser back/forward work, and detail links are shareable within the app.
 
@@ -83,9 +83,9 @@ Tapping a row opens Pipeline detail.
 
 ---
 
-## Calendar (Slice D start)
+## Calendar (Slice D)
 
-Own island-nav item. Month grid (Sun-start), prev/Today/next controls. **Tap a day to cycle: clear → Available (green) → Busy (red) → clear**; persists per day to the `availability` table (migration 015). Today ringed amber; adjacent-month days dimmed but tappable. Legend below the grid. Dashed "Holds & gigs — coming soon" placeholder for the Google Calendar two-way sync (holds = tentative events, booked = confirmed).
+Own island-nav item. Month grid (Sun-start), prev/Today/next. **Tap a day to cycle: clear → Available (green) → Busy (red) → clear** (`availability`, migration 015). **Google sync (worker, each poll):** busy days import from the artist's primary calendar (manual paint wins); Hold/Booked entries with a **gig date** (datetime input on the detail view, migration 016) export as events — hold = tentative "HOLD: {venue}", booked = confirmed "Gig: {venue}"; booked past its date auto-flips to Played. Roadmap acknowledged: agenda/“schedule at a glance” view, multi-gig days, recurring blocks (e.g. every Sunday).
 
 ---
 
@@ -115,7 +115,7 @@ Full CRM view for one venue. Accessed from My pipeline.
 
 **Locked scheduled draft** — once a send is scheduled the editor is replaced by a read-only "Scheduled draft" card: lock header ("Locked — sends exactly as written" / "Awaiting your review"), the exact body that will go out, and an **Edit draft** button (textarea + Save/Discard, saves back to the scheduled message). Template tabs hide while a send is pending.
 
-**Schedule this draft (slice B)** — chips: Tomorrow 9am · In 3 days · In 7 days → "Schedule send" inserts a `scheduled_messages` row. States rendered in place:
+**Schedule this draft (slice B)** — chips: **Send now** · **Tomorrow 9am (pre-selected default)** · In 3 days · In 7 days · **Custom…** (reveals a datetime-local input). Send now = send_at:now + an authed poke to the worker's `/scheduled/run` (fires in seconds); button morphs to primary "Send now". States rendered in place:
 - *scheduled*: card "Scheduled for {when}" + Cancel; notes it cancels itself if the contact replies first, and that auto-send-off means it waits for review
 - *ready* (due while auto-send off): amber card "Ready to send" + Open in email / Mark sent / Cancel
 - Worker behavior at send time: reply since scheduling ⇒ canceled (+ system activity); auto-send ON ⇒ sent from the artist's Gmail (logged, lead→pitched); OFF ⇒ flips to ready. Live-updates via Realtime.

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Gig Collective</title>
 <link rel="icon" type="image/png" href="/logo.png">
 <link rel="manifest" href="/manifest.json">
@@ -78,27 +78,31 @@
   /* ── App shell ── */
   .app { max-width: 480px; margin: 0 auto; min-height: 100vh; background: var(--bg-tertiary); position: relative; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); }
 
-  /* The island — everywhere. Mobile/PWA: the app floats in a slim gutter with
-     rounded corners (safe-area aware). Desktop: centered island on --bg-page. */
-  body { background: var(--bg-page); }
-  @media (max-width: 599px) {
-    body { padding: calc(env(safe-area-inset-top, 0px) + 8px) 8px calc(env(safe-area-inset-bottom, 0px) + 8px); }
-    .app {
-      min-height: calc(100vh - 16px);
-      border-radius: 22px;
-      border: 0.5px solid var(--border-mid);
-      box-shadow: 0 2px 18px rgba(0,0,0,0.18);
-    }
-    .nav { top: calc(env(safe-area-inset-top, 0px) + 8px); border-radius: 22px 22px 0 0; }
-  }
+  /* Mobile/PWA: full-bleed, immersive — the floating bottom nav IS the island.
+     Desktop (≥600px): centered column on --bg-page; Home widens into a war-room
+     dashboard at ≥1100px. */
+  body { touch-action: manipulation; }
   @media (min-width: 600px) {
-    body { overscroll-behavior-y: none; }
+    body { background: var(--bg-page); overscroll-behavior-y: none; }
     .app {
       border-left: 0.5px solid var(--border-mid);
       border-right: 0.5px solid var(--border-mid);
       border-radius: 0 0 20px 20px;
       box-shadow: 0 4px 24px rgba(0,0,0,0.12);
     }
+  }
+  /* Desktop war room: when Home is active, the column becomes a dashboard. */
+  @media (min-width: 1100px) {
+    .app:has(#screen-home.active) { max-width: 1060px; }
+    .app:has(#screen-home.active) #screen-home {
+      display: grid; grid-template-columns: 1fr 360px; gap: 0 28px; align-items: start;
+    }
+    #screen-home > div:first-child { grid-column: 1 / -1; }   /* greeting */
+    #screen-home #war-needs { grid-column: 1; grid-row: 2 / span 4; }
+    #screen-home .stat-grid { grid-column: 2; }
+    #screen-home .war-actions { grid-column: 2; }
+    #screen-home #war-sends { grid-column: 2; }
+    #screen-home > .section-label, #screen-home > .card.placeholder { grid-column: 2; }
   }
 
   /* ── Nav ── */
@@ -1128,21 +1132,28 @@ function renderHome(){
   var el = document.getElementById('war-needs'); if (!el) return;
   var items = [];
   pipeline.forEach(function(p){
-    if (p.sched && p.sched.status==='ready') items.push({p:p, ic:'ti-bell-ringing', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Send awaiting your review', sub:'Auto-send is off — review & fire'});
-    else if (needsReply(p)) items.push({p:p, ic:'ti-mail', c:'var(--talks-text)', bg:'var(--talks-bg)', t:((p.contact||'').split(' ')[0]||'They') + ' replied — your move', sub:lastInboundPreview(p)});
-    else if (followupDue(p)) items.push({p:p, ic:'ti-clock-exclamation', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Follow-up due · ' + p.days + 'd quiet', sub:'Nudge them or schedule it'});
+    if (p.sched && p.sched.status==='ready') items.push({p:p, tier:0, ic:'ti-bell-ringing', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Send awaiting your review', sub:'Auto-send is off — review & fire'});
+    else if (needsReply(p)) items.push({p:p, tier:1, ic:'ti-mail', c:'var(--talks-text)', bg:'var(--talks-bg)', t:((p.contact||'').split(' ')[0]||'They') + ' replied — your move', sub:lastInboundPreview(p)});
+    else if (followupDue(p)) items.push({p:p, tier:2, ic:'ti-clock-exclamation', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Follow-up due · ' + p.days + 'd quiet', sub:'Nudge them or schedule it'});
   });
+  // Scale: hardest-to-ignore first (ready > replies > follow-ups, oldest first),
+  // capped — the overflow lives in Pipeline sorted by Priority, one tap away.
+  items.sort(function(a,b){ return a.tier - b.tier || b.p.days - a.p.days; });
+  var MAX_WAR = 8, overflow = items.length - MAX_WAR;
+  var shown = items.slice(0, MAX_WAR);
   var html = '<div class="section-label">Needs you' + (items.length ? ' <span class="war-count">' + items.length + '</span>' : '') + '</div>';
   if (!items.length) {
     html += '<div class="card" style="margin-bottom:20px;font-size:13px;color:var(--text-secondary)"><i class="ti ti-circle-check" style="color:var(--booked-text);margin-right:6px"></i>All clear — nothing waiting on you.</div>';
   } else {
-    html += '<div class="card card-flush" style="margin-bottom:20px">' + items.map(function(it){
+    html += '<div class="card card-flush" style="margin-bottom:20px">' + shown.map(function(it){
       return '<div class="war-row" onclick="openDetail(' + it.p.id + ')">'
         + '<div class="war-ic" style="background:' + it.bg + ';color:' + it.c + '"><i class="ti ' + it.ic + '"></i></div>'
         + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(it.p.venue) + ' — ' + it.t + '</div>'
         + (it.sub ? '<div class="war-sub">' + esc(it.sub) + '</div>' : '') + '</div>'
         + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
-    }).join('') + '</div>';
+    }).join('')
+    + (overflow > 0 ? '<div class="war-row" onclick="pipeSort=\'priority\';go(\'pipeline\')"><div class="war-ic" style="background:var(--bg-secondary);color:var(--text-secondary)"><i class="ti ti-list"></i></div><div style="flex:1"><div class="war-t">+' + overflow + ' more — open Pipeline by priority</div></div><i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>' : '')
+    + '</div>';
   }
   el.innerHTML = html;
   var sends = pipeline.filter(function(p){ return p.sched && p.sched.status==='scheduled'; });
@@ -1213,6 +1224,16 @@ function openDetail(id) {
       + (lastInboundPreview(p) ? '<div class="sub">' + esc(lastInboundPreview(p)) + '</div>' : '') + '</div>'
       + '<button class="btn-primary btn-sm" onclick="jumpToDraft(' + id + ')">Respond</button></div>';
   }
+
+  // Hold/Booked/Played carry a gig date — the worker mirrors it to Google
+  // Calendar (hold = tentative, booked = confirmed) and auto-flips played.
+  var gigDateBlock = '';
+  if (['hold','booked','played'].indexOf(p.s) >= 0) {
+    gigDateBlock = '<div class="card" style="margin-bottom:12px;display:flex;gap:10px;align-items:center">'
+      + '<i class="ti ti-calendar-event" style="color:var(--amber-800);font-size:18px;flex-shrink:0"></i>'
+      + '<div style="flex:1;min-width:0"><div style="font-size:12px;color:var(--text-secondary)">Gig date' + (p.s==='hold' ? ' · tentative hold' : '') + ' — syncs to your Google Calendar</div>'
+      + '<input type="datetime-local" class="pipe-search" style="margin:6px 0 0" id="gig-date-' + id + '" value="' + (p.gig_date ? toLocalDT(p.gig_date) : '') + '" onchange="saveGigDate(' + id + ')"></div></div>';
+  }
   var convo = p.activity.filter(function(a){ return a.kind!=='note'; });
   var notes = p.activity.filter(function(a){ return a.kind==='note'; });
   var actHtml = convo.map(function(a){
@@ -1259,12 +1280,16 @@ function openDetail(id) {
       + '<button class="btn-secondary btn-sm" onclick="markScheduledSent(' + id + ')">Mark sent</button>'
       + '<button class="sched-x" onclick="cancelScheduled(' + id + ')">Cancel</button></div>';
   } else {
-    var chipsDef = [['Tomorrow 9am',1],['In 3 days',3],['In 7 days',7]];
+    if (sendChipDays[id] === undefined) sendChipDays[id] = 1; // Tomorrow 9am: the default that gets venue responses
+    var chipsDef = [['Send now','now'],['Tomorrow 9am',1],['In 3 days',3],['In 7 days',7],['Custom…','custom']];
+    var sel = sendChipDays[id];
     schedBlock = '<div class="followup-chips" id="send-chips-' + id + '">'
-      + chipsDef.map(function(c){ return '<div class="fu-chip' + (sendChipDays[id]===c[1]?' selected':'') + '" onclick="pickSendChip(' + id + ',' + c[1] + ')">' + c[0] + '</div>'; }).join('')
-      + '</div><div style="display:flex;gap:8px;margin-top:10px;align-items:center">'
-      + '<button class="btn-secondary btn-sm" onclick="scheduleSend(' + id + ')"><i class="ti ti-clock-hour-4"></i> Schedule send</button>'
-      + '<span style="font-size:11px;color:var(--text-tertiary)">9am local · cancels if they reply first</span></div>';
+      + chipsDef.map(function(c){ return '<div class="fu-chip' + (sel===c[1]?' selected':'') + '" onclick="pickSendChip(' + id + ',\'' + c[1] + '\')">' + c[0] + '</div>'; }).join('')
+      + '</div>'
+      + '<input type="datetime-local" class="pipe-search" id="custom-at-' + id + '" style="margin:10px 0 0;display:' + (sel==='custom'?'block':'none') + '">'
+      + '<div style="display:flex;gap:8px;margin-top:10px;align-items:center">'
+      + '<button class="btn-' + (sel==='now'?'primary':'secondary') + ' btn-sm" onclick="scheduleSend(' + id + ')"><i class="ti ti-' + (sel==='now'?'send':'clock-hour-4') + '"></i> ' + (sel==='now'?'Send now':'Schedule send') + '</button>'
+      + '<span style="font-size:11px;color:var(--text-tertiary)">' + (sel==='now'?'fires within seconds':'cancels if they reply first') + '</span></div>';
   }
 
   var wonBanner = (p.s==='booked'||p.s==='played'||p.s==='won') ? '<div class="won-banner"><i class="ti ti-' + (p.s==='played'?'music':'trophy') + '"></i><div><div class="won-banner-title">' + (p.s==='played'?'Played':'Booked') + '</div><div class="won-banner-sub">' + p.venue + '</div></div></div>' : '';
@@ -1328,6 +1353,7 @@ function openDetail(id) {
     + wonBanner
     + statusActions
     + attnCard
+    + gigDateBlock
     + '<div class="section-label">Contact</div>'
     + '<div class="card card-flush" style="margin-bottom:12px">'
     + '<div class="contact-row"><div class="contact-av">' + p.contact.split(' ').map(function(n){return n[0];}).join('') + '</div>'
@@ -1370,7 +1396,7 @@ function aiDraft(id) {
     fetch(WORKER_URL + '/ai/draft', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
-      body: JSON.stringify({ entry_id: p.uuid })
+      body: JSON.stringify({ entry_id: p.uuid, intent: activeTpl[id] || 'outreach' })
     }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
       .then(function(x){
         if (!x.ok) { showToast(x.j.error || 'AI draft failed', true); return; }
@@ -1400,11 +1426,9 @@ function saveSchedEdit(id){
     p.sched.body = body; delete schedEditing[id]; openDetail(id); showToast('Draft updated');
   });
 }
-function pickSendChip(id, days) {
-  sendChipDays[id] = days;
-  var chips = document.querySelectorAll('#send-chips-' + id + ' .fu-chip');
-  var map = {1:0, 3:1, 7:2};
-  chips.forEach(function(c,i){ c.classList.toggle('selected', i===map[days]); });
+function pickSendChip(id, val) {
+  sendChipDays[id] = (val==='now'||val==='custom') ? val : Number(val);
+  openDetail(id); // re-render: chip selection, custom input visibility, button label
 }
 function fmtWhen(ts){
   var d = new Date(ts);
@@ -1413,12 +1437,18 @@ function fmtWhen(ts){
 function autoSendOn(){ return !!profile.allow_auto_send; }
 function scheduleSend(id) {
   var p = pipeline[id];
-  var days = sendChipDays[id];
-  if (!days) { showToast('Pick when to send first', true); return; }
+  var sel = sendChipDays[id] === undefined ? 1 : sendChipDays[id];
   if (!p.email) { showToast('This contact has no email', true); return; }
   var body = document.getElementById('tpl-body-' + id).value.trim();
   if (!body) { showToast('Draft is empty', true); return; }
-  var at = new Date(); at.setDate(at.getDate() + days); at.setHours(9, 0, 0, 0);
+  var at, now = sel === 'now';
+  if (now) { at = new Date(); }
+  else if (sel === 'custom') {
+    var inp = document.getElementById('custom-at-' + id);
+    if (!inp || !inp.value) { showToast('Pick the custom date & time', true); return; }
+    at = new Date(inp.value);
+    if (!(at > new Date())) { showToast('Custom time must be in the future', true); return; }
+  } else { at = new Date(); at.setDate(at.getDate() + sel); at.setHours(9, 0, 0, 0); }
   sb.from('scheduled_messages').insert({
     artist_id: ME, pipeline_entry_id: p.uuid, to_email: p.email,
     subject: defaultSubject(), body: body, send_at: at.toISOString()
@@ -1426,7 +1456,16 @@ function scheduleSend(id) {
     if (r.error) { showToast('Could not schedule: ' + r.error.message, true); return; }
     p.sched = r.data;
     openDetail(id);
-    showToast('Scheduled for ' + fmtWhen(at.toISOString()));
+    if (now) { showToast('Sending…'); pokeWorker(); }
+    else showToast('Scheduled for ' + fmtWhen(at.toISOString()));
+  });
+}
+// "Send now" shouldn't wait for the worker's next cycle — poke it.
+function pokeWorker(){
+  sb.auth.getSession().then(function(s){
+    var tok = s.data && s.data.session && s.data.session.access_token;
+    if (!tok) return;
+    fetch(WORKER_URL + '/scheduled/run', { method:'POST', headers:{ 'Authorization':'Bearer ' + tok } }).catch(function(){});
   });
 }
 function cancelScheduled(id) {
@@ -1453,6 +1492,22 @@ function legacySelectFollowup(id, val) {
   selectedFollowup[id] = val;
   document.querySelectorAll('#fu-chips-' + id + ' .fu-chip').forEach(function(c){ c.classList.toggle('selected', c.textContent===val); });
 }
+function toLocalDT(ts){
+  var d = new Date(ts);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
+    + 'T' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+function saveGigDate(id){
+  var p = pipeline[id];
+  var inp = document.getElementById('gig-date-' + id);
+  var val = inp && inp.value ? new Date(inp.value).toISOString() : null;
+  sb.from('pipeline_entries').update({ gig_date: val }).eq('id', p.uuid).then(function(r){
+    if (r.error) { showToast('Could not save date: ' + r.error.message, true); return; }
+    p.gig_date = val;
+    showToast(val ? 'Gig date saved — syncing to your calendar' : 'Gig date cleared');
+  });
+}
+
 // ── Calendar (Slice D start): availability painting ──
 var calMonth = (function(){ var d = new Date(); d.setDate(1); return d; })();
 var availMap = {};
@@ -1513,8 +1568,14 @@ function cycleAvail(iso){
 }
 
 function jumpToDraft(id){
+  // Scroll + glow only — NO focus (focusing pops the mobile keyboard and steals
+  // the choice; the artist decides when to start typing).
   var el = document.getElementById('tpl-body-' + id) || document.getElementById('sched-edit-' + id) || document.querySelector('.locked-body') || document.querySelector('.sched-card');
-  if (el) { el.scrollIntoView({ behavior:'smooth', block:'center' }); if (el.focus) try { el.focus({ preventScroll:true }); } catch(e){} }
+  if (!el) return;
+  el.scrollIntoView({ behavior:'smooth', block:'center' });
+  el.style.transition = 'box-shadow 0.4s';
+  el.style.boxShadow = '0 0 0 3px var(--amber-400)';
+  setTimeout(function(){ el.style.boxShadow = ''; }, 1400);
 }
 
 // ── Notes: edit + delete ──
@@ -1931,7 +1992,7 @@ function loadVenues(){
 
 function loadPipeline(){
   sb.from('pipeline_entries')
-    .select('id,status,followup_date,last_activity_at,created_at, venue:venues(name,city,state,venue_type,pay_range,ticket_type), contact:contacts(name,title,email,phone)')
+    .select('id,status,followup_date,last_activity_at,created_at,gig_date, venue:venues(name,city,state,venue_type,pay_range,ticket_type), contact:contacts(name,title,email,phone)')
     .order('last_activity_at',{ascending:false}).then(function(r){
       if(r.error){ console.error('loadPipeline', r.error); return; }
       var rows=r.data||[];
@@ -1939,7 +2000,7 @@ function loadPipeline(){
         var v=e.venue||{}, c=e.contact||{};
         return {id:i, uuid:e.id, venue:v.name||'(unknown venue)', city:v.city||'', state:v.state||'',
                 contact:c.name||'(no contact)', title:c.title||'', email:c.email||'', phone:c.phone||'',
-                vtype:v.venue_type||'', pay:v.pay_range||'—', t:v.ticket_type||'soft', s:e.status||'lead', days:daysAgo(e.last_activity_at), activity:[]};
+                vtype:v.venue_type||'', pay:v.pay_range||'—', t:v.ticket_type||'soft', s:e.status||'lead', gig_date:e.gig_date||null, days:daysAgo(e.last_activity_at), activity:[]};
       });
       updateHomeStats();
       if(currentScreen==='pipeline') renderPipeline();

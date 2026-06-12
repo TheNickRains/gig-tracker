@@ -274,6 +274,65 @@ async function refreshToneProfile(artistId, token) {
   } catch (e) { console.error("tone profile", artistId, e.message); }
 }
 
+// ── Calendar sync (Slice D): the artist's Google Calendar ⇄ the pipeline ──
+// 1) IMPORT: days with events on their primary calendar -> availability 'busy'
+//    (only where the artist hasn't painted the day manually — manual wins).
+// 2) EXPORT: hold/booked entries with a gig_date become events (hold=tentative,
+//    booked=confirmed); title/date changes update the same event.
+// 3) LIFECYCLE: booked entries whose date has passed flip to 'played'.
+async function syncCalendar(artistId, token) {
+  try {
+    const now = new Date();
+    const max = new Date(now.getTime() + 60 * 86400000);
+    // -- import busy days --
+    const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&timeMin=${encodeURIComponent(now.toISOString())}&timeMax=${encodeURIComponent(max.toISOString())}&maxResults=250&fields=items(start,end,status,transparency)`, { headers: { Authorization: "Bearer " + token } });
+    if (r.ok) {
+      const items = (await r.json()).items || [];
+      const busyDays = new Set();
+      items.forEach((ev) => {
+        if (ev.status === "cancelled" || ev.transparency === "transparent") return;
+        const d = (ev.start && (ev.start.date || (ev.start.dateTime || "").slice(0, 10))) || null;
+        if (d) busyDays.add(d);
+      });
+      if (busyDays.size) {
+        const existing = await sGet(`availability?artist_id=eq.${artistId}&select=day`);
+        const have = new Set(existing.map((x) => x.day));
+        const rows = [...busyDays].filter((d) => !have.has(d)).map((d) => ({ artist_id: artistId, day: d, status: "busy" }));
+        if (rows.length) {
+          await fetch(`${SUPA}/rest/v1/availability`, { method: "POST", headers: { ...sHeaders, Prefer: "return=minimal" }, body: JSON.stringify(rows) });
+          console.log("calendar: imported", rows.length, "busy day(s)", artistId);
+        }
+      }
+    } else console.error("calendar list failed", r.status, (await r.text()).slice(0, 120));
+    // -- export holds/bookings + flip played --
+    const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&status=in.(hold,booked)&gig_date=not.is.null&select=id,status,gig_date,google_event_id,venue:venues(name)`);
+    for (const e of entries) {
+      const start = new Date(e.gig_date);
+      if (e.status === "booked" && start.getTime() < Date.now() - 6 * 3600000) {
+        await sPatch(`pipeline_entries?id=eq.${e.id}`, { status: "played", last_activity_at: new Date().toISOString() });
+        await logActivity({ pipeline_entry_id: e.id, kind: "system", body: "Gig played — how did it go? (auto from calendar)", source: "email_sync" });
+        console.log("calendar: booked -> played", e.id);
+        continue;
+      }
+      const ev = {
+        summary: (e.status === "hold" ? "HOLD: " : "Gig: ") + ((e.venue && e.venue.name) || "venue") + " (Gig Collective)",
+        start: { dateTime: start.toISOString() },
+        end: { dateTime: new Date(start.getTime() + 3 * 3600000).toISOString() },
+        status: e.status === "hold" ? "tentative" : "confirmed",
+      };
+      const url = e.google_event_id
+        ? `https://www.googleapis.com/calendar/v3/calendars/primary/events/${e.google_event_id}`
+        : `https://www.googleapis.com/calendar/v3/calendars/primary/events`;
+      const er = await fetch(url, { method: e.google_event_id ? "PATCH" : "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(ev) });
+      if (er.ok) {
+        const j = await er.json();
+        if (!e.google_event_id && j.id) await sPatch(`pipeline_entries?id=eq.${e.id}`, { google_event_id: j.id });
+        console.log("calendar:", e.status, "event", e.google_event_id ? "updated" : "created", e.id);
+      } else console.error("calendar event failed", e.id, er.status, (await er.text()).slice(0, 120));
+    }
+  } catch (err) { console.error("syncCalendar", artistId, err.message); }
+}
+
 // Slice B: fire due scheduled messages.
 // reply since scheduling -> cancel (intelligent disconnect); auto-send off -> 'ready'
 // (the app surfaces "review & send"); auto-send on -> send from the artist's Gmail.
@@ -332,6 +391,7 @@ async function tick() {
         }
         try { await ensureWatch(c.artist_id, c, token); } catch (e) { console.error("watch error", c.artist_id, e.message); }
         try { await refreshToneProfile(c.artist_id, token); } catch (e) { console.error("tone error", c.artist_id, e.message); }
+        await syncCalendar(c.artist_id, token);
         await pollArtist(c.artist_id, token);
       } catch (e) { console.error("artist error", c.artist_id, e.message); }
     }
@@ -364,7 +424,9 @@ async function handleAiDraft(req, res, bodyStr) {
     if (!GEMINI_KEY) { res.writeHead(503, hdr); res.end(JSON.stringify({ error: "AI isn’t configured yet (GEMINI_API_KEY missing)" })); return; }
     const uid = await verifyUser(req);
     if (!uid) { res.writeHead(401, hdr); res.end(JSON.stringify({ error: "Not signed in" })); return; }
-    const entryId = (JSON.parse(bodyStr || "{}").entry_id || "").replace(/[^a-zA-Z0-9-]/g, "");
+    const parsed = JSON.parse(bodyStr || "{}");
+    const entryId = (parsed.entry_id || "").replace(/[^a-zA-Z0-9-]/g, "");
+    const intent = ["outreach", "followup", "pitch", "checkin"].includes(parsed.intent) ? parsed.intent : "outreach";
     if (!entryId) { res.writeHead(400, hdr); res.end(JSON.stringify({ error: "entry_id required" })); return; }
     const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,venue:venues(name,city,state,venue_type,ticket_type,pay_range,clientele,notes),contact:contacts(name,title)`);
     if (!entries.length || entries[0].artist_id !== uid) { res.writeHead(404, hdr); res.end(JSON.stringify({ error: "Entry not found" })); return; }
@@ -372,15 +434,30 @@ async function handleAiDraft(req, res, bodyStr) {
     const arts = await sGet(`artists?id=eq.${uid}&select=display_name,genre,oneliner,website,epk,spotify,draw_claim,typical_crowd,set_formats,notable,markets,phone,tone_profile`);
     const a = arts[0] || {};
     const acts = await sGet(`activities?pipeline_entry_id=eq.${entryId}&kind=in.(email_in,email_out,note)&order=created_at.desc&limit=8&select=kind,body`);
-    const convo = acts.reverse().map((x) => (x.kind === "email_in" ? "THEM: " : x.kind === "email_out" ? "ME: " : "MY NOTE: ") + x.body).join("\n");
+    const lastInbound = (acts.find((x) => x.kind === "email_in") || {}).body || "";
+    const convo = acts.slice().reverse().map((x) => (x.kind === "email_in" ? "THEM: " : x.kind === "email_out" ? "ME: " : "MY NOTE: ") + x.body).join("\n");
+    // The objective comes FIRST. Mid-deal the job is to advance the booking —
+    // answer what they asked, lock specifics — not to re-pitch credentials.
+    const firstTouch = ["lead", "pitched", "outreach"].includes(e.status) && intent !== "checkin";
+    let objective;
+    if (e.status === "hold") objective = "OBJECTIVE: confirm the date and terms on the table. Be concrete (date, time, rate). No self-promotion — they already want you.";
+    else if (lastInbound && (e.status === "talks" || e.status === "waiting")) objective = "OBJECTIVE: this is a live negotiation. Reply DIRECTLY to their last message (quoted below): answer every question they asked, propose or lock concrete specifics (dates, times, rate, logistics), and move the booking one step closer to confirmed. Do NOT re-introduce yourself, do NOT add credentials, links, or sales language — they already know who you are.";
+    else if (intent === "followup") objective = "OBJECTIVE: a brief, warm nudge on the earlier pitch. 2-4 sentences max. One clear ask (a date or a yes/no). No new credentials.";
+    else if (intent === "pitch") objective = "OBJECTIVE: a full first pitch — who the artist is, why they fit THIS room, draw, link, and a clear ask for a date.";
+    else if (intent === "checkin") objective = "OBJECTIVE: friendly relationship check-in with a venue you've played or talked to. Light, short, no hard sell.";
+    else objective = "OBJECTIVE: first-touch cold outreach — concise intro, why the artist fits THIS room, one listen link, clear ask: are they the right person / can we get a date.";
     const draft = await gemini(
-      `Write a booking email from a musician to a venue contact. Plain text only — no subject line, no markdown, no placeholders/brackets, under 170 words, warm and direct, sounds like a working musician (not marketing copy). Sign off with the artist's first name and phone.\n\n` +
-      `ARTIST: ${a.display_name || ""} — ${a.genre || ""}. ${a.oneliner || ""} Draw: ${a.draw_claim || "n/a"}. Crowd: ${a.typical_crowd || "n/a"}. Formats: ${a.set_formats || "n/a"}. Notable rooms: ${a.notable || "n/a"}. Site: ${a.website || ""} ${a.epk ? "EPK: " + a.epk : ""} ${a.spotify ? "Spotify: " + a.spotify : ""} Phone: ${a.phone || ""}\n` +
+      `Write a booking email from a working musician to a venue contact. Plain text only — no subject line, no markdown, no placeholders/brackets, under 160 words, direct and human (never marketing copy). Sign off with the artist's first name and phone.\n\n` +
+      objective + "\n\n" +
+      `DEAL STAGE: ${e.status}\n` +
+      (lastInbound ? `THEIR LAST MESSAGE (answer this):\n"""${lastInbound.slice(0, 600)}"""\n` : "") +
+      (convo ? `CONVERSATION SO FAR:\n${convo}\n` : "") +
       `VENUE: ${v.name || ""} (${v.venue_type || ""}, ${v.ticket_type || "soft"} ticket) in ${v.city || ""}, ${v.state || ""}. ${v.clientele ? "Clientele: " + v.clientele + "." : ""} ${v.notes ? "My notes on this venue: " + v.notes : ""}\n` +
       `CONTACT: ${c.name || "the booker"}${c.title ? " (" + c.title + ")" : ""}\n` +
-      `DEAL STAGE: ${e.status} (lead/pitched = first-touch pitch; talks = continue the conversation naturally; hold = confirm date details)\n` +
-      (convo ? `CONVERSATION SO FAR:\n${convo}\n` : "") +
-      (a.tone_profile ? `\nTONE CARD — write indistinguishably in THIS voice (it was distilled from the artist's real sent emails):\n${a.tone_profile}\n` : "") +
+      (firstTouch
+        ? `ARTIST (use what's relevant — this is a first touch): ${a.display_name || ""} — ${a.genre || ""}. ${a.oneliner || ""} Draw: ${a.draw_claim || "n/a"}. Crowd: ${a.typical_crowd || "n/a"}. Formats: ${a.set_formats || "n/a"}. Notable rooms: ${a.notable || "n/a"}. Site: ${a.website || ""} ${a.epk ? "EPK: " + a.epk : ""} ${a.spotify ? "Spotify: " + a.spotify : ""} Phone: ${a.phone || ""}\n`
+        : `ARTIST (background only — do NOT pitch credentials mid-conversation): ${a.display_name || ""}, ${a.genre || ""}. Phone: ${a.phone || ""}\n`) +
+      (a.tone_profile ? `\nTONE CARD — write indistinguishably in THIS voice:\n${a.tone_profile}\n` : "") +
       `\nWrite only the email body.`, false);
     res.writeHead(200, hdr);
     res.end(JSON.stringify({ draft }));
@@ -400,6 +477,17 @@ http.createServer((req, res) => {
     let body = "";
     req.on("data", (d) => (body += d));
     req.on("end", () => { handleAiDraft(req, res, body); });
+    return;
+  }
+  if (req.method === "POST" && u.pathname === "/scheduled/run") {
+    // "Send now" poke from the app — run the due queue immediately (authed).
+    (async () => {
+      const hdr = corsHeaders(req);
+      const uid = await verifyUser(req);
+      if (!uid) { res.writeHead(401, hdr); res.end(JSON.stringify({ error: "Not signed in" })); return; }
+      res.writeHead(202, hdr); res.end(JSON.stringify({ ok: true }));
+      processScheduled().catch((e) => console.error("poked run", e.message));
+    })();
     return;
   }
   if (req.method === "POST" && u.pathname === "/gmail/push") {

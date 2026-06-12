@@ -17,6 +17,24 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-11 — Calendar⇄Google sync live + AI deal-context + send-now/custom + polish
+**Slice D worker (`syncCalendar`, per poll):** imports busy days from the artist's PRIMARY calendar
+(60d lookahead; only days the artist hasn't painted manually — manual wins); EXPORTS hold/booked
+entries with `gig_date` (migration 016 + datetime input on detail for hold/booked/played) as primary-
+calendar events — hold=tentative "HOLD: venue", booked=confirmed "Gig: venue", PATCHes the same
+`google_event_id` on change; booked + date >6h past ⇒ auto **played** (+ "how did it go?" activity).
+calendar.events scope already granted — no reconnect needed. **AI context fix (Nick: "intelligence
+isn't just tone, it's context"):** /ai/draft now takes the active template tab as `intent`; prompt
+leads with a stage/intent OBJECTIVE; mid-deal (talks/hold) = answer THEIR LAST MESSAGE, lock specifics,
+NO credentials/self-promo (the upsell bug); full profile only on first touch. **Send controls:** chips
+now Send now / Tomorrow 9am (DEFAULT — Nick: "it actually works for venue responses") / 3d / 7d /
+Custom datetime; Send now inserts send_at=now and POKES `POST /scheduled/run` (authed) so it fires in
+seconds. **Reverted** the mobile gutter-island (artifact of misread; island = bottom nav only, app is
+full-bleed again). Desktop ≥1100px: Home becomes a 2-col war-room dashboard via `:has()`. Respond
+button = scroll + amber glow, NO focus (keyboard was killing the experience). Viewport: maximum-scale=1
++ touch-action:manipulation (kills iOS input-zoom + double-tap zoom). War room scales: tier-sorted
+(ready > replies > follow-ups, oldest first), capped at 8 + "+N more → Pipeline by priority" row.
+
 ## 2026-06-11 — Island NAV + war-room Home + calendar screen; badges/chips/dots killed
 Nick's correction: "the island is the navigation, not the whole app" (YouVersion/Venmo/Slack refs).
 Hamburger + dropdown REMOVED → **floating bottom island nav** (fixed blurred pill, safe-area aware):
