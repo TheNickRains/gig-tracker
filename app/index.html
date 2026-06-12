@@ -82,8 +82,8 @@
      slim safe-area gutter; the bottom nav is its companion island. */
   body { touch-action: manipulation; background: var(--bg-page); }
   @media (max-width: 599px) {
-    /* Top gutter only — sides bleed to the edge for seamless immersion. */
-    body { padding: calc(env(safe-area-inset-top, 0px) + 8px) 0 0; }
+    /* Top gutter only — sides bleed to the edge; gutter wears the island's paper. */
+    body { padding: calc(env(safe-area-inset-top, 0px) + 8px) 0 0; background: var(--bg-primary); }
     .app {
       min-height: calc(100vh - env(safe-area-inset-top, 0px) - 8px);
       border-radius: 22px 22px 0 0;
@@ -92,7 +92,7 @@
     }
     .nav { top: calc(env(safe-area-inset-top, 0px) + 8px); border-radius: 22px 22px 0 0; z-index: 70; }
     /* Keep the top gutter clean while scrolling — content can't slide through it. */
-    body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: calc(env(safe-area-inset-top, 0px) + 8px); background: var(--bg-page); z-index: 80; pointer-events: none; }
+    body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: calc(env(safe-area-inset-top, 0px) + 8px); background: var(--bg-primary); z-index: 80; pointer-events: none; }
   }
   /* Desktop: use the landscape. The whole app widens; screens adapt. */
   @media (min-width: 600px) {
