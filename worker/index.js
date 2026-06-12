@@ -204,8 +204,9 @@ async function applyMessage(entry, full, contactEmail, artistId) {
   const subject = header(full, "Subject") || "(no subject)";
   const inbound = from.includes(contactEmail.toLowerCase());
   if (inbound) {
+    const fullText = cleanSnippet(extractPlainText(full.payload));
     const snippet = cleanSnippet(full.snippet);
-    const body = snippet ? snippet.slice(0, 600) : "Reply: " + subject;
+    const body = (fullText || snippet) ? (fullText || snippet).slice(0, 1200) : "Reply: " + subject;
     const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_in", body: body, source: "email_sync", email_message_id: full.id });
     console.log("  inbound reply on entry", entry.id, "newly logged:", !!isNew);
     if (isNew) {
@@ -220,8 +221,9 @@ async function applyMessage(entry, full, contactEmail, artistId) {
   } else {
     // Store YOUR actual words (not just the subject) — the conversation view and
     // the AI both need real two-way context to avoid repeating what you've said.
+    const outFull = cleanSnippet(extractPlainText(full.payload));
     const outSnippet = cleanSnippet(full.snippet);
-    const outBody = outSnippet ? outSnippet.slice(0, 600) : "Sent: " + subject;
+    const outBody = (outFull || outSnippet) ? (outFull || outSnippet).slice(0, 1200) : "Sent: " + subject;
     const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_out", body: outBody, source: "email_sync", email_message_id: full.id });
     // You pitched from Gmail like a human -> the card moves itself: Lead -> Pitched.
     if (isNew && ["lead", "outreach"].includes(entry.status)) {

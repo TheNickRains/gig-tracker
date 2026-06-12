@@ -621,9 +621,7 @@
   .act-ctx { font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
   .activity-item.action { padding: 6px 0; align-items: center; }
   .note-item { padding: 10px 12px; border-bottom: 0.5px solid var(--border-light); }
-  @media (max-width: 599px) {
-    .note-clamp:not(.open) { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
-  }
+
   .note-item:last-of-type { border-bottom: none; }
   textarea.tpl-body { width: 100%; min-height: 200px; border: 1px dashed var(--border-mid); border-radius: 10px; padding: 10px; background: transparent; color: inherit; font: inherit; font-size: 13px; line-height: 1.5; resize: vertical; }
   textarea.tpl-body:focus { outline: none; border-color: var(--amber-400); border-style: solid; }
@@ -1840,7 +1838,7 @@ function openDetail(id) {
       ? '<button class="note-ic" onclick="event.stopPropagation();startNoteEdit(\'' + a.id + '\',' + id + ')" title="Edit"><i class="ti ti-pencil"></i></button>'
         + '<button class="note-ic" onclick="event.stopPropagation();deleteNote(\'' + a.id + '\',' + id + ')" title="Delete"><i class="ti ti-trash"></i></button>'
       : '';
-    return '<div class="note-item"><div style="display:flex;gap:6px;align-items:flex-start"><div style="flex:1;min-width:0"><div class="act-ctx note-clamp" onclick="this.classList.toggle(\'open\')">' + esc(a.text) + '</div><div class="activity-time">' + a.time + '</div></div>' + icons + '</div></div>';
+    return '<div class="note-item"><div style="display:flex;gap:6px;align-items:flex-start"><div style="flex:1;min-width:0"><div class="act-ctx">' + esc(a.text) + '</div><div class="activity-time">' + a.time + '</div></div>' + icons + '</div></div>';
   }).join('');
 
   // Slice B: schedule the draft. One pending send per entry; the worker fires it
@@ -1951,7 +1949,7 @@ function openDetail(id) {
     + contactSection(p, id)
     + '<div class="section-label">Notes</div>'
     + '<div class="card card-flush" style="margin-bottom:12px">' + notesHtml
-    + '<div class="composer" style="align-items:flex-end"><textarea class="note-input" id="note-in-' + id + '" rows="2" placeholder="Add a note… (Enter for a new line, \u2318\u21a9 to save)" onkeydown="addNote(event,' + id + ')"></textarea>'
+    + '<div class="composer" style="align-items:flex-end"><textarea class="note-input" id="note-in-' + id + '" rows="2" placeholder="Add a note…" onkeydown="addNote(event,' + id + ')"></textarea>'
     + '<button class="send-btn" onclick="addNote({key:\'Enter\',metaKey:true,target:document.getElementById(\'note-in-' + id + '\')},' + id + ')" title="Save note"><i class="ti ti-arrow-up"></i></button></div>'
     + '</div>'
     + '</div><div>'
