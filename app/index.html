@@ -386,6 +386,13 @@
   .venue-card .badge { white-space: normal; line-height: 1.3; }
   .venue-card .venue-tag { overflow-wrap: anywhere; }
   .vp-check { position: absolute; top: 9px; right: 9px; font-size: 16px; color: var(--booked-text); }
+  .vchips { display: flex; gap: 6px; justify-content: flex-end; margin: -6px 0 14px; flex-wrap: wrap; }
+  .vchip { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; padding: 5px 10px; border-radius: 999px; border: 0.5px solid var(--border-mid); background: var(--bg-primary); color: var(--text-secondary); font-family: inherit; cursor: pointer; }
+  .vchip i { font-size: 13px; }
+  .vchip.primary { background: var(--amber-800); border-color: var(--amber-800); color: #fff; }
+  .vchip.done { background: var(--booked-bg); border-color: transparent; color: var(--booked-text); cursor: default; }
+  .vchip.danger:hover { border-color: var(--dead-text); color: var(--dead-text); }
+  .vchip.armed { background: var(--dead-bg); border-color: var(--dead-text); color: var(--dead-text); font-weight: 600; }
   .vp-new { position: absolute; top: 11px; left: 11px; width: 9px; height: 9px; border-radius: 50%; background: var(--talks-text); border: 2px solid var(--bg-primary); }
   .pulse-card { background: var(--talks-bg); border-left: 3px solid var(--talks-text); border-radius: 12px; padding: 11px 12px; font-size: 13px; line-height: 1.5; color: #2b2a26; margin-bottom: 10px; }
   .pulse-card .pc-label { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--talks-text); margin-bottom: 4px; }
@@ -2812,10 +2819,14 @@ function openVenueDetail(id){
     + '<div style="flex:1"><div class="detail-venue">' + esc(v.name) + '</div>'
     + '<div class="detail-meta">' + esc([v.vtype, [v.city, v.state].filter(function(x){return x;}).join(', '), (v.pay && v.pay!=='—' ? v.pay : '')].filter(function(x){return x;}).join(' · ')) + '</div>'
     + '<span class="badge badge-' + v.type + '" style="margin-top:6px">' + (v.type==='hard'?'Hard ticket':'Soft ticket') + '</span></div>'
-    + '<button class="edit-btn" onclick="openVenueEdit(\'' + v.id + '\')"><i class="ti ti-pencil"></i> Edit</button></div>'
+    + '</div>'
+    + '<div class="vchips">'
     + (pipeline.some(function(pp){ return pp.venueId===v.id; })
-      ? '<button class="btn-secondary" style="width:100%;margin-bottom:14px;opacity:0.55;cursor:default" disabled><i class="ti ti-check"></i> Added to pipeline</button>'
-      : '<button class="btn-primary" style="width:100%;margin-bottom:14px" onclick="addVenueToPipeline(\'' + v.id + '\')"><i class="ti ti-plus"></i> Add to pipeline</button>')
+      ? '<span class="vchip done"><i class="ti ti-check"></i> In pipeline</span>'
+      : '<button class="vchip primary" onclick="addVenueToPipeline(\'' + v.id + '\')"><i class="ti ti-plus"></i> to Pipeline</button>')
+    + '<button class="vchip" onclick="openVenueEdit(\'' + v.id + '\')"><i class="ti ti-pencil"></i> Edit</button>'
+    + '<button class="vchip danger" id="vdel-chip" onclick="deleteVenueArmed(\'' + v.id + '\')"><i class="ti ti-trash"></i> Delete</button>'
+    + '</div>'
     + '<div class="card card-flush" style="margin-bottom:20px">'
     + row('Booking contact', v.contact && v.contact!=='—' ? v.contact : '')
     + row('Pay', v.pay && v.pay!=='—' ? v.pay : '')
@@ -2945,6 +2956,34 @@ function renderVenuePulse(venueId, count){
       }).catch(function(){ var el2 = document.getElementById('venue-pulse'); if (el2) el2.innerHTML=''; });
   });
 }
+// Delete a venue — armed double-confirm (it's SHARED: deletes for the whole
+// collective and cascades contacts, pipeline entries, comments, wins).
+var vdelTimer = null;
+function deleteVenueArmed(venueId){
+  var chip = document.getElementById('vdel-chip');
+  if (!chip) return;
+  if (!chip.classList.contains('armed')) {
+    chip.classList.add('armed');
+    chip.innerHTML = '<i class="ti ti-alert-triangle"></i> Deletes for everyone — tap again';
+    clearTimeout(vdelTimer);
+    vdelTimer = setTimeout(function(){
+      if (!chip.isConnected) return;
+      chip.classList.remove('armed');
+      chip.innerHTML = '<i class="ti ti-trash"></i> Delete';
+    }, 3500);
+    return;
+  }
+  clearTimeout(vdelTimer);
+  chip.innerHTML = '<i class="ti ti-loader-2"></i> Deleting…';
+  sb.from('venues').delete().eq('id', venueId).then(function(r){
+    if (r.error) { showToast('Could not delete: ' + r.error.message, true); chip.classList.remove('armed'); chip.innerHTML = '<i class="ti ti-trash"></i> Delete'; return; }
+    showToast('Venue deleted for the collective');
+    feedCache = null;
+    loadVenues(); loadPipeline();
+    go('discover');
+  });
+}
+
 // Discover → pipeline, one tap. Uses the venue's first contact when there is one.
 function addVenueToPipeline(venueId){
   sb.from('contacts').select('id').eq('venue_id', venueId).limit(1).then(function(cr){
