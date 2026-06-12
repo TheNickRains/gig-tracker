@@ -811,7 +811,7 @@
     </div>
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <input class="pipe-search" id="pipe-search" type="search" placeholder="Search venues, stages, notes, conversations…" style="margin-bottom:0;flex:1" oninput="pipeQuery=this.value;renderPipeline()">
-      <select class="pipe-sort" id="pipe-filter" onchange="pipeFilter=this.value;renderPipeline()" title="Filter by stage"></select>
+      <select class="pipe-sort" id="pipe-filter" onchange="pipeFilter=this.value;lsSet('gc_pipe_filter',this.value);renderPipeline()" title="Filter by stage"></select>
     </div>
     <div class="card card-flush" id="pipe-list"></div>
   </div>
@@ -1101,8 +1101,8 @@ function go(screen) {
   if (screen === 'home') renderHome();
   if (screen === 'discover') { renderDiscover(); setTimeout(function(){ lsSet('gc_disc_seen', String(Date.now())); }, 4000); }
   if (screen === 'pipeline') {
-    // Fresh view every visit: filter back to All, search cleared (view type persists).
-    pipeFilter = 'all'; pipeQuery = '';
+    // Search is transient; the FILTER persists across views and visits.
+    pipeQuery = '';
     var psi = document.getElementById('pipe-search'); if (psi) psi.value = '';
     renderPipeline();
   }
@@ -1274,7 +1274,7 @@ function renderPipeline() {
   var list = document.getElementById('pipe-list');
   list.classList.toggle('grid', pipeView==='grid' && !pipeGroup);
   document.querySelectorAll('.view-btn').forEach(function(b){ b.classList.remove('on'); });
-  var vb = document.getElementById('view-' + pipeView); if (vb) vb.classList.add('on');
+  if (!pipeGroup) { var vb = document.getElementById('view-' + pipeView); if (vb) vb.classList.add('on'); }
   var gb = document.getElementById('group-btn');
   if (gb) gb.classList.toggle('on', pipeGroup);
   var gridBtn = document.getElementById('view-grid'); if (gridBtn) gridBtn.classList.toggle('disabled', pipeGroup);
@@ -1505,7 +1505,8 @@ function priorityScore(p) {
   if (p.s === 'played')               return 3;
   return -1; // passed, dead
 }
-var pipeQuery = '', pipeFilter = 'all';
+var pipeQuery = '';
+var pipeFilter = lsGet('gc_pipe_filter') || 'all';
 function renderPipeFilterSelect(){
   var el = document.getElementById('pipe-filter'); if(!el) return;
   var present = {}; pipeline.forEach(function(p){ present[p.s] = (present[p.s]||0) + 1; });
