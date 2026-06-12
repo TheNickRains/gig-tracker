@@ -502,6 +502,10 @@
   .msg .m-meta { font-size: 10px; color: var(--text-tertiary); margin-top: 5px; display: flex; gap: 8px; }
   .msg.them .m-meta { color: var(--talks-text); opacity: 0.7; }
   .msg.you .m-meta { color: var(--pitched-text); opacity: 0.7; justify-content: flex-end; }
+  .msg { position: relative; }
+  .m-tools { position: absolute; top: 3px; right: 6px; display: flex; gap: 4px; opacity: 0.45; }
+  .m-tools .note-ic { padding: 1px 2px; font-size: 12px; }
+  .msg:hover .m-tools { opacity: 1; }
   .sys-line { align-self: center; font-size: 11px; color: var(--text-tertiary); display: flex; gap: 6px; align-items: baseline; text-align: center; }
   /* Terminal-stage toggles */
   .closeout-btn.on { font-weight: 600; }
@@ -1779,10 +1783,18 @@ function openDetail(id) {
     if (a.kind==='email_in' || a.kind==='email_out') {
       var inbound = a.kind==='email_in';
       var text = inbound ? a.text : a.text.replace(/^Sent:\s*/,'');
+      var manual = a.id && a.source === 'manual';
+      if (manual && notesEditing[a.id]) {
+        return '<div class="msg ' + (inbound ? 'them' : 'you') + '" style="width:88%"><input class="note-input" style="margin:0;width:100%" value="' + esc(a.text) + '" autofocus onkeydown="saveNoteEdit(event,\'' + a.id + '\',' + id + ')"></div>';
+      }
       var content = a.summary
         ? '<div class="m-sum">' + esc(a.summary) + '</div><div class="m-raw">' + esc(text) + '</div>'
         : esc(text);
-      return '<div class="msg ' + (inbound ? 'them' : 'you') + '" title="' + (inbound ? esc(first) : 'You') + ' · ' + a.time + '">' + content + '</div>';
+      var tools = manual
+        ? '<span class="m-tools"><button class="note-ic" onclick="event.stopPropagation();startNoteEdit(\'' + a.id + '\',' + id + ')" title="Edit"><i class="ti ti-pencil"></i></button>'
+          + '<button class="note-ic" onclick="event.stopPropagation();deleteNote(\'' + a.id + '\',' + id + ')" title="Delete"><i class="ti ti-trash"></i></button></span>'
+        : '';
+      return '<div class="msg ' + (inbound ? 'them' : 'you') + '" title="' + (inbound ? esc(first) : 'You') + ' · ' + a.time + (manual ? ' · logged by hand' : '') + '">' + tools + content + '</div>';
     }
     return '<div class="sys-line"><span>' + esc(a.text) + '</span><span>· ' + a.time + '</span></div>';
   }).join('') || '<p style="color:var(--text-secondary);font-size:13px">No conversation yet — emails with ' + esc(first) + ' appear here automatically.</p>') + '</div>';
@@ -2885,7 +2897,7 @@ function loadActivities(ids){
   sb.from('activities').select('*').in('pipeline_entry_id',ids).order('created_at',{ascending:false}).then(function(r){
     var byEntry={}, lastIn={}, lastOut={};
     (r.data||[]).forEach(function(a){
-      (byEntry[a.pipeline_entry_id]=byEntry[a.pipeline_entry_id]||[]).push({id:a.id, kind:a.kind, dot:dotFor(a.kind), text:a.body||'', time:relTime(a.created_at), summary:a.summary||''});
+      (byEntry[a.pipeline_entry_id]=byEntry[a.pipeline_entry_id]||[]).push({id:a.id, kind:a.kind, source:a.source||'', dot:dotFor(a.kind), text:a.body||'', time:relTime(a.created_at), summary:a.summary||''});
       var t = new Date(a.created_at).getTime();
       if (a.kind==='email_in'  && (!lastIn[a.pipeline_entry_id]  || t > lastIn[a.pipeline_entry_id]))  lastIn[a.pipeline_entry_id]  = t;
       if (a.kind==='email_out' && (!lastOut[a.pipeline_entry_id] || t > lastOut[a.pipeline_entry_id])) lastOut[a.pipeline_entry_id] = t;
