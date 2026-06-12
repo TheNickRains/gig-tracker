@@ -481,13 +481,8 @@ async function processScheduled() {
           console.log("scheduled: canceled (reply arrived)", m.id);
           continue;
         }
-        const arts = await sGet(`artists?id=eq.${m.artist_id}&select=allow_auto_send,display_name,phone,website,sig_logo_url`);
-        if (!arts.length || !arts[0].allow_auto_send) {
-          await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "ready" });
-          notify(m.artist_id, "Send awaiting your review", m.subject, "/app#entry/" + m.pipeline_entry_id).catch(() => {});
-          console.log("scheduled: ready for review (auto-send off)", m.id);
-          continue;
-        }
+        // No review gate: every scheduled message is human intention — it fires.
+        // (allow_auto_send is reserved for future agent-initiated mail.)
       }
       const conns = await sGet(`google_connections?artist_id=eq.${m.artist_id}&select=refresh_token`);
       if (!conns.length) {
