@@ -1319,23 +1319,40 @@ function renderMiniCal(){
     var state = availMap[iso] || (dowRules[new Date(y, m, d).getDay()] ? 'busy' : '');
     cells += '<div class="mc-day' + (iso===todayIso?' today':'') + (state?' '+state:'') + '">' + d + (gigs[iso] ? '<span class="cal-gig-dot"></span>' : '') + '</div>';
   }
-  el.innerHTML = '<div class="section-label">' + now.toLocaleDateString(undefined,{month:'long'}) + ' at a glance</div>'
-    + '<div class="card" style="margin-bottom:20px;cursor:pointer" onclick="go(\'calendar\')" title="Open calendar">'
-    + '<div class="mc-grid">' + ['S','M','T','W','T','F','S'].map(function(x){ return '<div class="mc-dow">' + x + '</div>'; }).join('') + cells + '</div></div>';
+  var glance = lsGet('gc_glance') || 'cal';
+  el.innerHTML = '<div class="section-label" style="display:flex;align-items:center;justify-content:space-between">'
+    + '<span>' + (glance==='cal' ? now.toLocaleDateString(undefined,{month:'long'}) + ' at a glance' : 'Upcoming') + '</span>'
+    + '<span style="display:flex;gap:4px">'
+    + '<button class="view-btn" style="width:26px;height:26px" onclick="lsSet(\'gc_glance\',\'cal\');renderHome()" title="Month"><i class="ti ti-calendar" style="font-size:13px;color:' + (glance==='cal'?'var(--amber-800)':'var(--text-tertiary)') + '"></i></button>'
+    + '<button class="view-btn" style="width:26px;height:26px" onclick="lsSet(\'gc_glance\',\'up\');renderHome()" title="Upcoming"><i class="ti ti-list-details" style="font-size:13px;color:' + (glance==='up'?'var(--amber-800)':'var(--text-tertiary)') + '"></i></button>'
+    + '</span></div>'
+    + (glance==='cal'
+      ? '<div class="card" style="margin-bottom:20px;cursor:pointer" onclick="go(\'calendar\')" title="Open calendar"><div class="mc-grid">' + ['S','M','T','W','T','F','S'].map(function(x){ return '<div class="mc-dow">' + x + '</div>'; }).join('') + cells + '</div></div>'
+      : '');
   // Upcoming gigs under the mini calendar (desktop rail).
   var up = document.getElementById('war-up');
+  if (up && (lsGet('gc_glance') || 'cal') !== 'up') { up.innerHTML = ''; up = null; }
   if (up) {
     var rows = [];
     Object.keys(gigs).sort().forEach(function(iso){ gigs[iso].forEach(function(p){ if (new Date(p.gig_date) >= new Date(Date.now() - 86400000)) rows.push(p); }); });
     rows = rows.slice(0, 6);
     up.innerHTML = rows.length
-      ? '<div class="section-label">Upcoming</div><div class="card card-flush" style="margin-bottom:20px">' + rows.map(function(p){
+      ? '<div class="card card-flush" style="margin-bottom:20px">' + rows.map(function(p){
           var d = new Date(p.gig_date);
           return '<div class="war-row" onclick="openDetail(' + p.id + ')"><div class="war-ic" style="background:var(--' + p.s + '-bg);color:var(--' + p.s + '-text)"><i class="ti ti-music"></i></div>'
             + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(p.venue) + '</div><div class="war-sub">' + d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) + ' · ' + statusLabel[p.s] + '</div></div></div>';
         }).join('') + '</div>'
-      : '<div class="section-label">Upcoming</div><div class="card" style="margin-bottom:20px;font-size:12.5px;color:var(--text-secondary)">No dated gigs yet — set a gig date on a Hold or Booked venue and it shows here + on Google Calendar.</div>';
+      : '<div class="card" style="margin-bottom:20px;font-size:12.5px;color:var(--text-secondary)">No dated gigs yet — set a gig date on a Hold or Booked venue and it shows here + on Google Calendar.</div>';
   }
+}
+// Historical booked/played deals join the wins wall (idempotent, once per boot).
+var winsBackfilled = false;
+function backfillWins(){
+  if (winsBackfilled || !ME) return;
+  winsBackfilled = true;
+  var rows = pipeline.filter(function(p){ return (p.s==='booked'||p.s==='played') && p.venueId; })
+    .map(function(p){ return { venue_id: p.venueId, artist_id: ME, author_name: profile.name || 'A member', avatar_url: profile.avatar_url || null, status: p.s }; });
+  if (rows.length) sb.from('venue_wins').upsert(rows).then(function(r){ if (!r.error) { feedCache = null; renderFeed(); } });
 }
 var warPrevCount = 0;
 // The war room: Home leads with what needs you, then the scheduled queue.
@@ -2403,6 +2420,14 @@ function subscribeRealtime(){
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pipeline_entries' }, function(){ loadPipeline(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'scheduled_messages' }, function(){ loadPipeline(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'availability' }, function(){ if (currentScreen==='calendar') loadAvail(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'venue_comments' }, function(){
+      feedCache = null; renderFeed();
+      if (currentScreen==='venue' && currentVenueId) loadVenueComments(currentVenueId);
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'venue_wins' }, function(){
+      feedCache = null; renderFeed();
+      if (currentScreen==='venue' && currentVenueId) loadVenueComments(currentVenueId);
+    })
     .subscribe();
 }
 
@@ -2477,6 +2502,7 @@ function loadPipeline(){
                 vtype:v.venue_type||'', pay:v.pay_range||'—', t:v.ticket_type||'soft', s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, gig_date:e.gig_date||null, gigPay:e.gig_pay||'', gigCosts:e.gig_costs||'', days:daysAgo(e.last_activity_at), activity:[]};
       });
       updateHomeStats();
+      backfillWins();
       if(currentScreen==='pipeline') renderPipeline();
       retryPendingRoute();
       var ids = rows.map(function(e){ return e.id; });

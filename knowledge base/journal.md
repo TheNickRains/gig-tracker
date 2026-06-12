@@ -17,6 +17,17 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-12 — E polish: live social, wins backfill, glance toggle; calendar mystery closed
+**#7 FINAL:** Nick's own screenshot shows the event ON booking@'s Google Calendar — the gap was Spark
+(client) not showing/syncing that calendar. The mystery "booking page (30 mins)" was NOT us (we only
+POST timed events titled Gig:/HOLD:) — it's Google Calendar's own appointment-schedule feature.
+**Live collective:** app realtime now subscribes venue_comments + venue_wins → feed cache busts +
+re-renders, open venue reloads its thread (Sam's comment appears live now). **Wins backfill:** on boot,
+own booked/played entries upsert into venue_wins (idempotent) so historical bookings populate the wall.
+**Home glance module:** Month ⇄ Upcoming toggle (gc_glance) instead of stacking both. Provenance note:
+"Added by" is dynamic (created_by_name stamped at intake) — old venues predate the column and show
+nothing; everything Nick added correctly shows him.
+
 ## 2026-06-12 — SLICE E WRAPPED: social comments, wins wall, financials, true cockpit panes
 **#7 closed:** the "missing" calendar event was DELETED by design — a date-clear fired
 "calendar: event removed (date cleared)"; setting the date again recreates it (htmlLink now logged).
