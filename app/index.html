@@ -1644,7 +1644,7 @@ function contactSection(p, id){
       + '<div class="contact-actions">'
       + (p.email ? '<a class="btn-icon" title="Email" href="mailto:' + esc(p.email) + '"><i class="ti ti-mail"></i></a>' : '')
       + (p.phone ? '<a class="btn-icon" title="Call" href="tel:' + esc(p.phone).replace(/[^+0-9]/g,'') + '" onclick="logCallTap(' + id + ')"><i class="ti ti-phone"></i></a>' : '')
-      + (p.phone ? '<a class="btn-icon" title="Text" href="sms:' + esc(p.phone).replace(/[^+0-9]/g,'') + '" onclick="quickLogMode[pipeline[' + id + '].uuid]=\'out\';setTimeout(function(){openDetail(' + id + ')},400)"><i class="ti ti-message"></i></a>' : '')
+      + (p.phone ? '<a class="btn-icon" title="Text" href="sms:' + esc(p.phone).replace(/[^+0-9]/g,'') + '" onclick="qlDir[pipeline[' + id + '].uuid]=\'out\';quickLogChannel[pipeline[' + id + '].uuid]=\'💬\';setTimeout(function(){openDetail(' + id + ')},400)"><i class="ti ti-message"></i></a>' : '')
       + (p.linkedin ? '<a class="btn-icon" title="LinkedIn" target="_blank" rel="noopener" href="' + esc(linkUrl(p.linkedin, 'linkedin')) + '"><i class="ti ti-brand-linkedin"></i></a>' : '')
       + (p.instagram ? '<a class="btn-icon" title="Instagram" target="_blank" rel="noopener" href="' + esc(linkUrl(p.instagram, 'instagram')) + '"><i class="ti ti-brand-instagram"></i></a>' : '')
       + '<button class="btn-icon" title="Edit contact" onclick="startContactEdit(' + id + ',\'' + (p.personId||'') + '\')"><i class="ti ti-pencil"></i></button>'
@@ -1856,8 +1856,8 @@ function openDetail(id) {
   // close out, tap the lit one again to restore the deal where it was.
   var dealType = '<div style="margin-left:auto;align-self:flex-start;display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0">'
     + '<div class="followup-chips" style="margin:0" title="Deal type' + (!p.tOverride ? ' (from venue default)' : '') + '">'
-    + '<div class="fu-chip' + (p.t==='soft'?' selected':'') + '" style="font-size:10.5px;padding:3px 9px" onclick="setDealTicket(' + id + ',\'soft\')">Soft</div>'
-    + '<div class="fu-chip' + (p.t==='hard'?' selected':'') + '" style="font-size:10.5px;padding:3px 9px" onclick="setDealTicket(' + id + ',\'hard\')">Hard</div>'
+    + '<div class="fu-chip' + (p.t==='soft'?' selected':'') + '" style="font-size:10.5px;padding:3px 9px;border-radius:5px" onclick="setDealTicket(' + id + ',\'soft\')">Soft</div>'
+    + '<div class="fu-chip' + (p.t==='hard'?' selected':'') + '" style="font-size:10.5px;padding:3px 9px;border-radius:5px" onclick="setDealTicket(' + id + ',\'hard\')">Hard</div>'
     + '</div>'
     + '<span style="font-size:9.5px;color:var(--text-tertiary)">deal type' + (!p.tOverride ? ' · venue default' : '') + '</span></div>';
   var statusActions = '<div class="closeout">'
@@ -1931,19 +1931,21 @@ function openDetail(id) {
     + '</div>'
     + '</div><div>'
     + tplSection
-    + '<div class="section-label" style="display:flex;align-items:center;justify-content:space-between">Conversation'
-    + '<span style="display:flex;gap:10px"><button class="vc-btn" onclick="quickLog(' + id + ',\'out\')"><i class="ti ti-arrow-up-right"></i> You said…</button>'
-    + '<button class="vc-btn" onclick="quickLog(' + id + ',\'in\')"><i class="ti ti-arrow-down-left"></i> They said…</button></span></div>'
-    + (quickLogMode[p.uuid]
-      ? '<div class="sched-chips" style="justify-content:flex-start;margin:0 0 8px">'
-        + [['💬','Text'],['📞','Call'],['📝','Form'],['🤝','In person'],['✉️','Email']].map(function(ch){
-            return '<div class="fu-chip' + ((quickLogChannel[p.uuid]||'💬')===ch[0]?' selected':'') + '" onclick="quickLogChannel[\'' + p.uuid + '\']=\'' + ch[0] + '\';openDetail(' + id + ')">' + ch[0] + ' ' + ch[1] + '</div>';
-          }).join('')
-        + '</div>'
-        + '<div class="composer" style="padding:0 0 10px"><input class="note-input" id="qlog-in-' + id + '" autofocus placeholder="' + (quickLogMode[p.uuid]==='out' ? 'What you sent/said…' : 'What ' + esc(first) + ' said…') + '" onkeydown="saveQuickLog(event,' + id + ')">'
-        + '<button class="send-btn" onclick="saveQuickLog({key:\'Enter\',target:document.getElementById(\'qlog-in-' + id + '\')},' + id + ')" title="Log it"><i class="ti ti-arrow-up"></i></button></div>'
-      : '')
-    + '<div class="card card-flush" style="margin-bottom:20px">' + actHtml + '</div>'
+    + '<div class="section-label">Conversation</div>'
+    + '<div class="card card-flush" style="margin-bottom:20px">' + actHtml
+    + '<div style="border-top:0.5px solid var(--border-light);padding:10px 12px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+    + '<div class="followup-chips" style="margin:0">'
+    +   '<div class="fu-chip' + ((qlDir[p.uuid]||'out')==='out'?' selected':'') + '" onclick="qlDir[\'' + p.uuid + '\']=\'out\';openDetail(' + id + ')">↗ You</div>'
+    +   '<div class="fu-chip' + (qlDir[p.uuid]==='in'?' selected':'') + '" onclick="qlDir[\'' + p.uuid + '\']=\'in\';openDetail(' + id + ')">↙ ' + esc(first) + '</div>'
+    + '</div>'
+    + '<div class="followup-chips" style="margin:0">'
+    + [['💬','Text'],['📞','Call'],['📝','Form'],['🤝','Met'],['✉️','Email']].map(function(ch){
+        return '<div class="fu-chip' + ((quickLogChannel[p.uuid]||'💬')===ch[0]?' selected':'') + '" style="font-size:11px;padding:3px 8px" onclick="quickLogChannel[\'' + p.uuid + '\']=\'' + ch[0] + '\';openDetail(' + id + ')" title="' + ch[1] + '">' + ch[0] + '</div>';
+      }).join('')
+    + '</div></div>'
+    + '<div class="composer"><input class="note-input" id="qlog-in-' + id + '" placeholder="' + (qlDir[p.uuid]==='in' ? ('Log a reply from ' + esc(first)) : 'Log a text, call, or conversation') + '…" onkeydown="saveQuickLog(event,' + id + ')">'
+    + '<button class="send-btn" onclick="saveQuickLog({key:\'Enter\',target:document.getElementById(\'qlog-in-' + id + '\')},' + id + ')" title="Log it"><i class="ti ti-arrow-up"></i></button></div>'
+    + '</div>'
     + '</div></div>';
 
   go('detail');
@@ -2052,33 +2054,28 @@ function textDraft(id){
   var digits = (p.phone || '').replace(/[^+0-9]/g, '');
   if (!digits) { showToast('No phone on this contact', true); return; }
   location.href = 'sms:' + digits + '?&body=' + encodeURIComponent(body);
-  // Pre-arm the log so one Enter captures what went out.
-  quickLogMode[p.uuid] = 'out';
+  // Pre-arm the composer so one line captures what went out.
+  qlDir[p.uuid] = 'out'; quickLogChannel[p.uuid] = '💬';
   setTimeout(function(){ openDetail(id); }, 400);
 }
-var quickLogMode = {};
+var qlDir = {};            // 'out' (default) | 'in'
 var quickLogChannel = {};
 function logCallTap(id){
   var p = pipeline[id];
   sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: 'call', body: 'Called ' + ((p.contact||'').split(' ')[0] || 'contact'), source: 'manual' }).then(function(r){
     if (!r.error) sb.from('pipeline_entries').update({ last_activity_at: new Date().toISOString() }).eq('id', p.uuid).then(function(){ loadPipeline(); });
   });
-  // arm the log for the outcome
-  quickLogMode[p.uuid] = 'out';
+  // arm the composer for the outcome
+  qlDir[p.uuid] = 'out'; quickLogChannel[p.uuid] = '📞';
   setTimeout(function(){ if (currentScreen==='detail' && currentDetailUuid===p.uuid) openDetail(id); }, 600);
-}
-function quickLog(id, dir){
-  var p = pipeline[id];
-  quickLogMode[p.uuid] = quickLogMode[p.uuid] === dir ? null : dir;
-  openDetail(id);
 }
 function saveQuickLog(e, id){
   var p = pipeline[id];
-  if (e.key === 'Escape') { quickLogMode[p.uuid] = null; openDetail(id); return; }
+  if (e.key === 'Escape') { e.target.value = ''; return; }
   if (e.key !== 'Enter' || !e.target.value.trim()) return;
-  var dir = quickLogMode[p.uuid];
+  var dir = qlDir[p.uuid] || 'out';
   var body = (quickLogChannel[p.uuid] || '💬') + ' ' + e.target.value.trim();
-  quickLogMode[p.uuid] = null;
+  e.target.value = '';
   var kind = dir === 'out' ? 'email_out' : 'email_in'; // same engine: bubbles, AI context, needs-you
   sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: kind, body: body, source: 'manual' }).then(function(r){
     if (r.error) { showToast('Could not log: ' + r.error.message, true); return; }
