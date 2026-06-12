@@ -27,6 +27,19 @@ tokens expire ~7 days idle (Settings flips to "Connect" — just reconnect); Gem
 caps (upgrade the key's project to billed before the roster leans on AI drafting); push notifications
 are per-device opt-in.
 
+## 2026-06-12 — RETHEME: dusty violet pastels (designer-spec'd); brown dethroned
+Nick: "colors seem horrendous… everything based around this brown… gross. I love pastels." Designer
+consult delivered the direction: **"dusty violet pastels with a cool-lavender neutral spine"** — neutrals
+lean the same cool direction as the accent so pastels read as a family, jewel-violet #4A2D7A is the new
+primary. Applied as TOKEN VALUES ONLY — the --amber-* names stay (compat) but now hold violets; stage
+pastels re-tuned (blush/periwinkle/mint family), legacy pairs mapped, dark mode re-grounded (#1c1a25
+spine, glass pill text #C4A8FF), dotByKind + toast + won-banner hardcodes swapped (old ambers fully
+purged — grep 0). Pattern KEPT per designer: pastel light fills + #2b2a26 ink in both themes (12:1+).
+All AA floors audited. Also: Pipeline-health funnel moved to a full-width strip directly under the
+greeting (mobile order: welcome → health → needs-you; desktop: cockpit banner above the panes); view
+buttons got intentional focus rings (no default blue); group-by button icon fixed (ti-rows didn't
+exist → blank mystery button).
+
 ## 2026-06-12 — Derick's field reports: onboarding flow + real contact management
 First external user (Derick) immediately hit: (1) Profile unreachable without knowing the avatar is a
 button → avatar now falls back to a person ICON when no name/photo (never invisible), and Settings
