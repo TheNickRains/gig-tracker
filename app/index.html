@@ -491,6 +491,7 @@
   .ws-addr { font-size: 11.5px; color: var(--text-secondary); overflow-wrap: anywhere; }
   .composer { display: flex; gap: 6px; align-items: center; padding: 10px 12px 12px; }
   .composer .note-input { margin: 0; width: auto; flex: 1; }
+  textarea.note-input { resize: none; line-height: 1.45; font-family: inherit; min-height: 40px; }
   .send-btn { width: 34px; height: 34px; border-radius: 10px; border: none; background: var(--amber-800); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .send-btn i { font-size: 16px; }
   .note-ic:hover { color: var(--amber-800); }
@@ -1925,16 +1926,23 @@ function openDetail(id) {
     + contactSection(p, id)
     + '<div class="section-label">Notes</div>'
     + '<div class="card card-flush" style="margin-bottom:12px">' + notesHtml
-    + '<div class="composer"><input class="note-input" id="note-in-' + id + '" placeholder="Add a note…" onkeydown="addNote(event,' + id + ')">'
-    + '<button class="send-btn" onclick="addNote({key:\'Enter\',target:document.getElementById(\'note-in-' + id + '\')},' + id + ')" title="Save note"><i class="ti ti-arrow-up"></i></button></div>'
+    + '<div class="composer" style="align-items:flex-end"><textarea class="note-input" id="note-in-' + id + '" rows="2" placeholder="Add a note… (Enter for a new line, \u2318\u21a9 to save)" onkeydown="addNote(event,' + id + ')"></textarea>'
+    + '<button class="send-btn" onclick="addNote({key:\'Enter\',metaKey:true,target:document.getElementById(\'note-in-' + id + '\')},' + id + ')" title="Save note"><i class="ti ti-arrow-up"></i></button></div>'
     + '</div>'
     + '</div><div>'
     + tplSection
     + '<div class="section-label" style="display:flex;align-items:center;justify-content:space-between">Conversation'
     + '<span style="display:flex;gap:10px"><button class="vc-btn" onclick="quickLog(' + id + ',\'out\')"><i class="ti ti-arrow-up-right"></i> You said…</button>'
     + '<button class="vc-btn" onclick="quickLog(' + id + ',\'in\')"><i class="ti ti-arrow-down-left"></i> They said…</button></span></div>'
-    + (quickLogMode[p.uuid] ? '<div class="composer" style="padding:0 0 10px"><input class="note-input" id="qlog-in-' + id + '" autofocus placeholder="' + (quickLogMode[p.uuid]==='out' ? 'What you sent/said (text, call, in person)…' : 'What ' + esc(first) + ' said…') + '" onkeydown="saveQuickLog(event,' + id + ')">'
-      + '<button class="send-btn" onclick="saveQuickLog({key:\'Enter\',target:document.getElementById(\'qlog-in-' + id + '\')},' + id + ')" title="Log it"><i class="ti ti-arrow-up"></i></button></div>' : '')
+    + (quickLogMode[p.uuid]
+      ? '<div class="sched-chips" style="justify-content:flex-start;margin:0 0 8px">'
+        + [['💬','Text'],['📞','Call'],['📝','Form'],['🤝','In person'],['✉️','Email']].map(function(ch){
+            return '<div class="fu-chip' + ((quickLogChannel[p.uuid]||'💬')===ch[0]?' selected':'') + '" onclick="quickLogChannel[\'' + p.uuid + '\']=\'' + ch[0] + '\';openDetail(' + id + ')">' + ch[0] + ' ' + ch[1] + '</div>';
+          }).join('')
+        + '</div>'
+        + '<div class="composer" style="padding:0 0 10px"><input class="note-input" id="qlog-in-' + id + '" autofocus placeholder="' + (quickLogMode[p.uuid]==='out' ? 'What you sent/said…' : 'What ' + esc(first) + ' said…') + '" onkeydown="saveQuickLog(event,' + id + ')">'
+        + '<button class="send-btn" onclick="saveQuickLog({key:\'Enter\',target:document.getElementById(\'qlog-in-' + id + '\')},' + id + ')" title="Log it"><i class="ti ti-arrow-up"></i></button></div>'
+      : '')
     + '<div class="card card-flush" style="margin-bottom:20px">' + actHtml + '</div>'
     + '</div></div>';
 
@@ -2049,6 +2057,7 @@ function textDraft(id){
   setTimeout(function(){ openDetail(id); }, 400);
 }
 var quickLogMode = {};
+var quickLogChannel = {};
 function logCallTap(id){
   var p = pipeline[id];
   sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: 'call', body: 'Called ' + ((p.contact||'').split(' ')[0] || 'contact'), source: 'manual' }).then(function(r){
@@ -2068,7 +2077,7 @@ function saveQuickLog(e, id){
   if (e.key === 'Escape') { quickLogMode[p.uuid] = null; openDetail(id); return; }
   if (e.key !== 'Enter' || !e.target.value.trim()) return;
   var dir = quickLogMode[p.uuid];
-  var body = e.target.value.trim();
+  var body = (quickLogChannel[p.uuid] || '💬') + ' ' + e.target.value.trim();
   quickLogMode[p.uuid] = null;
   var kind = dir === 'out' ? 'email_out' : 'email_in'; // same engine: bubbles, AI context, needs-you
   sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: kind, body: body, source: 'manual' }).then(function(r){
@@ -2496,6 +2505,8 @@ function deleteNote(actId, id){
 }
 
 function addNote(e, id) {
+  // textarea: plain Enter makes a newline; Cmd/Ctrl+Enter (or the button) saves
+  if (e.key==='Enter' && !(e.metaKey || e.ctrlKey)) return;
   if (e.key==='Enter' && e.target.value.trim()) {
     var text = e.target.value.trim();
     var p = pipeline[id];
