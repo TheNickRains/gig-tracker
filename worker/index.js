@@ -167,7 +167,8 @@ async function gmailSend(token, to, subject, body, thread, sig) {
       + '<strong style="font:14px -apple-system,Segoe UI,Helvetica,Arial,sans-serif">' + escHtml(sig.name || "") + "</strong>"
       + '<div style="font:12px/1.5 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#666">'
       + [sig.phone, sig.site].filter(Boolean).map(escHtml).join(" · ") + "</div></div>";
-    const htmlBody = '<div style="font:14px/1.55 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#222;white-space:pre-wrap">' + escHtml(body) + "</div>" + sigHtml;
+    // literal <br> tags, not white-space CSS — several clients (Spark, Outlook) strip it
+    const htmlBody = '<div style="font:14px/1.55 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#222">' + escHtml(body).replace(/\r?\n/g, "<br>") + "</div>" + sigHtml;
     const bnd = "gigc_" + Date.now().toString(36);
     headers += `Content-Type: multipart/alternative; boundary="${bnd}"\r\n`;
     raw =
