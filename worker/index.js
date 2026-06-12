@@ -569,7 +569,7 @@ async function handleAiDraft(req, res, bodyStr) {
     const parsed = JSON.parse(bodyStr || "{}");
     const entryId = (parsed.entry_id || "").replace(/[^a-zA-Z0-9-]/g, "");
     if (!entryId) { res.writeHead(400, hdr); res.end(JSON.stringify({ error: "entry_id required" })); return; }
-    const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,gig_date,ticket_type,person_id,venue:venues(name,city,state,venue_type,ticket_type,pay_range,clientele,notes),person:people(name,title,org),contact:contacts(name,title)`);
+    const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,gig_date,ticket_type,person_id,venue:venues(name,city,state,venue_type,ticket_type,pay_range,clientele,notes,booking_form_url),person:people(name,title,org),contact:contacts(name,title)`);
     if (!entries.length || entries[0].artist_id !== uid) { res.writeHead(404, hdr); res.end(JSON.stringify({ error: "Entry not found" })); return; }
     const e = entries[0], v = e.venue || {}, c = e.person || e.contact || {};
     let otherRooms = "";
@@ -596,6 +596,7 @@ async function handleAiDraft(req, res, bodyStr) {
     else if (lastInbound) objective = "OBJECTIVE: live conversation — their message is the latest word. Reply DIRECTLY to it: answer every question they asked, propose or lock concrete specifics (dates, times, rate, logistics), move the booking one step closer. Do NOT re-introduce the artist, do NOT add credentials or sales language — they already know who they're talking to.";
     else if (hasOutbound) objective = "OBJECTIVE: they haven't replied to the earlier email(s) below. Write a brief, warm follow-up that adds ONE new angle or ask (a specific date works well) without repeating the original pitch. 2-4 sentences. Never re-introduce from scratch.";
     else if (e.status === "played") objective = "OBJECTIVE: friendly check-in with a room the artist already played — reference the relationship, float availability for another date. Light, no hard sell.";
+    else if (v.booking_form_url) objective = "OBJECTIVE: this venue books via a WEB FORM. Write copy ready to paste into their booking form: who the artist is, why they fit this room, draw, one listen link. Skip the salutation and sign-off if it reads more natural for a form; keep the phone/site so they can respond.";
     else objective = "OBJECTIVE: first-touch cold outreach — concise intro, why the artist fits THIS room specifically (use the venue notes/clientele), one listen link, clear ask: are they the right person / can we get a date.";
     const draft = await gemini(
       `Write a booking email from a working musician to a venue contact. Plain text only — no subject line, no markdown, no placeholders/brackets, under 160 words, direct and human (never marketing copy). Sign off with the artist's first name and phone.\n\n` +

@@ -1897,6 +1897,7 @@ function openDetail(id) {
         + '<div class="tpl-actions">'
         + (p.email ? '<button class="btn-primary btn-sm" onclick="sendNowInline(' + id + ')"><i class="ti ti-send"></i> Send now</button>' : '')
         + (p.phone ? '<button class="btn-' + (p.email ? 'secondary' : 'primary') + ' btn-sm" onclick="textDraft(' + id + ')"><i class="ti ti-message"></i> Text it</button>' : '')
+        + (p.form ? '<button class="btn-' + (p.email || p.phone ? 'secondary' : 'primary') + ' btn-sm" onclick="openBookingForm(' + id + ')"><i class="ti ti-external-link"></i> Open form</button>' : '')
         + '<button class="btn-secondary btn-sm" onclick="copyTpl(' + id + ')"><i class="ti ti-copy"></i> Copy</button>'
         + '<button class="btn-secondary btn-sm" onclick="aiDraft(' + id + ')"><i class="ti ti-sparkles"></i> Draft with AI</button>'
         + '</div>'
@@ -1989,6 +1990,20 @@ function emailTpl(id) {
   var p = pipeline[id];
   var body = document.getElementById('tpl-body-' + id).value;
   window.open('mailto:' + p.email + '?subject=' + encodeURIComponent(defaultSubject()) + '&body=' + encodeURIComponent(body));
+}
+
+// Form-gate venues: draft → copy → GO. Opening the form logs the pitch.
+function openBookingForm(id){
+  var p = pipeline[id];
+  if (!p.form) return;
+  window.open(linkUrl(p.form), '_blank', 'noopener');
+  sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: 'email_out', body: 'Submitted via booking form: ' + p.form, source: 'manual' }).then(function(r){
+    if (r.error) return;
+    var patch = { last_activity_at: new Date().toISOString() };
+    if (p.s === 'lead') { patch.status = 'pitched'; p.s = 'pitched'; }
+    sb.from('pipeline_entries').update(patch).eq('id', p.uuid).then(function(){ loadPipeline(); });
+    showToast('Form opened — logged as your pitch');
+  });
 }
 
 // ── Venue lookup: search Maps once, fill everything (no typo addresses) ──
@@ -2525,6 +2540,7 @@ function renderWizard(step, ticket, data) {
     + types.map(function(t){ return '<option>' + t + '</option>'; }).join('') + '</select></div>'
     + '<div class="form-field" id="other-wrap" style="display:none"><label class="form-label">Describe the venue type</label><input class="form-input" id="wo" placeholder="Tell us more…"></div>'
     + '<div class="form-field"><label class="form-label">Address (optional)</label><input class="form-input" id="waddr" placeholder="Street address — powers maps later"></div>'
+    + '<div class="form-field"><label class="form-label">Booking form URL <span style="font-weight:400;color:var(--text-tertiary)">(if they book via web form)</span></label><input class="form-input" id="wform" placeholder="venue.com/booking"></div>'
     + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(1,\'' + ticket + '\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(2,\'' + ticket + '\')">Continue</button></div>';
   } else if (step===3) {
     var payFields = ticket==='soft'
@@ -2911,7 +2927,7 @@ function loadVenues(){
       if(v.state){ cities[v.state]=cities[v.state]||[]; if(v.city && cities[v.state].indexOf(v.city)<0) cities[v.state].push(v.city); }
       return {id:v.id, name:v.name, city:v.city||'', state:v.state||'', type:v.ticket_type||'soft', createdAt:v.created_at||null, createdBy:v.created_by||null, createdByName:v.created_by_name||'',
               vtype:v.venue_type||'', pay:v.pay_range||'—', contact:((v.venue_people&&v.venue_people[0]&&v.venue_people[0].person&&v.venue_people[0].person.name) || (v.contacts&&v.contacts[0]?v.contacts[0].name:'—')),
-              address:v.address||'', clientele:v.clientele||'', notes:v.notes||''};
+              address:v.address||'', clientele:v.clientele||'', notes:v.notes||'', form:v.booking_form_url||''};
     });
     if(currentScreen==='discover') renderDiscover();
     retryPendingRoute();
@@ -2920,7 +2936,7 @@ function loadVenues(){
 
 function loadPipeline(){
   sb.from('pipeline_entries')
-    .select('id,status,prev_status,venue_id,contact_id,person_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs,ticket_type, venue:venues(name,city,state,venue_type,pay_range,ticket_type), person:people(name,title,org,email,phone,linkedin,instagram), contact:contacts(name,title,email,phone,linkedin,instagram)')
+    .select('id,status,prev_status,venue_id,contact_id,person_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs,ticket_type, venue:venues(name,city,state,venue_type,pay_range,ticket_type,booking_form_url), person:people(name,title,org,email,phone,linkedin,instagram), contact:contacts(name,title,email,phone,linkedin,instagram)')
     .order('last_activity_at',{ascending:false}).then(function(r){
       if(r.error){ console.error('loadPipeline', r.error); return; }
       var rows=r.data||[];
@@ -2928,7 +2944,7 @@ function loadPipeline(){
         var v=e.venue||{}, c=e.person||e.contact||{};
         return {id:i, uuid:e.id, venue:v.name||'(unknown venue)', city:v.city||'', state:v.state||'',
                 contact:c.name||'(no contact)', title:c.title||'', org:c.org||'', email:c.email||'', phone:c.phone||'', linkedin:c.linkedin||'', instagram:c.instagram||'', personId:e.person_id||null,
-                vtype:v.venue_type||'', pay:v.pay_range||'—', t:(e.ticket_type||v.ticket_type||'soft'), tOverride:e.ticket_type||null, s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, contactId:e.contact_id||null, gig_date:e.gig_date||null, gigPay:e.gig_pay||'', gigCosts:e.gig_costs||'', days:daysAgo(e.last_activity_at), activity:[]};
+                vtype:v.venue_type||'', pay:v.pay_range||'—', form:v.booking_form_url||'', t:(e.ticket_type||v.ticket_type||'soft'), tOverride:e.ticket_type||null, s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, contactId:e.contact_id||null, gig_date:e.gig_date||null, gigPay:e.gig_pay||'', gigCosts:e.gig_costs||'', days:daysAgo(e.last_activity_at), activity:[]};
       });
       updateHomeStats();
       backfillWins();
@@ -3037,6 +3053,7 @@ function wizCapture(step, ticket){
     var vt=val('wvt'); if(vt==='Other'){ var o=val('wo').trim(); vt = o || 'Other'; }
     wizData.vtype=vt;
     wizData.address=val('waddr').trim();
+    wizData.form=val('wform').trim();
   } else if(step===3){
     if(ticket==='soft'){
       var rate=val('wrate').trim();
@@ -3067,7 +3084,7 @@ function wizSubmit(ticket){
   }
   var venuePayload = { created_by_name: (profile.name || null),
     name:wizData.name, city:wizData.city||null, state:(wizData.state||'').toUpperCase()||null,
-    ticket_type:wizData.ticket||'soft', venue_type:wizData.vtype||null, pay_range:wizData.pay||null,
+    ticket_type:wizData.ticket||'soft', venue_type:wizData.vtype||null, pay_range:wizData.pay||null, booking_form_url:wizData.form||null,
     clientele:wizData.clientele||null, notes:wizData.notes||null, created_by:ME
   };
   if(wizData.address) venuePayload.address = wizData.address;
@@ -3149,6 +3166,7 @@ function openVenueDetail(id){
     + row('Booking contact', v.contact && v.contact!=='—' ? v.contact : '')
     + row('Pay', v.pay && v.pay!=='—' ? v.pay : '')
     + row('Address', v.address)
+    + (v.form ? '<div class="field-row"><span class="field-label">Booking form</span><a class="field-value fv-ell" style="color:var(--talks-text)" target="_blank" rel="noopener" href="' + esc(linkUrl(v.form)) + '">' + esc(v.form) + '</a></div>' : '')
     + row('Clientele', v.clientele)
     + (v.notes ? ('<div class="field-row"><span class="field-label">Notes</span><div class="field-value">' + notesList_(v.notes) + '</div></div>') : '')
     + (!(v.contact && v.contact!=='—') && !v.address && !v.clientele && !v.notes && (!v.pay || v.pay==='—') ? '<div class="field-row"><span class="field-value empty">No details yet — tap Edit to add them.</span></div>' : '')
