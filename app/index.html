@@ -160,6 +160,9 @@
   .nav-mark i { font-size: 16px; }
   .nav-name { font-size: 15px; font-weight: 500; }
   .nav-right { display: flex; align-items: center; gap: 8px; }
+  .nav-add { width: 28px; height: 28px; border-radius: 50%; border: none; background: var(--amber-800); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-right: 10px; }
+  .nav-add i { font-size: 15px; }
+  .nav-add:hover { background: var(--amber-600); }
   .nav-avatar {
     width: 30px; height: 30px; border-radius: 50%;
     background: var(--amber-50); color: var(--amber-800);
@@ -169,6 +172,9 @@
   }
   /* The ring is a status light: quiet grey at rest, amber when the war room
      needs you, ink while you're on the profile. */
+  .nav-add { width: 28px; height: 28px; border-radius: 50%; border: none; background: var(--amber-800); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-right: 10px; }
+  .nav-add i { font-size: 15px; }
+  .nav-add:hover { background: var(--amber-600); }
   .nav-avatar { transition: border-color 0.25s, box-shadow 0.25s; }
   .nav-avatar.attn { border-color: var(--pitched-text); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--pitched-text) 30%, transparent); }
   .nav-avatar:hover, .nav-avatar.active { border-color: var(--amber-800); }
@@ -723,6 +729,7 @@
       <span class="nav-name">Gig Collective</span>
     </div>
     <div class="nav-right">
+      <button class="nav-add" onclick="go('add')" title="Add venue" aria-label="Add venue"><i class="ti ti-plus"></i></button>
       <div class="nav-avatar" id="avatar-btn" onclick="goProfile()" title="Profile">NR</div>
     </div>
   </nav>
