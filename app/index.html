@@ -484,6 +484,10 @@
   .attn-card i { font-size: 18px; flex-shrink: 0; }
   /* Notes edit/delete */
   .note-ic { background: none; border: none; color: var(--text-tertiary); cursor: pointer; padding: 2px 3px; font-size: 14px; flex-shrink: 0; }
+  .composer { display: flex; gap: 6px; align-items: center; padding: 10px 12px 12px; }
+  .composer .note-input { margin: 0; width: auto; flex: 1; }
+  .send-btn { width: 34px; height: 34px; border-radius: 10px; border: none; background: var(--amber-800); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .send-btn i { font-size: 16px; }
   .note-ic:hover { color: var(--amber-800); }
   /* Calendar */
   .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
@@ -1915,14 +1919,16 @@ function openDetail(id) {
     + contactSection(p, id)
     + '<div class="section-label">Notes</div>'
     + '<div class="card card-flush" style="margin-bottom:12px">' + notesHtml
-    + '<div><input class="note-input" placeholder="Add a note… press Enter to save" onkeydown="addNote(event,' + id + ')"></div>'
+    + '<div class="composer"><input class="note-input" id="note-in-' + id + '" placeholder="Add a note…" onkeydown="addNote(event,' + id + ')">'
+    + '<button class="send-btn" onclick="addNote({key:\'Enter\',target:document.getElementById(\'note-in-' + id + '\')},' + id + ')" title="Save note"><i class="ti ti-arrow-up"></i></button></div>'
     + '</div>'
     + '</div><div>'
     + tplSection
     + '<div class="section-label" style="display:flex;align-items:center;justify-content:space-between">Conversation'
     + '<span style="display:flex;gap:10px"><button class="vc-btn" onclick="quickLog(' + id + ',\'out\')"><i class="ti ti-arrow-up-right"></i> You said…</button>'
     + '<button class="vc-btn" onclick="quickLog(' + id + ',\'in\')"><i class="ti ti-arrow-down-left"></i> They said…</button></span></div>'
-    + (quickLogMode[p.uuid] ? '<input class="note-input" style="margin:0 0 10px;width:100%" autofocus placeholder="' + (quickLogMode[p.uuid]==='out' ? 'What you sent/said (text, call, in person)… Enter to log' : 'What ' + esc(first) + ' said… Enter to log') + '" onkeydown="saveQuickLog(event,' + id + ')">' : '')
+    + (quickLogMode[p.uuid] ? '<div class="composer" style="padding:0 0 10px"><input class="note-input" id="qlog-in-' + id + '" autofocus placeholder="' + (quickLogMode[p.uuid]==='out' ? 'What you sent/said (text, call, in person)…' : 'What ' + esc(first) + ' said…') + '" onkeydown="saveQuickLog(event,' + id + ')">'
+      + '<button class="send-btn" onclick="saveQuickLog({key:\'Enter\',target:document.getElementById(\'qlog-in-' + id + '\')},' + id + ')" title="Log it"><i class="ti ti-arrow-up"></i></button></div>' : '')
     + '<div class="card card-flush" style="margin-bottom:20px">' + actHtml + '</div>'
     + '</div></div>';
 
@@ -3110,7 +3116,8 @@ function openVenueDetail(id){
     + '<div id="venue-wins"></div>'
     + '<div id="venue-pulse"></div>'
     + '<div class="card card-flush" style="margin-bottom:20px"><div id="venue-comments"><p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">Loading…</p></div>'
-    + '<div><input class="note-input" placeholder="Share intel for the collective… press Enter" onkeydown="postVenueComment(event,\'' + v.id + '\')"></div></div>';
+    + '<div class="composer"><input class="note-input" id="vc-in" placeholder="Share intel for the collective…" onkeydown="postVenueComment(event,\'' + v.id + '\')">'
+    + '<button class="send-btn" onclick="postVenueComment({key:\'Enter\',target:document.getElementById(\'vc-in\')},\'' + v.id + '\')" title="Post"><i class="ti ti-arrow-up"></i></button></div></div>';
   go('venue');
   loadVenueComments(v.id);
 }
@@ -3162,7 +3169,8 @@ function loadVenueComments(venueId){
           +   (depth === 0 ? '<button class="vc-btn" onclick="vcReplyTo=\'' + cm.id + '\';loadVenueComments(\'' + venueId + '\')"><i class="ti ti-corner-down-right"></i>Reply</button>' : '')
           +   (mine ? '<button class="vc-btn" onclick="deleteVenueComment(\'' + cm.id + '\',\'' + venueId + '\')"><i class="ti ti-trash"></i></button>' : '')
           + '</div>'
-          + (vcReplyTo === cm.id ? '<input class="note-input" style="margin:8px 0 0;width:100%" placeholder="Reply… Enter to post, Esc to cancel" autofocus onkeydown="postVenueComment(event,\'' + venueId + '\',\'' + cm.id + '\')">' : '')
+          + (vcReplyTo === cm.id ? '<div class="composer" style="padding:8px 0 0"><input class="note-input" id="vc-reply" placeholder="Reply… Esc cancels" autofocus onkeydown="postVenueComment(event,\'' + venueId + '\',\'' + cm.id + '\')">'
+            + '<button class="send-btn" onclick="postVenueComment({key:\'Enter\',target:document.getElementById(\'vc-reply\')},\'' + venueId + '\',\'' + cm.id + '\')" title="Reply"><i class="ti ti-arrow-up"></i></button></div>' : '')
           + '</div></div></div>';
         (kids[cm.id] || []).forEach(function(k){ h += cHtml(k, depth + 1); });
         return h;
