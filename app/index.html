@@ -838,6 +838,11 @@
         <option value="hard">Hard ticket</option>
         <option value="soft">Soft ticket</option>
       </select>
+      <select class="form-select" id="pipe-filter" onchange="renderDiscover()">
+        <option value="">Pipeline: all</option>
+        <option value="in">In pipeline</option>
+        <option value="out">Not in pipeline</option>
+      </select>
     </div>
     <div class="venue-grid" id="venue-grid"></div>
   </div>
@@ -1299,17 +1304,20 @@ function renderDiscover() {
   var state = document.getElementById('state-filter').value;
   var city = document.getElementById('city-filter').value;
   var type = document.getElementById('type-filter').value;
+  var pf = document.getElementById('pipe-filter').value;
   var q = (discQuery || '').toLowerCase();
+  var inPipe = {}; pipeline.forEach(function(p){ if (p.venueId) inPipe[p.venueId] = true; });
+  Object.keys(dealVenueMap).forEach(function(vid){ inPipe[vid] = true; });
   var f = venues.filter(function(v){
     if ((state&&v.state!==state)||(city&&v.city!==city)||(type&&v.type!==type)) return false;
+    if (pf === 'in' && !inPipe[v.id]) return false;
+    if (pf === 'out' && inPipe[v.id]) return false;
     if (!q) return true;
     // rooms AND people: name, contact, city, who added it
     return (v.name + ' ' + v.contact + ' ' + v.city + ' ' + v.state + ' ' + (v.createdByName||'')).toLowerCase().indexOf(q) >= 0;
   });
   var g = document.getElementById('venue-grid');
   if (!f.length) { g.innerHTML = '<p style="color:var(--text-secondary);font-size:14px;grid-column:1/-1">No venues match this filter.</p>'; return; }
-  var inPipe = {}; pipeline.forEach(function(p){ if (p.venueId) inPipe[p.venueId] = true; });
-  Object.keys(dealVenueMap).forEach(function(vid){ inPipe[vid] = true; });
   g.innerHTML = f.map(function(v){
     return '<div class="venue-card" onclick="openVenueDetail(\'' + v.id + '\')">'
     + '<div class="venue-name"><i class="ti ' + venueIcon(v.vtype) + '" style="margin-right:6px;color:var(--text-tertiary)"></i>' + esc(v.name) + '</div>'
