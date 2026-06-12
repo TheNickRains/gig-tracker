@@ -802,12 +802,12 @@
       <div class="stat-card"><div class="stat-label">Booked</div><div class="stat-val" id="stat-booked">0</div><div class="stat-sub">confirmed gigs</div></div>
       <div class="stat-card placeholder"><div class="stat-label">Collective wins</div><div class="stat-val">—</div><div class="stat-sub">coming soon</div></div>
     </div>
-    <div id="war-cal"></div>
-    <div id="war-up"></div>
+    <div id="war-unmatched"></div>
     </div>
     <div class="home-col" id="hc-left">
     <div id="war-funnel"></div>
-    <div id="war-unmatched"></div>
+    <div id="war-cal"></div>
+    <div id="war-up"></div>
     <div id="war-sends"></div>
     <div class="section-label">Collective activity</div>
     <div id="war-feed"></div>
@@ -1538,6 +1538,7 @@ function backfillWins(){
 // ── Unrecognized inbox mail: triage on the war room ──
 var unmatched = [];
 var umPick = null; // unmatched row id whose deal-picker is open
+var umDesc = true; // newest first
 function loadUnmatched(){
   sb.from('unmatched_mail').select('*').eq('status','new').order('created_at',{ascending:false}).limit(10).then(function(r){
     if (r.error) return;
@@ -1548,8 +1549,10 @@ function loadUnmatched(){
 function renderUnmatched(){
   var el = document.getElementById('war-unmatched'); if (!el) return;
   if (!unmatched.length) { el.innerHTML = ''; return; }
-  el.innerHTML = '<div class="section-label">Unrecognized mail <span class="war-count">' + unmatched.length + '</span></div>'
-    + '<div class="card card-flush" style="margin-bottom:20px">' + unmatched.map(function(u){
+  var rows = unmatched.slice().sort(function(a,b){ return umDesc ? (a.created_at < b.created_at ? 1 : -1) : (a.created_at > b.created_at ? 1 : -1); });
+  el.innerHTML = '<div class="section-label" style="display:flex;align-items:center;gap:8px">Unrecognized mail <span class="war-count">' + unmatched.length + '</span>'
+    + '<button class="vc-btn" style="margin-left:auto" onclick="umDesc=!umDesc;renderUnmatched()" title="Flip sort order"><i class="ti ti-arrows-sort"></i> ' + (umDesc ? 'Newest' : 'Oldest') + '</button></div>'
+    + '<div class="card card-flush" style="margin-bottom:20px">' + rows.map(function(u){
       return '<div class="note-item">'
         + '<div style="font-size:12px;font-weight:600">' + esc(u.from_name || u.from_email) + ' <span style="font-weight:400;color:var(--text-tertiary)">· ' + relTime(u.created_at) + '</span></div>'
         + '<div style="font-size:12.5px;margin:2px 0 4px">' + esc(u.subject || '') + '</div>'

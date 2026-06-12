@@ -213,6 +213,7 @@ async function recordUnmatched(artistId, selfEmail, full) {
     subject: (header(full, "Subject") || "(no subject)").slice(0, 200),
     body: text.slice(0, 1200),
   };
+  if (full.internalDate) row.created_at = new Date(Number(full.internalDate)).toISOString();
   const r = await fetch(`${SUPA}/rest/v1/unmatched_mail`, { method: "POST", headers: { ...sHeaders, Prefer: "return=minimal" }, body: JSON.stringify(row) });
   if (r.ok) console.log("unmatched parked:", fromEmail, row.subject.slice(0, 40));
 }
