@@ -1692,11 +1692,9 @@ function openDetail(id) {
     schedBlock = '<div class="sched-chips" id="send-chips-' + id + '">'
       + chipsDef.map(function(c){ return '<div class="fu-chip' + (sel===c[1]?' selected':'') + '" onclick="pickSendChip(' + id + ',\'' + c[1] + '\')">' + c[0] + '</div>'; }).join('')
       + '</div>'
-      + '<button class="custom-sched-btn' + (sel==='custom'?' on':'') + '" onclick="pickSendChip(' + id + ',\'custom\')"><i class="ti ti-calendar-time"></i> Choose a date &amp; time…</button>'
-      + (sel==='custom'
-        ? '<div style="display:flex;gap:8px;margin-top:8px"><input type="date" class="pipe-search" id="custom-date-' + id + '" style="margin:0;flex:1">'
-          + '<input type="time" class="pipe-search" id="custom-time-' + id + '" value="09:00" step="900" style="margin:0;width:120px"></div>'
-        : '')
+      + '<button class="custom-sched-btn' + (sel==='custom'?' on':'') + '" id="custom-btn-' + id + '" onclick="pickSendChip(' + id + ',\'custom\')"><i class="ti ti-calendar-time"></i> Choose a date &amp; time…</button>'
+      + '<div id="custom-wrap-' + id + '" style="display:' + (sel==='custom'?'flex':'none') + ';gap:8px;margin-top:8px"><input type="date" class="pipe-search" id="custom-date-' + id + '" style="margin:0;flex:1">'
+      + '<input type="time" class="pipe-search" id="custom-time-' + id + '" value="09:00" step="900" style="margin:0;width:120px"></div>'
       + '<div style="display:flex;gap:8px;margin-top:10px;align-items:center">'
       + '<button class="btn-secondary btn-sm" onclick="scheduleSend(' + id + ')"><i class="ti ti-clock-hour-4"></i> Schedule send</button>'
       + '<span style="font-size:11px;color:var(--text-tertiary)">cancels if they reply first</span></div>';
@@ -1847,7 +1845,16 @@ function pickSendChip(id, val) {
   var v = (val==='now'||val==='custom') ? val : Number(val);
   if (sendChipDays[id] === v) delete sendChipDays[id]; // tap again = deselect
   else sendChipDays[id] = v;
-  openDetail(id); // re-render: selection + custom input (draft is preserved)
+  // Surgical update — NEVER re-render the detail here (it cost an AI draft once).
+  var sel = sendChipDays[id];
+  var order = [1, 3, 7];
+  document.querySelectorAll('#send-chips-' + id + ' .fu-chip').forEach(function(ch, i){
+    ch.classList.toggle('selected', sel === order[i]);
+  });
+  var cb = document.getElementById('custom-btn-' + id);
+  if (cb) cb.classList.toggle('on', sel === 'custom');
+  var cw = document.getElementById('custom-wrap-' + id);
+  if (cw) cw.style.display = sel === 'custom' ? 'flex' : 'none';
 }
 function fmtWhen(ts){
   var d = new Date(ts);
@@ -1859,7 +1866,8 @@ function scheduleSend(id) {
   var sel = sendChipDays[id];
   if (sel === undefined) { showToast('Pick when it should send first', true); return; }
   if (!p.email) { showToast('This contact has no email', true); return; }
-  var body = document.getElementById('tpl-body-' + id).value.trim();
+  var ta = document.getElementById('tpl-body-' + id);
+  var body = (draftText[p.uuid] !== undefined ? draftText[p.uuid] : (ta ? ta.value : '')).trim();
   if (!body) { showToast('Draft is empty', true); return; }
   var at, now = sel === 'now';
   if (now) { at = new Date(); }
