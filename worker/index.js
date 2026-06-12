@@ -249,13 +249,15 @@ async function ensureWatch(artistId, conn, token) {
 // Any contact at the venue speaks for the deal: map every venue-contact email
 // to the artist's entry there (Yeti-card case: two emails, one room, one deal).
 async function venueContactMap(artistId) {
-  const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&select=id,status,venue_id,contact:contacts(email)`);
+  // Most-recently-active first: when one email (a multi-room talent buyer)
+  // maps to several deals, the live conversation wins.
+  const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&order=last_activity_at.desc&select=id,status,venue_id,last_activity_at,contact:contacts(email)`);
   const map = {};
   const byVenue = {};
   entries.forEach((e) => {
     if (e.venue_id && !byVenue[e.venue_id]) byVenue[e.venue_id] = e;
     const em = e.contact && e.contact.email;
-    if (em) map[em.toLowerCase()] = e;
+    if (em && !map[em.toLowerCase()]) map[em.toLowerCase()] = e;
   });
   const venueIds = [...new Set(entries.map((e) => e.venue_id).filter(Boolean))];
   if (venueIds.length) {
