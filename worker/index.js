@@ -11,6 +11,7 @@
 // GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GMAIL_TOPIC, PUSH_TOKEN, POLL_MINUTES.
 
 const http = require("http");
+const webpush = require("web-push");
 
 const SUPA = (process.env.SUPABASE_URL || "").trim();
 const SVC = (process.env.SUPABASE_SERVICE_KEY || "").trim();
@@ -145,7 +146,7 @@ async function gmailSend(token, to, subject, body) {
 }
 
 // Shared: given a pipeline entry + a Gmail message, log it and advance the stage.
-async function applyMessage(entry, full, contactEmail) {
+async function applyMessage(entry, full, contactEmail, artistId) {
   const from = (header(full, "From") || "").toLowerCase();
   const subject = header(full, "Subject") || "(no subject)";
   const inbound = from.includes(contactEmail.toLowerCase());
@@ -160,6 +161,7 @@ async function applyMessage(entry, full, contactEmail) {
       // Never auto-moves hold/booked/played (conversation continues, deal state doesn't regress) or dead (terminal).
       if (["lead", "pitched", "passed", "outreach", "waiting", "followup"].includes(entry.status)) patch.status = "talks";
       await sPatch(`pipeline_entries?id=eq.${entry.id}`, patch);
+      if (artistId) notify(artistId, contactEmail.split("@")[0] + " replied — your move", body, "/app#entry/" + entry.id).catch(() => {});
       await aiEnrich(entry, isNew.id, body);
     }
   } else {
@@ -212,7 +214,7 @@ async function handlePush(emailAddress, notifHistoryId) {
       for (const em in map) { if (blob.includes(em)) { entry = map[em]; cemail = em; break; } }
       var fromAddr = ((header(full, "From") || "").match(/[\w.+-]+@[\w.-]+/) || ["?"])[0];
       console.log("push msg from", fromAddr, entry ? ("-> matched entry " + entry.id + " (status " + entry.status + ")") : ("-> NO MATCH; pipeline contacts=[" + Object.keys(map).join(", ") + "]"));
-      if (entry) await applyMessage(entry, full, cemail);
+      if (entry) await applyMessage(entry, full, cemail, artistId);
     }
     console.log("push: processed", ids.length, "new msg(s) for", emailAddress);
   }
@@ -228,7 +230,7 @@ async function pollArtist(artistId, token) {
     const msgs = await gmailSearch(token, `(from:${email} OR to:${email}) newer_than:3d`);
     for (const m of msgs) {
       const full = await gmailGet(token, m.id);
-      if (full) await applyMessage(e, full, email);
+      if (full) await applyMessage(e, full, email, artistId);
     }
   }
 }
@@ -272,6 +274,32 @@ async function refreshToneProfile(artistId, token) {
       console.log("tone profile refreshed", artistId, "from", samples.length, "sent emails");
     }
   } catch (e) { console.error("tone profile", artistId, e.message); }
+}
+
+// ── Web push: VAPID keys self-manage in app_secrets; notify() fans out ──
+let VAPID_PUB = null;
+async function ensureVapid() {
+  const rows = await sGet("app_secrets?id=eq.vapid&select=value");
+  let keys = rows.length ? rows[0].value : null;
+  if (!keys || !keys.publicKey) {
+    keys = webpush.generateVAPIDKeys();
+    await fetch(`${SUPA}/rest/v1/app_secrets`, { method: "POST", headers: { ...sHeaders, Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ id: "vapid", value: keys }) });
+    console.log("vapid: generated new keypair");
+  }
+  VAPID_PUB = keys.publicKey;
+  webpush.setVapidDetails("mailto:thenickrains@gmail.com", keys.publicKey, keys.privateKey);
+}
+async function notify(artistId, title, body, url) {
+  if (!VAPID_PUB) return;
+  const subs = await sGet(`push_subscriptions?artist_id=eq.${artistId}&select=endpoint,p256dh,auth`);
+  for (const s of subs) {
+    try {
+      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, JSON.stringify({ title, body: (body || "").slice(0, 140), url }));
+    } catch (e) {
+      if (e.statusCode === 404 || e.statusCode === 410) await sDelete(`push_subscriptions?endpoint=eq.${encodeURIComponent(s.endpoint)}`);
+      else console.error("push send", e.statusCode || e.message);
+    }
+  }
 }
 
 // ── Calendar sync (Slice D): the artist's Google Calendar ⇄ the pipeline ──
@@ -350,6 +378,7 @@ async function processScheduled() {
       const arts = await sGet(`artists?id=eq.${m.artist_id}&select=allow_auto_send`);
       if (!arts.length || !arts[0].allow_auto_send) {
         await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "ready" });
+        notify(m.artist_id, "Send awaiting your review", m.subject, "/app#entry/" + m.pipeline_entry_id).catch(() => {});
         console.log("scheduled: ready for review (auto-send off)", m.id);
         continue;
       }
@@ -366,6 +395,7 @@ async function processScheduled() {
       const patch = { last_activity_at: new Date().toISOString() };
       if (entries.length && ["lead", "outreach"].includes(entries[0].status)) patch.status = "pitched";
       await sPatch(`pipeline_entries?id=eq.${m.pipeline_entry_id}`, patch);
+      notify(m.artist_id, "Sent ✓ " + m.to_email.split("@")[0], m.subject, "/app#entry/" + m.pipeline_entry_id).catch(() => {});
       console.log("scheduled: SENT", m.id, "->", m.to_email);
     } catch (e) {
       console.error("scheduled error", m.id, e.message);
@@ -479,14 +509,27 @@ http.createServer((req, res) => {
     req.on("end", () => { handleAiDraft(req, res, body); });
     return;
   }
-  if (req.method === "POST" && u.pathname === "/scheduled/run") {
-    // "Send now" poke from the app — run the due queue immediately (authed).
+  if (req.method === "GET" && u.pathname === "/push/pubkey") {
+    res.writeHead(200, corsHeaders(req));
+    res.end(JSON.stringify({ key: VAPID_PUB || "" }));
+    return;
+  }
+  if (req.method === "POST" && (u.pathname === "/poke" || u.pathname === "/scheduled/run")) {
+    // App poke — run the due queue + this artist's calendar sync immediately
+    // ("send now" in seconds; gig dates land on Google Calendar websocket-fast).
     (async () => {
       const hdr = corsHeaders(req);
       const uid = await verifyUser(req);
       if (!uid) { res.writeHead(401, hdr); res.end(JSON.stringify({ error: "Not signed in" })); return; }
       res.writeHead(202, hdr); res.end(JSON.stringify({ ok: true }));
-      processScheduled().catch((e) => console.error("poked run", e.message));
+      try {
+        await processScheduled();
+        const conns = await sGet(`google_connections?artist_id=eq.${uid}&select=refresh_token`);
+        if (conns.length) {
+          const token = await refreshAccessToken(conns[0].refresh_token);
+          await syncCalendar(uid, token);
+        }
+      } catch (e) { console.error("poke", e.message); }
     })();
     return;
   }
@@ -510,5 +553,5 @@ http.createServer((req, res) => {
 }).listen(PORT, () => console.log("Gig worker HTTP on :" + PORT));
 
 console.log("Gig worker up. Poll fallback every", INTERVAL / 60000, "min");
-tick();
+ensureVapid().catch((e) => console.error("vapid", e.message)).finally(() => { tick(); });
 setInterval(tick, INTERVAL);

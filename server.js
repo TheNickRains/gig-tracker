@@ -40,6 +40,7 @@ const ROUTES = {
   "/": "landing.html",
   "/app": "index.html",
   "/app/": "index.html",
+  "/sw.js": "sw.js",
   "/terms": "terms.html",
   "/terms/": "terms.html",
   "/privacy": "privacy.html",

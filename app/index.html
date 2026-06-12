@@ -78,12 +78,22 @@
   /* ── App shell ── */
   .app { max-width: 480px; margin: 0 auto; min-height: 100vh; background: var(--bg-tertiary); position: relative; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); }
 
-  /* Mobile/PWA: full-bleed, immersive — the floating bottom nav IS the island.
-     Desktop (≥600px): centered column on --bg-page; Home widens into a war-room
-     dashboard at ≥1100px. */
-  body { touch-action: manipulation; }
+  /* Mobile/PWA: the beloved gutter island (back by demand) — the app floats in a
+     slim safe-area gutter; the bottom nav is its companion island. */
+  body { touch-action: manipulation; background: var(--bg-page); }
+  @media (max-width: 599px) {
+    body { padding: calc(env(safe-area-inset-top, 0px) + 8px) 8px calc(env(safe-area-inset-bottom, 0px) + 8px); }
+    .app {
+      min-height: calc(100vh - 16px);
+      border-radius: 22px;
+      border: 0.5px solid var(--border-mid);
+      box-shadow: 0 2px 18px rgba(0,0,0,0.18);
+    }
+    .nav { top: calc(env(safe-area-inset-top, 0px) + 8px); border-radius: 22px 22px 0 0; }
+  }
+  /* Desktop: use the landscape. The whole app widens; screens adapt. */
   @media (min-width: 600px) {
-    body { background: var(--bg-page); overscroll-behavior-y: none; }
+    body { overscroll-behavior-y: none; }
     .app {
       border-left: 0.5px solid var(--border-mid);
       border-right: 0.5px solid var(--border-mid);
@@ -91,18 +101,23 @@
       box-shadow: 0 4px 24px rgba(0,0,0,0.12);
     }
   }
-  /* Desktop war room: when Home is active, the column becomes a dashboard. */
+  .detail-cols { display: block; }
   @media (min-width: 1100px) {
-    .app:has(#screen-home.active) { max-width: 1060px; }
-    .app:has(#screen-home.active) #screen-home {
-      display: grid; grid-template-columns: 1fr 360px; gap: 0 28px; align-items: start;
-    }
-    #screen-home > div:first-child { grid-column: 1 / -1; }   /* greeting */
+    .app { max-width: 1100px; }
+    .screen { padding-left: 28px; padding-right: 28px; }
+    /* Home: war-room dashboard */
+    #screen-home { display: grid; grid-template-columns: 1fr 360px; gap: 0 28px; align-items: start; }
+    #screen-home > div:first-child { grid-column: 1 / -1; }
     #screen-home #war-needs { grid-column: 1; grid-row: 2 / span 4; }
-    #screen-home .stat-grid { grid-column: 2; }
-    #screen-home .war-actions { grid-column: 2; }
-    #screen-home #war-sends { grid-column: 2; }
+    #screen-home .stat-grid, #screen-home .war-actions, #screen-home #war-sends,
     #screen-home > .section-label, #screen-home > .card.placeholder { grid-column: 2; }
+    /* Detail: two working columns */
+    .detail-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; align-items: start; }
+    /* Pipeline grid view gets a third column */
+    #pipe-list.grid { grid-template-columns: 1fr 1fr 1fr; }
+    /* Forms & calendar stay readable, centered */
+    #screen-settings, #screen-add, #screen-profile { max-width: 640px; margin: 0 auto; }
+    #screen-calendar { max-width: 720px; margin: 0 auto; }
   }
 
   /* ── Nav ── */
@@ -347,7 +362,7 @@
   .closeout-btn i { font-size: 14px; }
   .closeout-btn.passed:hover { background: var(--passed-bg); border-color: var(--passed-text); color: var(--passed-text); }
   .closeout-btn.deadend:hover { background: var(--dead-bg); border-color: var(--dead-text); color: var(--dead-text); }
-  .pipe-search { width: 100%; padding: 9px 12px; border: 1px solid transparent; border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13.5px; font-family: inherit; margin-bottom: 8px; }
+  .pipe-search { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid transparent; border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13.5px; font-family: inherit; margin-bottom: 8px; }
   .pipe-search:focus { outline: none; border-color: var(--amber-400); background: var(--bg-primary); }
   .pipe-filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 10px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .pipe-filters::-webkit-scrollbar { display: none; }
@@ -392,7 +407,8 @@
   /* Calendar */
   .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
   .cal-dow { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); text-align: center; padding: 4px 0; }
-  .cal-day { aspect-ratio: 1; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 13px; cursor: pointer; border: 0.5px solid transparent; }
+  .cal-day { aspect-ratio: 1; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 13px; cursor: pointer; border: 0.5px solid transparent; position: relative; }
+  .cal-gig-dot { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); width: 5px; height: 5px; border-radius: 50%; background: var(--amber-800); }
   .cal-day:hover { border-color: var(--amber-400); }
   .cal-day.other { opacity: 0.3; }
   .cal-day.today { border-color: var(--amber-800); font-weight: 700; }
@@ -852,17 +868,22 @@
     <div class="cal-legend">
       <span><span class="leg-dot" style="background:var(--booked-bg);border:1px solid var(--booked-text)"></span>Available</span>
       <span><span class="leg-dot" style="background:var(--dead-bg);border:1px solid var(--dead-text)"></span>Busy</span>
+      <span><span class="leg-dot" style="background:var(--amber-800);border-radius:50%"></span>Gig</span>
       <span style="color:var(--text-tertiary)">Tap a day to cycle · clear on third tap</span>
     </div>
-    <div class="section-label" style="margin-top:18px">Holds &amp; gigs <span class="soon">coming soon</span></div>
-    <div class="card placeholder"><div class="ph-caption">Date holds will land here as tentative blocks, booked gigs as confirmed — synced two-way with your Google Calendar.</div></div>
+    <div class="section-label" style="margin-top:18px">Weekly blocks</div>
+    <div class="card">
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">Block a day of the week, every week (e.g. Sundays off). Painting a specific day overrides it.</div>
+      <div class="followup-chips" id="dow-chips"></div>
+    </div>
+    <div id="cal-upcoming"></div>
   </div>
 
   <!-- SETTINGS -->
   <div class="screen" id="screen-settings">
     <div class="page-title" style="margin-bottom:16px">Settings</div>
     <div class="card card-flush" style="margin-bottom:20px">
-      <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-bell"></i></div><div class="setting-label">Notifications <span class="soon">soon</span></div><i class="ti ti-chevron-right"></i></div>
+      <div class="setting-row"><div class="setting-icon"><i class="ti ti-bell"></i></div><div class="setting-label">Push notifications<div class="section-sub" style="margin-top:2px">Replies, sends &amp; reviews — on this device</div></div><label class="switch"><input type="checkbox" id="push-toggle" onchange="togglePush()"><span></span></label></div>
       <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-map-pin"></i></div><div class="setting-label">Home market <span class="soon">soon</span></div><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row" onclick="googleRowClick()"><div class="setting-icon"><i class="ti ti-brand-google"></i></div><div class="setting-label">Gmail &amp; Calendar</div><span class="setting-value" id="google-conn-status">Connect</span><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row"><div class="setting-icon"><i class="ti ti-send"></i></div><div class="setting-label">Let the assistant send email<div class="section-sub" style="margin-top:2px">Off — it drafts only; you send</div></div><label class="switch"><input type="checkbox" id="auto-send-toggle" onchange="saveAutoSend()"><span></span></label></div>
@@ -953,6 +974,7 @@ function go(screen) {
     renderPipeline();
   }
   if (screen === 'calendar') { renderCalendar(); loadAvail(); }
+  if (screen === 'settings') refreshPushToggle();
   if (screen === 'add') renderWizard(1, null, {});
   if (screen === 'profile') { renderMarkets(); renderNotables(); updateProfilePreview(); updateCompleteness(); }
   syncHash(screen);
@@ -960,12 +982,24 @@ function go(screen) {
 
 // ── Routing: every screen is a #hash, so refresh/back/deep-links work ──
 var APPLYING_ROUTE = false, pendingRoute = false, currentVenueId = null;
+var navStack = [];
 function syncHash(screen){
   if (APPLYING_ROUTE) return;
   var h = screen;
   if (screen === 'detail') { if (!currentDetailUuid) return; h = 'entry/' + currentDetailUuid; }
   if (screen === 'venue')  { if (!currentVenueId)  return; h = 'venue/' + currentVenueId; }
-  if (location.hash !== '#' + h) location.hash = h;
+  if (location.hash !== '#' + h) {
+    var prev = (location.hash || '').replace(/^#/, '') || 'home';
+    navStack.push(prev);
+    if (navStack.length > 24) navStack.shift();
+    location.hash = h;
+  }
+}
+// Back goes where you actually came from — war room, pipeline, discover, anywhere.
+function goBack(){
+  var prev = navStack.pop();
+  if (prev) { location.hash = prev; }
+  else go('home');
 }
 function applyRoute(){
   var h = (location.hash || '').replace(/^#/, '') || 'home';
@@ -1127,6 +1161,7 @@ function lastInboundPreview(p){
   }
   return '';
 }
+var warPrevCount = 0;
 // The war room: Home leads with what needs you, then the scheduled queue.
 function renderHome(){
   var el = document.getElementById('war-needs'); if (!el) return;
@@ -1141,9 +1176,12 @@ function renderHome(){
   items.sort(function(a,b){ return a.tier - b.tier || b.p.days - a.p.days; });
   var MAX_WAR = 8, overflow = items.length - MAX_WAR;
   var shown = items.slice(0, MAX_WAR);
+  // The clear-the-room moment deserves a nod.
+  if (warPrevCount > 0 && items.length === 0 && currentScreen === 'home') showToast('War room cleared — go play 🎸');
+  warPrevCount = items.length;
   var html = '<div class="section-label">Needs you' + (items.length ? ' <span class="war-count">' + items.length + '</span>' : '') + '</div>';
   if (!items.length) {
-    html += '<div class="card" style="margin-bottom:20px;font-size:13px;color:var(--text-secondary)"><i class="ti ti-circle-check" style="color:var(--booked-text);margin-right:6px"></i>All clear — nothing waiting on you.</div>';
+    html += '<div class="card" style="margin-bottom:20px;font-size:13px;color:var(--text-secondary)"><i class="ti ti-circle-check" style="color:var(--booked-text);margin-right:6px"></i>All clear — nothing waiting on you. Go play.</div>';
   } else {
     html += '<div class="card card-flush" style="margin-bottom:20px">' + shown.map(function(it){
       return '<div class="war-row" onclick="openDetail(' + it.p.id + ')">'
@@ -1204,9 +1242,6 @@ function openDetail(id) {
 
   if (!activeTpl[id]) activeTpl[id] = (p.s==='lead'||p.s==='outreach') ? 'outreach' : ((p.s==='pitched'||p.s==='talks'||p.s==='waiting'||p.s==='followup') ? 'followup' : 'checkin');
 
-  var tplTabsHtml = tplKeys.map(function(k,i){
-    return '<div class="tpl-tab' + (activeTpl[id]===k?' active':'') + '" onclick="switchTpl(' + id + ',\'' + k + '\')">' + tplLabels[i] + '</div>';
-  }).join('');
 
   // Conversation = the thread with the venue (both directions, prominent).
   // System events stay grey lines. Notes live in their own section below.
@@ -1229,10 +1264,12 @@ function openDetail(id) {
   // Calendar (hold = tentative, booked = confirmed) and auto-flips played.
   var gigDateBlock = '';
   if (['hold','booked','played'].indexOf(p.s) >= 0) {
-    gigDateBlock = '<div class="card" style="margin-bottom:12px;display:flex;gap:10px;align-items:center">'
-      + '<i class="ti ti-calendar-event" style="color:var(--amber-800);font-size:18px;flex-shrink:0"></i>'
-      + '<div style="flex:1;min-width:0"><div style="font-size:12px;color:var(--text-secondary)">Gig date' + (p.s==='hold' ? ' · tentative hold' : '') + ' — syncs to your Google Calendar</div>'
-      + '<input type="datetime-local" class="pipe-search" style="margin:6px 0 0" id="gig-date-' + id + '" value="' + (p.gig_date ? toLocalDT(p.gig_date) : '') + '" onchange="saveGigDate(' + id + ')"></div></div>';
+    gigDateBlock = '<div class="card" style="margin-bottom:12px">'
+      + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px"><i class="ti ti-calendar-event" style="color:var(--amber-800);margin-right:5px"></i>Gig date' + (p.s==='hold' ? ' · tentative hold' : '') + ' — confirm with the check, lands on your Google Calendar instantly</div>'
+      + '<div style="display:flex;gap:8px;align-items:center">'
+      + '<input type="datetime-local" class="pipe-search" style="margin:0;flex:1" id="gig-date-' + id + '" value="' + (p.gig_date ? toLocalDT(p.gig_date) : '') + '">'
+      + '<button class="btn-primary btn-sm" onclick="saveGigDate(' + id + ')" title="Save gig date"><i class="ti ti-check"></i></button>'
+      + '</div></div>';
   }
   var convo = p.activity.filter(function(a){ return a.kind!=='note'; });
   var notes = p.activity.filter(function(a){ return a.kind==='note'; });
@@ -1281,15 +1318,18 @@ function openDetail(id) {
       + '<button class="sched-x" onclick="cancelScheduled(' + id + ')">Cancel</button></div>';
   } else {
     if (sendChipDays[id] === undefined) sendChipDays[id] = 1; // Tomorrow 9am: the default that gets venue responses
-    var chipsDef = [['Send now','now'],['Tomorrow 9am',1],['In 3 days',3],['In 7 days',7],['Custom…','custom']];
+    var chipsDef = [['Tomorrow 9am',1],['In 3 days',3],['In 7 days',7],['Custom…','custom']];
     var sel = sendChipDays[id];
     schedBlock = '<div class="followup-chips" id="send-chips-' + id + '">'
       + chipsDef.map(function(c){ return '<div class="fu-chip' + (sel===c[1]?' selected':'') + '" onclick="pickSendChip(' + id + ',\'' + c[1] + '\')">' + c[0] + '</div>'; }).join('')
       + '</div>'
-      + '<input type="datetime-local" class="pipe-search" id="custom-at-' + id + '" style="margin:10px 0 0;display:' + (sel==='custom'?'block':'none') + '">'
+      + (sel==='custom'
+        ? '<div style="font-size:12px;color:var(--text-secondary);margin:10px 0 4px">Sends exactly when you pick:</div>'
+          + '<input type="datetime-local" class="pipe-search" id="custom-at-' + id + '" style="margin:0">'
+        : '')
       + '<div style="display:flex;gap:8px;margin-top:10px;align-items:center">'
-      + '<button class="btn-' + (sel==='now'?'primary':'secondary') + ' btn-sm" onclick="scheduleSend(' + id + ')"><i class="ti ti-' + (sel==='now'?'send':'clock-hour-4') + '"></i> ' + (sel==='now'?'Send now':'Schedule send') + '</button>'
-      + '<span style="font-size:11px;color:var(--text-tertiary)">' + (sel==='now'?'fires within seconds':'cancels if they reply first') + '</span></div>';
+      + '<button class="btn-secondary btn-sm" onclick="scheduleSend(' + id + ')"><i class="ti ti-clock-hour-4"></i> Schedule send</button>'
+      + '<span style="font-size:11px;color:var(--text-tertiary)">cancels if they reply first</span></div>';
   }
 
   var wonBanner = (p.s==='booked'||p.s==='played'||p.s==='won') ? '<div class="won-banner"><i class="ti ti-' + (p.s==='played'?'music':'trophy') + '"></i><div><div class="won-banner-title">' + (p.s==='played'?'Played':'Booked') + '</div><div class="won-banner-sub">' + p.venue + '</div></div></div>' : '';
@@ -1328,24 +1368,30 @@ function openDetail(id) {
         + '<div class="card" style="margin-bottom:12px">' + draftBlock
         + '<div style="border-top:0.5px solid var(--border-light);padding-top:12px;margin-top:12px">' + schedBlock + '</div></div>';
     } else {
+      // Draft survives re-renders (realtime, chip taps) via draftText[uuid] —
+      // the editor is the source of truth until the send is scheduled.
+      var draftVal = draftText[p.uuid] !== undefined ? draftText[p.uuid] : templates[activeTpl[id]](p);
       tplSection = '<div class="section-label" style="margin-top:4px">Draft outreach</div>'
         + '<div class="card" style="margin-bottom:12px">'
-        + '<div class="tpl-tabs" id="tpl-tabs-' + id + '">' + tplTabsHtml + '</div>'
-        + '<textarea class="tpl-body" id="tpl-body-' + id + '" spellcheck="false">' + esc(templates[activeTpl[id]](p)) + '</textarea>'
+        + '<select class="pipe-sort" style="margin-bottom:10px" onchange="switchTpl(' + id + ',this.value)" title="Load a template">'
+        + tplKeys.map(function(k,i){ return '<option value="' + k + '"' + (activeTpl[id]===k?' selected':'') + '>' + tplLabels[i] + '</option>'; }).join('')
+        + '</select>'
+        + '<textarea class="tpl-body" id="tpl-body-' + id + '" spellcheck="false" oninput="draftText[\'' + p.uuid + '\']=this.value">' + esc(draftVal) + '</textarea>'
         + '<div class="tpl-actions">'
-        + '<button class="btn-primary btn-sm" onclick="copyTpl(' + id + ')"><i class="ti ti-copy"></i> Copy</button>'
-        + '<button class="btn-secondary btn-sm" onclick="emailTpl(' + id + ')"><i class="ti ti-mail"></i> Open in email</button>'
         + '<button class="btn-secondary btn-sm" onclick="aiDraft(' + id + ')"><i class="ti ti-sparkles"></i> Draft with AI</button>'
+        + '<button class="btn-secondary btn-sm" onclick="copyTpl(' + id + ')"><i class="ti ti-copy"></i> Copy</button>'
+        + '<button class="btn-primary btn-sm" onclick="sendNowInline(' + id + ')"><i class="ti ti-send"></i> Send now</button>'
         + '</div>'
         + '<div style="border-top:0.5px solid var(--border-light);padding-top:12px;margin-top:12px">'
-        + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Schedule this draft</div>'
+        + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">…or schedule it</div>'
         + schedBlock
         + '</div></div>';
     }
   }
 
   document.getElementById('detail-container').innerHTML =
-    '<button class="back-btn" onclick="go(\'pipeline\')"><i class="ti ti-arrow-left"></i> Pipeline</button>'
+    '<button class="back-btn" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>'
+    + '<div class="detail-cols"><div>'
     + '<div class="detail-header"><div class="detail-icon"><i class="ti ti-building-store"></i></div>'
     + '<div><div class="detail-venue">' + p.venue + '</div><div class="detail-meta">' + p.vtype + ' · ' + p.city + ', ' + p.state + ' · ' + p.pay + '</div>'
     + '<span class="badge badge-' + p.s + '" style="margin-top:6px">' + statusLabel[p.s] + '</span></div></div>'
@@ -1365,18 +1411,23 @@ function openDetail(id) {
     + '<div class="card card-flush" style="margin-bottom:12px">' + notesHtml
     + '<div><input class="note-input" placeholder="Add a note… press Enter to save" onkeydown="addNote(event,' + id + ')"></div>'
     + '</div>'
+    + '</div><div>'
     + tplSection
     + '<div class="section-label">Conversation</div>'
-    + '<div class="card card-flush" style="margin-bottom:20px">' + actHtml + '</div>';
+    + '<div class="card card-flush" style="margin-bottom:20px">' + actHtml + '</div>'
+    + '</div></div>';
 
   go('detail');
 }
 
+var draftText = {}; // per-entry draft (keyed by uuid) — survives re-renders
 function switchTpl(id, key) {
   activeTpl[id] = key;
   var p = pipeline[id];
-  document.querySelectorAll('#tpl-tabs-' + id + ' .tpl-tab').forEach(function(t,i){ t.classList.toggle('active', tplKeys[i]===key); });
-  document.getElementById('tpl-body-' + id).value = templates[key](p);
+  var text = templates[key](p);
+  draftText[p.uuid] = text;
+  var ta = document.getElementById('tpl-body-' + id);
+  if (ta) ta.value = text;
 }
 function copyTpl(id) {
   var txt = document.getElementById('tpl-body-' + id).value;
@@ -1400,8 +1451,9 @@ function aiDraft(id) {
     }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
       .then(function(x){
         if (!x.ok) { showToast(x.j.error || 'AI draft failed', true); return; }
+        draftText[p.uuid] = x.j.draft || '';
         var ta = document.getElementById('tpl-body-' + id);
-        if (ta) { ta.value = x.j.draft || ''; showToast('Draft ready — make it yours before sending'); }
+        if (ta) { ta.value = draftText[p.uuid]; showToast('Draft ready — make it yours before sending'); }
       })
       .catch(function(e){ showToast('AI draft failed: ' + e.message, true); });
   });
@@ -1455,17 +1507,19 @@ function scheduleSend(id) {
   }).select().single().then(function(r){
     if (r.error) { showToast('Could not schedule: ' + r.error.message, true); return; }
     p.sched = r.data;
+    delete draftText[p.uuid]; // committed — the scheduled body is the truth now
     openDetail(id);
     if (now) { showToast('Sending…'); pokeWorker(); }
     else showToast('Scheduled for ' + fmtWhen(at.toISOString()));
   });
 }
+function sendNowInline(id){ sendChipDays[id] = 'now'; scheduleSend(id); }
 // "Send now" shouldn't wait for the worker's next cycle — poke it.
 function pokeWorker(){
   sb.auth.getSession().then(function(s){
     var tok = s.data && s.data.session && s.data.session.access_token;
     if (!tok) return;
-    fetch(WORKER_URL + '/scheduled/run', { method:'POST', headers:{ 'Authorization':'Bearer ' + tok } }).catch(function(){});
+    fetch(WORKER_URL + '/poke', { method:'POST', headers:{ 'Authorization':'Bearer ' + tok } }).catch(function(){});
   });
 }
 function cancelScheduled(id) {
@@ -1504,13 +1558,75 @@ function saveGigDate(id){
   sb.from('pipeline_entries').update({ gig_date: val }).eq('id', p.uuid).then(function(r){
     if (r.error) { showToast('Could not save date: ' + r.error.message, true); return; }
     p.gig_date = val;
-    showToast(val ? 'Gig date saved — syncing to your calendar' : 'Gig date cleared');
+    showToast(val ? 'Gig date saved — sending to your calendar' : 'Gig date cleared');
+    pokeWorker(); // calendar event in seconds, not next poll
   });
+}
+
+// ── Push notifications (per device) ──
+function urlB64ToU8(s){
+  var pad = '='.repeat((4 - s.length % 4) % 4);
+  var b = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  var a = new Uint8Array(b.length);
+  for (var i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
+  return a;
+}
+function refreshPushToggle(){
+  var t = document.getElementById('push-toggle'); if (!t) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) { t.disabled = true; return; }
+  navigator.serviceWorker.getRegistration().then(function(reg){
+    if (!reg) { t.checked = false; return; }
+    reg.pushManager.getSubscription().then(function(s){ t.checked = !!s; });
+  });
+}
+function togglePush(){
+  var t = document.getElementById('push-toggle');
+  if (t.checked) {
+    if (!('serviceWorker' in navigator)) { showToast('Not supported in this browser', true); t.checked = false; return; }
+    navigator.serviceWorker.register('/sw.js').then(function(){
+      return navigator.serviceWorker.ready;
+    }).then(function(reg){
+      return Notification.requestPermission().then(function(perm){
+        if (perm !== 'granted') throw new Error('Permission denied');
+        return fetch(WORKER_URL + '/push/pubkey').then(function(r){ return r.json(); }).then(function(j){
+          if (!j.key) throw new Error('Push not ready on the server yet — try again in a minute');
+          return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToU8(j.key) });
+        });
+      });
+    }).then(function(sub){
+      var raw = sub.toJSON();
+      return sb.from('push_subscriptions').upsert({ artist_id: ME, endpoint: sub.endpoint, p256dh: raw.keys.p256dh, auth: raw.keys.auth }).then(function(r){
+        if (r.error) throw new Error(r.error.message);
+        showToast('Notifications on — this device will ping you');
+      });
+    }).catch(function(e){ t.checked = false; showToast('Could not enable: ' + e.message, true); });
+  } else {
+    navigator.serviceWorker.getRegistration().then(function(reg){
+      if (!reg) return;
+      reg.pushManager.getSubscription().then(function(sub){
+        if (!sub) return;
+        sb.from('push_subscriptions').delete().eq('endpoint', sub.endpoint).then(function(){});
+        sub.unsubscribe();
+        showToast('Notifications off');
+      });
+    });
+  }
 }
 
 // ── Calendar (Slice D start): availability painting ──
 var calMonth = (function(){ var d = new Date(); d.setDate(1); return d; })();
 var availMap = {};
+var dowRules = {};   // {0:'busy', ...} — recurring weekly blocks
+function gigByDay(){
+  var m = {};
+  pipeline.forEach(function(p){
+    if (p.gig_date && (p.s==='hold'||p.s==='booked'||p.s==='played')) {
+      var d = new Date(p.gig_date);
+      (m[isoDay(d.getFullYear(), d.getMonth(), d.getDate())] = m[isoDay(d.getFullYear(), d.getMonth(), d.getDate())] || []).push(p);
+    }
+  });
+  return m;
+}
 function isoDay(y, m, d){ return y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0'); }
 function calShift(n){ calMonth.setMonth(calMonth.getMonth() + n); renderCalendar(); loadAvail(); }
 function calToday(){ calMonth = new Date(); calMonth.setDate(1); renderCalendar(); loadAvail(); }
@@ -1523,6 +1639,7 @@ function renderCalendar(){
   var dim = new Date(y, m + 1, 0).getDate();
   var dimPrev = new Date(y, m, 0).getDate();
   var today = new Date(); var todayIso = isoDay(today.getFullYear(), today.getMonth(), today.getDate());
+  var gigs = gigByDay();
   var cells = '';
   for (var i = 0; i < 42; i++) {
     var dnum, cy = y, cm = m, other = false;
@@ -1531,11 +1648,50 @@ function renderCalendar(){
     else dnum = i - firstIdx + 1;
     var norm = new Date(cy, cm, dnum);
     var iso = isoDay(norm.getFullYear(), norm.getMonth(), norm.getDate());
-    var cls = 'cal-day' + (other ? ' other' : '') + (iso === todayIso ? ' today' : '') + (availMap[iso] ? ' ' + availMap[iso] : '');
-    cells += '<div class="' + cls + '" onclick="cycleAvail(\'' + iso + '\')">' + dnum + '</div>';
+    var state = availMap[iso] || (dowRules[norm.getDay()] ? 'busy' : '');
+    var cls = 'cal-day' + (other ? ' other' : '') + (iso === todayIso ? ' today' : '') + (state ? ' ' + state : '');
+    cells += '<div class="' + cls + '" onclick="cycleAvail(\'' + iso + '\')">' + dnum + (gigs[iso] ? '<span class="cal-gig-dot"></span>' : '') + '</div>';
     if (i >= firstIdx + dim - 1 && (i + 1) % 7 === 0) break; // stop at the last full week
   }
   var days = document.getElementById('cal-days'); if (days) days.innerHTML = cells;
+  renderDowChips();
+  renderUpcoming(gigs);
+}
+function renderDowChips(){
+  var el = document.getElementById('dow-chips'); if (!el) return;
+  var names = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  el.innerHTML = names.map(function(n, d){
+    return '<div class="fu-chip' + (dowRules[d] ? ' selected' : '') + '" onclick="toggleDowRule(' + d + ')">' + n + '</div>';
+  }).join('');
+}
+function toggleDowRule(d){
+  if (dowRules[d]) {
+    delete dowRules[d];
+    sb.from('availability_rules').delete().eq('artist_id', ME).eq('dow', d).then(function(r){ if (r.error) showToast('Could not clear: ' + r.error.message, true); });
+  } else {
+    dowRules[d] = 'busy';
+    sb.from('availability_rules').upsert({ artist_id: ME, dow: d, status: 'busy' }).then(function(r){ if (r.error) showToast('Could not save: ' + r.error.message, true); });
+  }
+  renderCalendar();
+}
+// Schedule at a glance: upcoming gigs & holds (multi-gig days stack naturally).
+function renderUpcoming(gigs){
+  var el = document.getElementById('cal-upcoming'); if (!el) return;
+  var rows = [];
+  Object.keys(gigs).sort().forEach(function(iso){
+    gigs[iso].forEach(function(p){
+      if (new Date(p.gig_date) >= new Date(Date.now() - 86400000)) rows.push(p);
+    });
+  });
+  el.innerHTML = rows.length
+    ? '<div class="section-label" style="margin-top:18px">Upcoming</div><div class="card card-flush">' + rows.map(function(p){
+        var d = new Date(p.gig_date);
+        return '<div class="war-row" onclick="openDetail(' + p.id + ')">'
+          + '<div class="war-ic" style="background:var(--' + p.s + '-bg);color:var(--' + p.s + '-text)"><i class="ti ti-music"></i></div>'
+          + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(p.venue) + '</div><div class="war-sub">' + d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) + ' · ' + d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) + ' · ' + statusLabel[p.s] + '</div></div>'
+          + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
+      }).join('') + '</div>'
+    : '<div class="section-label" style="margin-top:18px">Upcoming</div><div class="card" style="font-size:13px;color:var(--text-secondary)">No gigs on the books yet — set a gig date on a Hold or Booked venue.</div>';
 }
 function loadAvail(){
   var y = calMonth.getFullYear(), m = calMonth.getMonth();
@@ -1547,6 +1703,11 @@ function loadAvail(){
   sb.from('availability').select('day,status').gte('day', startPad).lte('day', end).then(function(r){
     if (r.error) { showToast('Calendar load failed: ' + r.error.message, true); return; }
     (r.data||[]).forEach(function(x){ availMap[x.day] = x.status; });
+    renderCalendar();
+  });
+  sb.from('availability_rules').select('dow,status').then(function(r){
+    dowRules = {};
+    (r.data||[]).forEach(function(x){ dowRules[x.dow] = x.status; });
     renderCalendar();
   });
 }
@@ -1936,6 +2097,7 @@ function subscribeRealtime(){
     .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, function(){ loadPipeline(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pipeline_entries' }, function(){ loadPipeline(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'scheduled_messages' }, function(){ loadPipeline(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'availability' }, function(){ if (currentScreen==='calendar') loadAvail(); })
     .subscribe();
 }
 
@@ -2038,11 +2200,14 @@ function loadScheduled(ids){
     rerenderOpenDetail();
   });
 }
-// If the user is watching a venue, re-render it live with fresh data.
+// If the user is watching a venue, re-render it live with fresh data — UNLESS
+// they're mid-interaction (typing, or inside a date/time picker): rebuilding
+// the DOM under an open picker dismisses it ("it kept exiting on me").
 function rerenderOpenDetail(){
-  if(currentScreen==='detail' && currentDetailUuid){
-    for(var i=0;i<pipeline.length;i++){ if(pipeline[i].uuid===currentDetailUuid){ openDetail(i); break; } }
-  }
+  if(currentScreen!=='detail' || !currentDetailUuid) return;
+  var ae = document.activeElement;
+  if (ae && (ae.tagName==='INPUT' || ae.tagName==='TEXTAREA' || ae.tagName==='SELECT')) return;
+  for(var i=0;i<pipeline.length;i++){ if(pipeline[i].uuid===currentDetailUuid){ openDetail(i); break; } }
 }
 
 function updateHomeStats(){
@@ -2155,7 +2320,7 @@ function openVenueDetail(id){
   }
   var row = function(label, val){ return val ? ('<div class="field-row"><span class="field-label">' + label + '</span><span class="field-value">' + esc(val) + '</span></div>') : ''; };
   document.getElementById('venue-container').innerHTML =
-    '<button class="back-btn" onclick="go(\'discover\')"><i class="ti ti-arrow-left"></i> Discover</button>'
+    '<button class="back-btn" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>'
     + '<div class="detail-header"><div class="detail-icon"><i class="ti ti-building-store"></i></div>'
     + '<div style="flex:1"><div class="detail-venue">' + esc(v.name) + '</div>'
     + '<div class="detail-meta">' + esc([v.vtype, [v.city, v.state].filter(function(x){return x;}).join(', '), (v.pay && v.pay!=='—' ? v.pay : '')].filter(function(x){return x;}).join(' · ')) + '</div>'

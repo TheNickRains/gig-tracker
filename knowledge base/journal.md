@@ -17,6 +17,26 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-11 — Push notifications, draft persistence, gutter island returns, calendar v2
+**Push (worker grew its first npm dep, web-push):** VAPID keypair self-manages in `app_secrets`
+(service-role only, migration 017); `GET /push/pubkey`; `notify()` on new inbound reply / send fired /
+send ready, pruning 404/410 subs; `app/sw.js` (push + notificationclick, served via server.js
+`/sw.js` route — PWA finally has a service worker, push-only, no offline cache); Settings toggle
+registers SW → permission → subscribe → `push_subscriptions` (RLS own). **Draft persistence bug
+(Nick lost an AI draft):** any re-render rebuilt the textarea from the template — now `draftText[uuid]`
+is the source of truth (oninput), survives re-renders, cleared on schedule; template TABS replaced by a
+dropdown; actions = Draft with AI · Copy · **Send now** (replaces Open-in-email; mailto dead).
+**rerenderOpenDetail guards active inputs** — realtime rebuilds were dismissing open date pickers
+("kept exiting"). Gig date = explicit ✓ save + instant pokeWorker (`/poke` = processScheduled +
+syncCalendar for that artist; replaces /scheduled/run). **Gutter island RESTORED on mobile** (Nick
+missed it) + desktop now truly wide ≥1100 (app 1100px, detail 2-col via .detail-cols wrappers, 3-col
+grid, capped forms). **Back is a stack** (`navStack` + goBack(); detail/venue back buttons say "Back"
+and return wherever you came from — war room included; "war room cleared 🎸" toast on emptying).
+**Calendar v2:** weekly blocks (availability_rules, dow chips — explicit day paint overrides), gig
+dots on days, "Upcoming" agenda list (multi-gig days stack), availability in the realtime publication
+(busy imports appear live). **Agent date policy:** the agent/worker NEVER writes gig_date (only mirrors
+artist-set dates to Google + google_event_id/status); creation/edit of dates is the artist's alone.
+
 ## 2026-06-11 — Calendar⇄Google sync live + AI deal-context + send-now/custom + polish
 **Slice D worker (`syncCalendar`, per poll):** imports busy days from the artist's PRIMARY calendar
 (60d lookahead; only days the artist hasn't painted manually — manual wins); EXPORTS hold/booked
