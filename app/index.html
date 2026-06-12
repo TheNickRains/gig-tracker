@@ -3119,7 +3119,14 @@ function loadPipeline(){
   sb.from('pipeline_entries')
     .select('id,status,prev_status,venue_id,contact_id,person_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs,ticket_type, venue:venues(name,city,state,venue_type,pay_range,ticket_type,booking_form_url), person:people(name,title,org,email,phone,linkedin,instagram), contact:contacts(name,title,email,phone,linkedin,instagram)')
     .order('last_activity_at',{ascending:false}).then(function(r){
-      if(r.error){ console.error('loadPipeline', r.error); return; }
+      if(r.error){
+        console.error('loadPipeline', r.error);
+        var pl = document.getElementById('pipe-list');
+        if (pl) pl.innerHTML = '<div class="card" style="font-size:13px;color:var(--dead-text)"><strong>Pipeline failed to load</strong><div style="margin-top:4px;color:var(--text-secondary)">' + esc(r.error.message) + '</div><div style="margin-top:6px;font-size:12px;color:var(--text-tertiary)">An unknown column/table usually means a migration hasn\u2019t been run yet.</div></div>';
+        var wn = document.getElementById('war-needs');
+        if (wn) wn.innerHTML = '<div class="section-label">Needs you</div><div class="card" style="margin-bottom:20px;font-size:13px;color:var(--dead-text)">Pipeline failed to load — ' + esc(r.error.message) + '</div>';
+        return;
+      }
       var rows=r.data||[];
       pipeline = rows.map(function(e,i){
         var v=e.venue||{}, c=e.person||e.contact||{};
