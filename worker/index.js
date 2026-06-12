@@ -361,7 +361,7 @@ async function syncCalendar(artistId, token) {
     // -- export holds/bookings + flip played --
     // Agent policy: the worker CREATES events on its own, but only EDITS or
     // DELETES one when the ARTIST changed the date in the app (gig_date_dirty).
-    const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&status=in.(hold,booked,played)&or=(gig_date.not.is.null,google_event_id.not.is.null)&select=id,status,gig_date,google_event_id,gig_date_dirty,venue:venues(name)`);
+    const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&status=in.(hold,booked,played)&or=(gig_date.not.is.null,google_event_id.not.is.null)&select=id,status,gig_date,google_event_id,gig_date_dirty,gig_pay,gig_costs,venue:venues(name)`);
     for (const e of entries) {
       const evUrl = (idp) => `https://www.googleapis.com/calendar/v3/calendars/primary/events${idp ? "/" + idp : ""}`;
       // Date cleared by the artist -> remove the event.
@@ -386,6 +386,7 @@ async function syncCalendar(artistId, token) {
         start: { dateTime: start.toISOString() },
         end: { dateTime: new Date(start.getTime() + 3 * 3600000).toISOString() },
         status: e.status === "hold" ? "tentative" : "confirmed",
+        description: [e.gig_pay ? "Pay: " + e.gig_pay : null, e.gig_costs ? "Costs: " + e.gig_costs : null, "— Gig Collective"].filter(Boolean).join("\n"),
       };
       if (e.google_event_id) {
         if (!e.gig_date_dirty) continue; // never touch an existing event unprompted

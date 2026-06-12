@@ -17,6 +17,24 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-12 — SLICE E WRAPPED: social comments, wins wall, financials, true cockpit panes
+**#7 closed:** the "missing" calendar event was DELETED by design — a date-clear fired
+"calendar: event removed (date cleared)"; setting the date again recreates it (htmlLink now logged).
+**E social layer (migration 021):** comments get avatars (author_avatar denormalized), 👍/👎 reactions
+(venue_comment_reactions, one per artist, tap-again clears), one-level replies (parent_id, inline
+reply input, Esc cancels); "Added by {name}" provenance (venues.created_by_name, stamped at intake);
+**wins wall** — venue_wins (RLS read-all/write-own) upserted from setStatus on booked/played, rendered
+as an avatar strip "Gigged here:" on venue detail + 🏆 rows in the Home feed. **Financials (#8):**
+pipeline_entries.gig_pay/gig_costs — Pay & Costs fields on the event view, mirrored into the Google
+event description ("Pay: … / Costs: …") — tour-planner tracking foundations. **Home cockpit:** columns
+are now TRUE PANES (.home-cols grid → .home-col max-height calc(100vh-190px) overflow-y:auto) —
+independently scrollable, content can't push the other column (mobile = natural stack, needs-you
+first). **Bubbles:** footers removed (meat only; sender/time live in the title tooltip). Discover
+cards: long names pad past the corner icons, badges wrap (overlap fixed). Settings copy bug fixed
+(literal \u2019). **Markets vs Home market:** NOT redundant — profile markets = WHERE YOU PLAY
+(plural, feeds templates/tour routing); home_market = WHERE YOU'RE BASED (single anchor for routing
++ AI's sense of place).
+
 ## 2026-06-12 — SLICE E BEGINS (Collective) + event view + 2-col cockpit + island fade
 **Slice E v1 (migration 020):** venue_comments (RLS: read=all authed, write own; author_name
 denormalized — artists rows are private) + venues.created_by (default auth.uid()) + artists.home_market.

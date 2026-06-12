@@ -111,19 +111,13 @@
     .screen { padding-left: 36px; padding-right: 36px; }
     /* Home: 3-zone war room — bookings rail | needs-you stack | stats rail.
        Scoped to .active (the unscoped version glued Home over every screen). */
-    /* Two columns. Left: health, sends, collective. Right: needs-you, actions,
-       month at a glance, upcoming. Independent vertical flows. */
-    #screen-home.active { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 36px; align-items: start; }
-    #screen-home.active > div:first-child { grid-column: 1 / -1; }
+    /* Two TRUE columns — each its own pane, independently scrollable. */
+    .home-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 36px; align-items: start; }
+    .home-col { max-height: calc(100vh - 190px); overflow-y: auto; scrollbar-width: thin; padding-right: 6px; }
+    #hc-left { grid-column: 1; grid-row: 1; }
+    #hc-right { grid-column: 2; grid-row: 1; }
     #screen-home.active .stat-grid { display: none; } /* funnel + momentum cover it */
-    #screen-home.active #war-funnel { grid-column: 1; grid-row: 2; }
-    #screen-home.active #war-sends { grid-column: 1; grid-row: 3; }
-    #screen-home.active > .section-label { grid-column: 1; grid-row: 4; }
-    #screen-home.active > .card.placeholder, #screen-home.active #war-feed { grid-column: 1; grid-row: 5; }
-    #screen-home.active #war-needs { grid-column: 2; grid-row: 2; }
-    #screen-home.active .war-actions { grid-column: 2; grid-row: 3; }
-    #screen-home.active #war-cal { display: block; grid-column: 2; grid-row: 4; }
-    #screen-home.active #war-up { display: block; grid-column: 2; grid-row: 5; }
+    #screen-home.active #war-cal, #screen-home.active #war-up { display: block; }
     /* Detail: two working columns, capped for readability */
     .detail-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; align-items: start; max-width: 1240px; }
     /* Pipeline breathes */
@@ -380,10 +374,18 @@
   .pipe-search { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid transparent; border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13.5px; font-family: inherit; margin-bottom: 8px; }
   .pipe-search:focus { outline: none; border-color: var(--amber-400); background: var(--bg-primary); }
   .venue-card { position: relative; }
+  .venue-card .venue-name { padding-right: 26px; overflow-wrap: anywhere; }
+  .venue-card .badge { white-space: normal; line-height: 1.3; }
+  .venue-card .venue-tag { overflow-wrap: anywhere; }
   .vp-check { position: absolute; top: 9px; right: 9px; font-size: 16px; color: var(--booked-text); }
   .vp-new { position: absolute; top: 11px; left: 11px; width: 9px; height: 9px; border-radius: 50%; background: var(--talks-text); border: 2px solid var(--bg-primary); }
   .pulse-card { background: var(--talks-bg); border-left: 3px solid var(--talks-text); border-radius: 12px; padding: 11px 12px; font-size: 13px; line-height: 1.5; color: #2b2a26; margin-bottom: 10px; }
   .pulse-card .pc-label { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--talks-text); margin-bottom: 4px; }
+  .vc-actions { display: flex; gap: 10px; margin-top: 6px; }
+  .vc-btn { display: inline-flex; align-items: center; gap: 3px; background: none; border: none; font-family: inherit; font-size: 11px; color: var(--text-tertiary); cursor: pointer; padding: 2px 0; }
+  .vc-btn i { font-size: 13px; }
+  .vc-btn.on { color: var(--booked-text); font-weight: 600; }
+  .vc-btn.on.down { color: var(--dead-text); }
   .pipe-filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 10px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .pipe-filters::-webkit-scrollbar { display: none; }
   .pf-chip { flex-shrink: 0; font-size: 12px; padding: 5px 11px; border-radius: 999px; border: 1px solid transparent; color: var(--text-secondary); cursor: pointer; background: var(--bg-secondary); font-family: inherit; opacity: 0.85; }
@@ -698,22 +700,28 @@
       <div class="page-title" id="home-greeting">Welcome back</div>
       <div style="font-size:14px;color:var(--text-secondary)" id="home-sub">Loading…</div>
     </div>
+    <div class="home-cols">
+    <div class="home-col" id="hc-right">
     <div id="war-needs"></div>
+    <div class="war-actions">
+      <button class="btn-primary" onclick="go('add')"><i class="ti ti-plus"></i> Add venue</button>
+      <button class="btn-secondary" onclick="go('discover')"><i class="ti ti-compass"></i> Discover</button>
+    </div>
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-label">Active leads</div><div class="stat-val" id="stat-active">0</div><div class="stat-sub">in your pipeline</div></div>
       <div class="stat-card"><div class="stat-label">Booked</div><div class="stat-val" id="stat-booked">0</div><div class="stat-sub">confirmed gigs</div></div>
       <div class="stat-card placeholder"><div class="stat-label">Collective wins</div><div class="stat-val">—</div><div class="stat-sub">coming soon</div></div>
     </div>
-    <div id="war-funnel"></div>
-    <div class="war-actions">
-      <button class="btn-primary" onclick="go('add')"><i class="ti ti-plus"></i> Add venue</button>
-      <button class="btn-secondary" onclick="go('discover')"><i class="ti ti-compass"></i> Discover</button>
-    </div>
-    <div id="war-sends"></div>
     <div id="war-cal"></div>
     <div id="war-up"></div>
+    </div>
+    <div class="home-col" id="hc-left">
+    <div id="war-funnel"></div>
+    <div id="war-sends"></div>
     <div class="section-label">Collective activity</div>
     <div id="war-feed"></div>
+    </div>
+    </div>
   </div>
 
   <!-- DISCOVER -->
@@ -950,7 +958,7 @@
     <div class="page-title" style="margin-bottom:16px">Settings</div>
     <div class="card card-flush" style="margin-bottom:20px">
       <div class="setting-row"><div class="setting-icon"><i class="ti ti-bell"></i></div><div class="setting-label">Push notifications<div class="section-sub" style="margin-top:2px">Replies, sends &amp; reviews — on this device</div></div><label class="switch"><input type="checkbox" id="push-toggle" onchange="togglePush()"><span></span></label></div>
-      <div class="setting-row"><div class="setting-icon"><i class="ti ti-map-pin"></i></div><div class="setting-label">Home market<div class="section-sub" style="margin-top:2px">Anchors Discover + the AI\u2019s sense of place</div></div><input class="pipe-search" id="home-market-input" style="margin:0;max-width:150px;font-size:12.5px" placeholder="e.g. Austin, TX" onchange="saveHomeMarket()"></div>
+      <div class="setting-row"><div class="setting-icon"><i class="ti ti-map-pin"></i></div><div class="setting-label">Home market<div class="section-sub" style="margin-top:2px">Where you live — anchors routing &amp; the AI&rsquo;s sense of place</div></div><input class="pipe-search" id="home-market-input" style="margin:0;max-width:150px;font-size:12.5px" placeholder="e.g. Austin, TX" onchange="saveHomeMarket()"></div>
       <div class="setting-row" onclick="googleRowClick()"><div class="setting-icon"><i class="ti ti-brand-google"></i></div><div class="setting-label">Gmail &amp; Calendar</div><span class="setting-value" id="google-conn-status">Connect</span><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row"><div class="setting-icon"><i class="ti ti-send"></i></div><div class="setting-label">Let the assistant send email<div class="section-sub" style="margin-top:2px">Off — it drafts only; you send</div></div><label class="switch"><input type="checkbox" id="auto-send-toggle" onchange="saveAutoSend()"><span></span></label></div>
       <div class="setting-row" onclick="signOut()"><div class="setting-icon"><i class="ti ti-logout"></i></div><div class="setting-label" style="color:var(--dead-text)">Sign out</div></div>
@@ -1250,11 +1258,14 @@ function renderFeed(){
   if (feedCache) { el.innerHTML = feedCache; return; }
   Promise.all([
     sb.from('venue_comments').select('author_name,body,created_at,venue_id').order('created_at',{ascending:false}).limit(5),
-    sb.from('venues').select('id,name,city,created_at,created_by').order('created_at',{ascending:false}).limit(5)
+    sb.from('venues').select('id,name,city,created_at,created_by').order('created_at',{ascending:false}).limit(5),
+    sb.from('venue_wins').select('author_name,status,created_at,venue_id').order('created_at',{ascending:false}).limit(5)
   ]).then(function(rs){
     var items = [];
     ((rs[0].data)||[]).forEach(function(cm){ items.push({ t: new Date(cm.created_at).getTime(), ic:'ti-message-circle', txt:'<strong>' + esc(cm.author_name||'A member') + '</strong> on a venue: ' + esc(cm.body.slice(0,80)), vid: cm.venue_id, time: relTime(cm.created_at) }); });
     ((rs[1].data)||[]).forEach(function(v){ if (v.created_by && v.created_by !== ME) items.push({ t: new Date(v.created_at).getTime(), ic:'ti-map-pin-plus', txt:'New venue in Discover: <strong>' + esc(v.name) + '</strong>' + (v.city ? ' · ' + esc(v.city) : ''), vid: v.id, time: relTime(v.created_at) }); });
+    var vname = {}; venues.forEach(function(v){ vname[v.id] = v.name; });
+    ((rs[2] && rs[2].data)||[]).forEach(function(w){ items.push({ t: new Date(w.created_at).getTime(), ic:'ti-trophy', txt:'<strong>' + esc(w.author_name||'A member') + '</strong> ' + (w.status==='played'?'played':'booked') + ' <strong>' + esc(vname[w.venue_id]||'a venue') + '</strong> 🏆', vid: w.venue_id, time: relTime(w.created_at) }); });
     items.sort(function(a,b){ return b.t - a.t; });
     items = items.slice(0, 6);
     feedCache = items.length
@@ -1453,8 +1464,7 @@ function openDetail(id) {
       var content = a.summary
         ? '<div class="m-sum">' + esc(a.summary) + '</div><div class="m-raw">' + esc(text) + '</div>'
         : esc(text);
-      return '<div class="msg ' + (inbound ? 'them' : 'you') + '">' + content
-        + '<div class="m-meta"><span>' + (inbound ? esc(first) : 'You') + '</span><span>' + a.time + '</span></div></div>';
+      return '<div class="msg ' + (inbound ? 'them' : 'you') + '" title="' + (inbound ? esc(first) : 'You') + ' · ' + a.time + '">' + content + '</div>';
     }
     return '<div class="sys-line"><span>' + esc(a.text) + '</span><span>· ' + a.time + '</span></div>';
   }).join('') || '<p style="color:var(--text-secondary);font-size:13px">No conversation yet — emails with ' + esc(first) + ' appear here automatically.</p>') + '</div>';
@@ -1811,6 +1821,8 @@ function openEventView(uuid){
     +   '<div class="fu-chip' + (p.s==='booked'?' selected':'') + '" onclick="evStage=\'booked\';renderEvChips()">Booked · confirmed</div>'
     + '</div></div>'
     + '<div class="field-row"><span class="field-label">Contact</span><span class="field-value">' + esc(p.contact) + '</span></div>'
+    + '<div class="field-row"><span class="field-label">Pay</span><input class="form-input" id="ev-pay" placeholder="e.g. $600 flat · $200/hr × 3" value="' + esc(p.gigPay) + '"></div>'
+    + '<div class="field-row"><span class="field-label">Costs</span><input class="form-input" id="ev-costs" placeholder="e.g. $80 gas · $40 hotel split" value="' + esc(p.gigCosts) + '"></div>'
     + '</div>'
     + '<div style="display:flex;gap:8px">'
     + '<button class="btn-primary" style="flex:1" onclick="saveEventView()"><i class="ti ti-check"></i> Save</button>'
@@ -1832,12 +1844,14 @@ function saveEventView(){
   var di = document.getElementById('ev-date'), ti = document.getElementById('ev-time');
   if (!di.value) { showToast('Pick a date', true); return; }
   var val = new Date(di.value + 'T' + (ti.value || '20:00')).toISOString();
-  var patch = { gig_date: val, gig_date_dirty: true };
+  var patch = { gig_date: val, gig_date_dirty: true,
+    gig_pay: (document.getElementById('ev-pay').value.trim() || null),
+    gig_costs: (document.getElementById('ev-costs').value.trim() || null) };
   var stageChanged = evStage !== p.s;
   if (stageChanged) patch.status = evStage;
   sb.from('pipeline_entries').update(patch).eq('id', p.uuid).then(function(r){
     if (r.error) { showToast('Could not save: ' + r.error.message, true); return; }
-    p.gig_date = val; if (stageChanged) { p.s = evStage; sb.from('activities').insert({pipeline_entry_id:p.uuid, kind:'status_change', body:'Moved to ' + statusLabel[evStage], source:'manual'}).then(function(){}); }
+    p.gig_date = val; p.gigPay = patch.gig_pay || ''; p.gigCosts = patch.gig_costs || ''; if (stageChanged) { p.s = evStage; sb.from('activities').insert({pipeline_entry_id:p.uuid, kind:'status_change', body:'Moved to ' + statusLabel[evStage], source:'manual'}).then(function(){}); }
     showToast('Saved — syncing to your calendar');
     pokeWorker(); renderCalendar(); renderHome();
   });
@@ -2441,7 +2455,7 @@ function loadVenues(){
     var rows=r.data||[]; cities={};
     venues = rows.map(function(v){
       if(v.state){ cities[v.state]=cities[v.state]||[]; if(v.city && cities[v.state].indexOf(v.city)<0) cities[v.state].push(v.city); }
-      return {id:v.id, name:v.name, city:v.city||'', state:v.state||'', type:v.ticket_type||'soft', createdAt:v.created_at||null, createdBy:v.created_by||null,
+      return {id:v.id, name:v.name, city:v.city||'', state:v.state||'', type:v.ticket_type||'soft', createdAt:v.created_at||null, createdBy:v.created_by||null, createdByName:v.created_by_name||'',
               vtype:v.venue_type||'', pay:v.pay_range||'—', contact:(v.contacts&&v.contacts[0]?v.contacts[0].name:'—'),
               address:v.address||'', clientele:v.clientele||'', notes:v.notes||''};
     });
@@ -2452,7 +2466,7 @@ function loadVenues(){
 
 function loadPipeline(){
   sb.from('pipeline_entries')
-    .select('id,status,prev_status,venue_id,followup_date,last_activity_at,created_at,gig_date, venue:venues(name,city,state,venue_type,pay_range,ticket_type), contact:contacts(name,title,email,phone)')
+    .select('id,status,prev_status,venue_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs, venue:venues(name,city,state,venue_type,pay_range,ticket_type), contact:contacts(name,title,email,phone)')
     .order('last_activity_at',{ascending:false}).then(function(r){
       if(r.error){ console.error('loadPipeline', r.error); return; }
       var rows=r.data||[];
@@ -2460,7 +2474,7 @@ function loadPipeline(){
         var v=e.venue||{}, c=e.contact||{};
         return {id:i, uuid:e.id, venue:v.name||'(unknown venue)', city:v.city||'', state:v.state||'',
                 contact:c.name||'(no contact)', title:c.title||'', email:c.email||'', phone:c.phone||'',
-                vtype:v.venue_type||'', pay:v.pay_range||'—', t:v.ticket_type||'soft', s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, gig_date:e.gig_date||null, days:daysAgo(e.last_activity_at), activity:[]};
+                vtype:v.venue_type||'', pay:v.pay_range||'—', t:v.ticket_type||'soft', s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, gig_date:e.gig_date||null, gigPay:e.gig_pay||'', gigCosts:e.gig_costs||'', days:daysAgo(e.last_activity_at), activity:[]};
       });
       updateHomeStats();
       if(currentScreen==='pipeline') renderPipeline();
@@ -2533,6 +2547,9 @@ function setStatus(id, s){
   }
   patch.status = s;
   p.s = s; p.days = 0;
+  if ((s === 'booked' || s === 'played') && p.venueId) {
+    sb.from('venue_wins').upsert({ venue_id: p.venueId, artist_id: ME, author_name: profile.name || 'A member', avatar_url: profile.avatar_url || null, status: s }).then(function(){ feedCache = null; });
+  }
   p.activity.unshift({kind:'status_change', dot:dotFor('status_change'), text:'Moved to ' + statusLabel[s], time:'Just now'});
   openDetail(id);
   updateHomeStats();
@@ -2577,7 +2594,7 @@ function wizSubmit(ticket){
   var cEmail = wizData.contactEmail || null;
   var cPhone = wizData.contactPhone || null;
   var btn=document.querySelector('#wiz-container .btn-primary'); if(btn){ btn.textContent='Saving…'; btn.disabled=true; }
-  var venuePayload = {
+  var venuePayload = { created_by_name: (profile.name || null),
     name:wizData.name, city:wizData.city||null, state:(wizData.state||'').toUpperCase()||null,
     ticket_type:wizData.ticket||'soft', venue_type:wizData.vtype||null, pay_range:wizData.pay||null,
     clientele:wizData.clientele||null, notes:wizData.notes||null, created_by:ME
@@ -2648,6 +2665,8 @@ function openVenueDetail(id){
     + '</div>'
     + mapBlock
     + '<div class="section-label" style="margin-top:16px">Collective intel</div>'
+    + (v.createdByName ? '<div style="font-size:11.5px;color:var(--text-tertiary);margin:-4px 0 8px">Added by ' + esc(v.createdByName) + '</div>' : '')
+    + '<div id="venue-wins"></div>'
     + '<div id="venue-pulse"></div>'
     + '<div class="card card-flush" style="margin-bottom:20px"><div id="venue-comments"><p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">Loading…</p></div>'
     + '<div><input class="note-input" placeholder="Share intel for the collective… press Enter" onkeydown="postVenueComment(event,\'' + v.id + '\')"></div></div>';
@@ -2661,28 +2680,84 @@ function isNewFromCollective(v){
   return v.createdAt && v.createdBy && v.createdBy !== ME && new Date(v.createdAt).getTime() > seen;
 }
 var pulseCache = {};
+var vcReplyTo = null; // comment id being replied to
+function avatarHtml(name, url, size){
+  size = size || 24;
+  var st = 'width:'+size+'px;height:'+size+'px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:'+Math.round(size*0.38)+'px;font-weight:600;background:var(--amber-50);color:var(--amber-800);overflow:hidden;';
+  if (url) return '<div style="'+st+'background-image:url(&quot;'+esc(url)+'&quot;);background-size:cover;background-position:center"></div>';
+  return '<div style="'+st+'">'+esc(initials(name||'?'))+'</div>';
+}
 function loadVenueComments(venueId){
-  sb.from('venue_comments').select('*').eq('venue_id', venueId).order('created_at',{ascending:false}).limit(30).then(function(r){
+  Promise.all([
+    sb.from('venue_comments').select('*').eq('venue_id', venueId).order('created_at',{ascending:true}).limit(60),
+    sb.from('venue_wins').select('*').eq('venue_id', venueId)
+  ]).then(function(rs){
     var el = document.getElementById('venue-comments'); if (!el) return;
+    var r = rs[0];
     if (r.error) { el.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">Comments unavailable: ' + esc(r.error.message) + '</p>'; return; }
     var rows = r.data || [];
-    el.innerHTML = rows.length ? rows.map(function(cm){
-      var mine = cm.artist_id === ME;
-      return '<div class="note-item"><div style="display:flex;gap:6px;align-items:flex-start"><div style="flex:1;min-width:0">'
-        + '<div style="font-size:11px;font-weight:600;color:var(--amber-800);margin-bottom:2px">' + esc(cm.author_name || 'A member') + ' <span style="font-weight:400;color:var(--text-tertiary)">· ' + relTime(cm.created_at) + '</span></div>'
-        + '<div class="act-ctx">' + esc(cm.body) + '</div></div>'
-        + (mine ? '<button class="note-ic" onclick="deleteVenueComment(\'' + cm.id + '\',\'' + venueId + '\')" title="Delete"><i class="ti ti-trash"></i></button>' : '')
-        + '</div></div>';
-    }).join('') : '<p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">No intel yet — first to play it, first to post.</p>';
-    renderVenuePulse(venueId, rows.length);
+    // wins wall
+    var wins = (rs[1].data) || [];
+    var ww = document.getElementById('venue-wins');
+    if (ww) ww.innerHTML = wins.length
+      ? '<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px"><span style="font-size:11.5px;color:var(--text-secondary)">Gigged here:</span>' + wins.map(function(w){ return '<span title="' + esc(w.author_name) + ' · ' + w.status + '">' + avatarHtml(w.author_name, w.avatar_url, 26) + '</span>'; }).join('') + '</div>'
+      : '';
+    var ids = rows.map(function(x){ return x.id; });
+    var go2 = function(reactMap){
+      var roots = rows.filter(function(x){ return !x.parent_id; }).reverse(); // newest root first
+      var kids = {};
+      rows.forEach(function(x){ if (x.parent_id) (kids[x.parent_id] = kids[x.parent_id] || []).push(x); });
+      function cHtml(cm, depth){
+        var mine = cm.artist_id === ME;
+        var rx = reactMap[cm.id] || { up:0, down:0, mine:null };
+        var h = '<div class="note-item" style="margin-left:' + (depth*18) + 'px"><div style="display:flex;gap:8px;align-items:flex-start">'
+          + avatarHtml(cm.author_name, cm.author_avatar, 26)
+          + '<div style="flex:1;min-width:0">'
+          + '<div style="font-size:11px;font-weight:600;color:var(--amber-800);margin-bottom:2px">' + esc(cm.author_name || 'A member') + ' <span style="font-weight:400;color:var(--text-tertiary)">· ' + relTime(cm.created_at) + '</span></div>'
+          + '<div class="act-ctx">' + esc(cm.body) + '</div>'
+          + '<div class="vc-actions">'
+          +   '<button class="vc-btn' + (rx.mine==='up' ? ' on' : '') + '" onclick="reactComment(\'' + cm.id + '\',\'up\',\'' + venueId + '\')"><i class="ti ti-thumb-up"></i>' + (rx.up || '') + '</button>'
+          +   '<button class="vc-btn' + (rx.mine==='down' ? ' on down' : '') + '" onclick="reactComment(\'' + cm.id + '\',\'down\',\'' + venueId + '\')"><i class="ti ti-thumb-down"></i>' + (rx.down || '') + '</button>'
+          +   (depth === 0 ? '<button class="vc-btn" onclick="vcReplyTo=\'' + cm.id + '\';loadVenueComments(\'' + venueId + '\')"><i class="ti ti-corner-down-right"></i>Reply</button>' : '')
+          +   (mine ? '<button class="vc-btn" onclick="deleteVenueComment(\'' + cm.id + '\',\'' + venueId + '\')"><i class="ti ti-trash"></i></button>' : '')
+          + '</div>'
+          + (vcReplyTo === cm.id ? '<input class="note-input" style="margin:8px 0 0;width:100%" placeholder="Reply… Enter to post, Esc to cancel" autofocus onkeydown="postVenueComment(event,\'' + venueId + '\',\'' + cm.id + '\')">' : '')
+          + '</div></div></div>';
+        (kids[cm.id] || []).forEach(function(k){ h += cHtml(k, depth + 1); });
+        return h;
+      }
+      el.innerHTML = roots.length ? roots.map(function(cm){ return cHtml(cm, 0); }).join('') : '<p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">No intel yet — first to play it, first to post.</p>';
+      renderVenuePulse(venueId, rows.length);
+    };
+    if (!ids.length) { go2({}); return; }
+    sb.from('venue_comment_reactions').select('*').in('comment_id', ids).then(function(rr){
+      var map = {};
+      ((rr.data)||[]).forEach(function(x){
+        var m2 = map[x.comment_id] = map[x.comment_id] || { up:0, down:0, mine:null };
+        m2[x.kind]++;
+        if (x.artist_id === ME) m2.mine = x.kind;
+      });
+      go2(map);
+    });
   });
 }
-function postVenueComment(e, venueId){
+function reactComment(cid, kind, venueId){
+  sb.from('venue_comment_reactions').select('kind').eq('comment_id', cid).eq('artist_id', ME).then(function(r){
+    var cur = r.data && r.data[0] && r.data[0].kind;
+    var op = cur === kind
+      ? sb.from('venue_comment_reactions').delete().eq('comment_id', cid).eq('artist_id', ME)
+      : sb.from('venue_comment_reactions').upsert({ comment_id: cid, artist_id: ME, kind: kind });
+    op.then(function(rr){ if (rr.error) showToast(rr.error.message, true); else loadVenueComments(venueId); });
+  });
+}
+function postVenueComment(e, venueId, parentId){
+  if (e.key === 'Escape') { vcReplyTo = null; loadVenueComments(venueId); return; }
   if (e.key !== 'Enter' || !e.target.value.trim()) return;
   var body = e.target.value.trim(); e.target.value = '';
-  sb.from('venue_comments').insert({ venue_id: venueId, artist_id: ME, author_name: profile.name || 'A member', body: body }).then(function(r){
+  vcReplyTo = null;
+  sb.from('venue_comments').insert({ venue_id: venueId, artist_id: ME, author_name: profile.name || 'A member', author_avatar: profile.avatar_url || null, parent_id: parentId || null, body: body }).then(function(r){
     if (r.error) { showToast('Could not post: ' + r.error.message, true); return; }
-    delete pulseCache[venueId];
+    delete pulseCache[venueId]; feedCache = null;
     loadVenueComments(venueId);
   });
 }
