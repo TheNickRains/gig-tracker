@@ -99,6 +99,7 @@
       backdrop-filter: blur(18px) saturate(1.3);
       -webkit-backdrop-filter: blur(18px) saturate(1.3);
     }
+    .nav::after { content: ''; position: absolute; top: 100%; left: 0; right: 0; height: 30px; pointer-events: none; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); -webkit-mask-image: linear-gradient(to bottom, black, transparent); mask-image: linear-gradient(to bottom, black, transparent); }
     /* Keep the top gutter clean while scrolling — content can't slide through it. */
     body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: calc(env(safe-area-inset-top, 0px) + 16px); background: var(--bg-primary); z-index: 80; pointer-events: none; }
   }
@@ -497,6 +498,14 @@
   .ws-row:hover { border-color: var(--amber-400); }
   .ws-name { font-size: 13.5px; font-weight: 600; }
   .ws-addr { font-size: 11.5px; color: var(--text-secondary); overflow-wrap: anywhere; }
+  .convo-composer { padding: 12px 12px 12px; border-bottom: 0.5px solid var(--border-light); background: var(--bg-secondary); border-radius: 14px 14px 0 0; }
+  .cc-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .cc-seg { display: inline-flex; border: 0.5px solid var(--border-mid); border-radius: 7px; overflow: hidden; }
+  .cc-opt { border: none; background: none; font-family: inherit; font-size: 11.5px; padding: 5px 12px; color: var(--text-secondary); cursor: pointer; }
+  .cc-opt.on { background: var(--amber-800); color: #fff; font-weight: 600; }
+  .cc-channels { display: inline-flex; gap: 2px; }
+  .cc-ch { border: none; background: none; font-size: 14px; padding: 4px 6px; border-radius: 7px; cursor: pointer; opacity: 0.45; filter: grayscale(0.5); }
+  .cc-ch.on { opacity: 1; filter: none; background: var(--bg-primary); box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
   .composer { display: flex; gap: 6px; align-items: center; padding: 10px 12px 12px; }
   .composer .note-input { margin: 0; width: auto; flex: 1; }
   textarea.note-input { resize: none; line-height: 1.45; font-family: inherit; min-height: 40px; }
@@ -611,6 +620,9 @@
   .act-ctx { font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
   .activity-item.action { padding: 6px 0; align-items: center; }
   .note-item { padding: 10px 12px; border-bottom: 0.5px solid var(--border-light); }
+  @media (max-width: 599px) {
+    .note-clamp:not(.open) { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+  }
   .note-item:last-of-type { border-bottom: none; }
   textarea.tpl-body { width: 100%; min-height: 200px; border: 1px dashed var(--border-mid); border-radius: 10px; padding: 10px; background: transparent; color: inherit; font: inherit; font-size: 13px; line-height: 1.5; resize: vertical; }
   textarea.tpl-body:focus { outline: none; border-color: var(--amber-400); border-style: solid; }
@@ -1045,7 +1057,7 @@
       <div class="setting-row"><div class="setting-icon"><i class="ti ti-bell"></i></div><div class="setting-label">Push notifications<div class="section-sub" style="margin-top:2px">Replies, sends &amp; reviews — on this device</div></div><label class="switch"><input type="checkbox" id="push-toggle" onchange="togglePush()"><span></span></label></div>
       <div class="setting-row"><div class="setting-icon"><i class="ti ti-map-pin"></i></div><div class="setting-label">Home market<div class="section-sub" style="margin-top:2px">Where you live — anchors routing &amp; the AI&rsquo;s sense of place</div></div><input class="pipe-search" id="home-market-input" style="margin:0;max-width:150px;font-size:12.5px" placeholder="e.g. Austin, TX" onchange="saveHomeMarket()"></div>
       <div class="setting-row" onclick="googleRowClick()"><div class="setting-icon"><i class="ti ti-brand-google"></i></div><div class="setting-label">Gmail &amp; Calendar</div><span class="setting-value" id="google-conn-status">Connect</span><i class="ti ti-chevron-right"></i></div>
-      <div class="setting-row"><div class="setting-icon"><i class="ti ti-send"></i></div><div class="setting-label">Let the assistant send email<div class="section-sub" style="margin-top:2px">Off — it drafts only; you send</div></div><label class="switch"><input type="checkbox" id="auto-send-toggle" onchange="saveAutoSend()"><span></span></label></div>
+      <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-robot"></i></div><div class="setting-label">Agent auto-replies <span class="soon">soon</span><div class="section-sub" style="margin-top:2px">The assistant answering routine emails itself — your scheduled sends already fire on their own</div></div></div>
       <div class="setting-row" onclick="signOut()"><div class="setting-icon"><i class="ti ti-logout"></i></div><div class="setting-label" style="color:var(--dead-text)">Sign out</div></div>
     </div>
   </div>
@@ -1827,7 +1839,7 @@ function openDetail(id) {
       ? '<button class="note-ic" onclick="event.stopPropagation();startNoteEdit(\'' + a.id + '\',' + id + ')" title="Edit"><i class="ti ti-pencil"></i></button>'
         + '<button class="note-ic" onclick="event.stopPropagation();deleteNote(\'' + a.id + '\',' + id + ')" title="Delete"><i class="ti ti-trash"></i></button>'
       : '';
-    return '<div class="note-item"><div style="display:flex;gap:6px;align-items:flex-start"><div style="flex:1;min-width:0"><div class="act-ctx">' + esc(a.text) + '</div><div class="activity-time">' + a.time + '</div></div>' + icons + '</div></div>';
+    return '<div class="note-item"><div style="display:flex;gap:6px;align-items:flex-start"><div style="flex:1;min-width:0"><div class="act-ctx note-clamp" onclick="this.classList.toggle(\'open\')">' + esc(a.text) + '</div><div class="activity-time">' + a.time + '</div></div>' + icons + '</div></div>';
   }).join('');
 
   // Slice B: schedule the draft. One pending send per entry; the worker fires it
@@ -1944,19 +1956,23 @@ function openDetail(id) {
     + '</div><div>'
     + tplSection
     + '<div class="section-label">Conversation</div>'
-    + '<div class="card card-flush" style="margin-bottom:20px">' + actHtml
-    + '<div style="border-top:0.5px solid var(--border-light);padding:10px 12px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
-    + '<div class="followup-chips" style="margin:0">'
-    +   '<div class="fu-chip' + ((qlDir[p.uuid]||'out')==='out'?' selected':'') + '" onclick="qlDir[\'' + p.uuid + '\']=\'out\';openDetail(' + id + ')">↗ You</div>'
-    +   '<div class="fu-chip' + (qlDir[p.uuid]==='in'?' selected':'') + '" onclick="qlDir[\'' + p.uuid + '\']=\'in\';openDetail(' + id + ')">↙ ' + esc(first) + '</div>'
-    + '</div>'
-    + '<div class="followup-chips" style="margin:0">'
+    + '<div class="card card-flush" style="margin-bottom:20px">'
+    + '<div class="convo-composer">'
+    +   '<div class="cc-row">'
+    +     '<div class="cc-seg">'
+    +       '<button class="cc-opt' + ((qlDir[p.uuid]||'out')==='out'?' on':'') + '" onclick="qlDir[\'' + p.uuid + '\']=\'out\';openDetail(' + id + ')">You</button>'
+    +       '<button class="cc-opt' + (qlDir[p.uuid]==='in'?' on':'') + '" onclick="qlDir[\'' + p.uuid + '\']=\'in\';openDetail(' + id + ')">' + esc(first) + '</button>'
+    +     '</div>'
+    +     '<div class="cc-channels">'
     + [['💬','Text'],['📞','Call'],['📝','Form'],['🤝','Met'],['✉️','Email']].map(function(ch){
-        return '<div class="fu-chip' + ((quickLogChannel[p.uuid]||'💬')===ch[0]?' selected':'') + '" style="font-size:11px;padding:3px 8px" onclick="quickLogChannel[\'' + p.uuid + '\']=\'' + ch[0] + '\';openDetail(' + id + ')" title="' + ch[1] + '">' + ch[0] + '</div>';
+        return '<button class="cc-ch' + ((quickLogChannel[p.uuid]||'💬')===ch[0]?' on':'') + '" onclick="quickLogChannel[\'' + p.uuid + '\']=\'' + ch[0] + '\';openDetail(' + id + ')" title="' + ch[1] + '">' + ch[0] + '</button>';
       }).join('')
-    + '</div></div>'
-    + '<div class="composer"><input class="note-input" id="qlog-in-' + id + '" placeholder="' + (qlDir[p.uuid]==='in' ? ('Log a reply from ' + esc(first)) : 'Log a text, call, or conversation') + '…" onkeydown="saveQuickLog(event,' + id + ')">'
-    + '<button class="send-btn" onclick="saveQuickLog({key:\'Enter\',target:document.getElementById(\'qlog-in-' + id + '\')},' + id + ')" title="Log it"><i class="ti ti-arrow-up"></i></button></div>'
+    +     '</div>'
+    +   '</div>'
+    +   '<div class="composer" style="padding:8px 0 0"><input class="note-input" id="qlog-in-' + id + '" placeholder="' + (qlDir[p.uuid]==='in' ? ('Log what ' + esc(first) + ' said') : 'Log a text, call, or conversation') + '…" onkeydown="saveQuickLog(event,' + id + ')">'
+    +   '<button class="send-btn" onclick="saveQuickLog({key:\'Enter\',target:document.getElementById(\'qlog-in-' + id + '\')},' + id + ')" title="Log it"><i class="ti ti-arrow-up"></i></button></div>'
+    + '</div>'
+    + actHtml
     + '</div>'
     + '</div></div>';
 
