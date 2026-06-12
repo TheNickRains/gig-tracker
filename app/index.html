@@ -1163,8 +1163,9 @@ function go(screen) {
   document.getElementById('screen-' + screen).classList.add('active');
   setActiveTab(screen);
   document.getElementById('avatar-btn').classList.remove('active');
+  var screenChanged = currentScreen !== screen;
   currentScreen = screen;
-  window.scrollTo(0, 0); // every screen starts at the tip-top — back arrow always visible
+  if (screenChanged) window.scrollTo(0, 0); // new screens start at the top; in-place refreshes hold position
   if (screen === 'home') renderHome();
   if (screen === 'discover') { renderDiscover(); setTimeout(function(){ lsSet('gc_disc_seen', String(Date.now())); }, 4000); }
   if (screen === 'pipeline') {
@@ -1234,6 +1235,7 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', function(){
     var kb = (window.innerHeight - window.visualViewport.height) > 140;
     var b = document.querySelector('.bnav'); if (b) b.style.display = kb ? 'none' : '';
+    var f = document.querySelector('.bnav-fade'); if (f) f.style.display = kb ? 'none' : '';
   });
 }
 
@@ -1960,12 +1962,12 @@ function openDetail(id) {
     + (composeOpen[p.uuid] ? '<div class="convo-composer" style="border:none;border-radius:14px;margin-bottom:10px">'
     +   '<div class="cc-row">'
     +     '<div class="cc-seg">'
-    +       '<button class="cc-opt' + ((qlDir[p.uuid]||'out')==='out'?' on':'') + '" onclick="qlDir[\'' + p.uuid + '\']=\'out\';openDetail(' + id + ')">You</button>'
-    +       '<button class="cc-opt' + (qlDir[p.uuid]==='in'?' on':'') + '" onclick="qlDir[\'' + p.uuid + '\']=\'in\';openDetail(' + id + ')">' + esc(first) + '</button>'
+    +       '<button class="cc-opt' + ((qlDir[p.uuid]||'out')==='out'?' on':'') + '" onclick="setQlDir(' + id + ',\'out\',this)">You</button>'
+    +       '<button class="cc-opt' + (qlDir[p.uuid]==='in'?' on':'') + '" onclick="setQlDir(' + id + ',\'in\',this)">' + esc(first) + '</button>'
     +     '</div>'
     +     '<div class="cc-channels">'
     + [['💬','Text'],['📞','Call'],['📝','Form'],['🤝','Met'],['✉️','Email']].map(function(ch){
-        return '<button class="cc-ch' + ((quickLogChannel[p.uuid]||'💬')===ch[0]?' on':'') + '" onclick="quickLogChannel[\'' + p.uuid + '\']=\'' + ch[0] + '\';openDetail(' + id + ')" title="' + ch[1] + '">' + ch[0] + '</button>';
+        return '<button class="cc-ch' + ((quickLogChannel[p.uuid]||'💬')===ch[0]?' on':'') + '" onclick="setQlChan(' + id + ',\'' + ch[0] + '\',this)" title="' + ch[1] + '">' + ch[0] + '</button>';
       }).join('')
     +     '</div>'
     +   '</div>'
@@ -2089,6 +2091,18 @@ function textDraft(id){
 }
 var qlDir = {};            // 'out' (default) | 'in'
 var composeOpen = {};
+function setQlDir(id, dir, btn){
+  var p = pipeline[id]; qlDir[p.uuid] = dir;
+  btn.parentNode.querySelectorAll('.cc-opt').forEach(function(x){ x.classList.remove('on'); });
+  btn.classList.add('on');
+  var inp = document.getElementById('qlog-in-' + id);
+  if (inp) inp.placeholder = dir === 'in' ? ('Log what ' + (p.contact||'').split(' ')[0] + ' said…') : 'Log a text, call, or conversation…';
+}
+function setQlChan(id, ch, btn){
+  var p = pipeline[id]; quickLogChannel[p.uuid] = ch;
+  btn.parentNode.querySelectorAll('.cc-ch').forEach(function(x){ x.classList.remove('on'); });
+  btn.classList.add('on');
+}
 function toggleCompose(id){
   var p = pipeline[id];
   composeOpen[p.uuid] = !composeOpen[p.uuid];
