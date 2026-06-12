@@ -348,11 +348,18 @@ async function refreshToneProfile(artistId, token) {
     if (samples.length >= 8) break;
   }
   if (samples.length < 2) { await sPatch(`artists?id=eq.${artistId}`, { tone_updated_at: new Date().toISOString() }); return; }
+  // The explicit loop: AI generation vs what the artist ACTUALLY sent.
+  const pairs = await sGet(`scheduled_messages?artist_id=eq.${artistId}&status=eq.sent&ai_draft=not.is.null&order=sent_at.desc&limit=5&select=ai_draft,body`);
+  const diffSection = pairs.length
+    ? `\n\nEDIT PAIRS — the AI suggested the first version; the artist edited it into the second before sending. LEARN THE EDITS (what they cut, add, reword — that delta IS their taste):\n` +
+      pairs.map((pr, i) => `--- PAIR ${i + 1} ---\nAI SUGGESTED:\n${(pr.ai_draft || "").slice(0, 500)}\nARTIST SENT:\n${(pr.body || "").slice(0, 500)}`).join("\n\n")
+    : "";
   try {
     const card = await gemini(
       `These are real emails a working musician sent (their authentic voice — including how they edit AI suggestions before sending):\n\n` +
       samples.map((s, i) => `--- EMAIL ${i + 1} ---\n${s}`).join("\n\n") +
-      `\n\nDistill a TONE CARD (max 160 words) a ghostwriter would use to write indistinguishably as this person: greeting + sign-off style, sentence rhythm/length, formality, warmth, characteristic phrases (quote 3-5 verbatim), what they never do. Plain text.`, false);
+      diffSection +
+      `\n\nDistill a TONE CARD (max 180 words) a ghostwriter would use to write indistinguishably as this person: greeting + sign-off style, sentence rhythm/length, formality, warmth, characteristic phrases (quote 3-5 verbatim), what they never do — and, if edit pairs are present, the specific things they change about AI drafts. Plain text.`, false);
     if (card) {
       await sPatch(`artists?id=eq.${artistId}`, { tone_profile: card.slice(0, 2000), tone_updated_at: new Date().toISOString() });
       console.log("tone profile refreshed", artistId, "from", samples.length, "sent emails");
@@ -718,6 +725,7 @@ http.createServer((req, res) => {
       const uid = await verifyUser(req);
       if (!uid) { res.writeHead(401, hdr); res.end(JSON.stringify({ error: "Not signed in" })); return; }
       res.writeHead(202, hdr); res.end(JSON.stringify({ ok: true }));
+      console.log("poke received from", uid.slice(0, 8));
       try {
         await processScheduled();
         const conns = await sGet(`google_connections?artist_id=eq.${uid}&select=refresh_token`);

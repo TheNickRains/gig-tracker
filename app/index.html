@@ -597,7 +597,8 @@
     font-size: 13px; line-height: 1.75; white-space: pre-wrap; min-height: 130px;
     border: 0.5px solid var(--border-light); color: var(--text-primary);
   }
-  .tpl-actions { display: flex; gap: 8px; margin-top: 10px;  flex-wrap: wrap; }
+  .tpl-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; justify-content: center; }
+  .tpl-actions .btn-sm { justify-content: center; padding: 11px 10px; display: inline-flex; align-items: center; gap: 6px; }
 
   /* Follow-up scheduler */
   .followup-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
@@ -1675,9 +1676,22 @@ function ppRoomSearch(pid, q){
   q = (q||'').toLowerCase();
   if (q.length < 2) { out.innerHTML = ''; return; }
   var hits = venues.filter(function(v){ return (v.name + ' ' + v.city).toLowerCase().indexOf(q) >= 0; }).slice(0, 5);
-  out.innerHTML = hits.length ? hits.map(function(v){
+  out.innerHTML = (hits.length ? hits.map(function(v){
     return '<div class="ws-row" onclick="linkRoomToPerson(\'' + pid + '\',\'' + v.id + '\')"><div class="ws-name">' + esc(v.name) + '</div><div class="ws-addr">' + esc(v.city || '') + '</div></div>';
-  }).join('') : '<div class="ws-row" style="cursor:default;color:var(--text-secondary);font-size:12px">No venue match — add the room via ⊕ first, then link.</div>';
+  }).join('') : '')
+  + '<div class="ws-row" onclick="createAndLinkRoom(\'' + pid + '\',document.getElementById(\'pp-room-q\').value)"><div class="ws-name" style="color:var(--amber-800)"><i class="ti ti-plus"></i> Create \u201c' + esc(q) + '\u201d and link it</div><div class="ws-addr">New venue, attached to this booker — details later via Edit</div></div>';
+}
+function createAndLinkRoom(pid, name){
+  name = (name || '').trim();
+  if (name.length < 2) { showToast('Type the venue name first', true); return; }
+  sb.from('venues').insert({ name: name, created_by_name: profile.name || null, ticket_type: 'hard' }).select().single().then(function(r){
+    if (r.error) { showToast('Could not create: ' + r.error.message, true); return; }
+    sb.from('venue_people').upsert({ venue_id: r.data.id, person_id: pid }).then(function(){
+      showToast('Created & linked — fill details from Discover when ready');
+      loadVenues();
+      openPersonView(pid);
+    });
+  });
 }
 function linkRoomToPerson(pid, venueId){
   sb.from('venue_people').upsert({ venue_id: venueId, person_id: pid }).then(function(r){
@@ -1863,7 +1877,7 @@ function openDetail(id) {
       var text = inbound ? a.text : a.text.replace(/^Sent:\s*/,'');
       var manual = a.id && a.source === 'manual';
       if (manual && notesEditing[a.id]) {
-        return '<div class="msg ' + (inbound ? 'them' : 'you') + '" style="width:88%"><textarea class="note-input" rows="1" style="margin:0;width:100%" autofocus onkeydown="saveNoteEdit(event,\'' + a.id + '\',' + id + ')">' + esc(a.text) + '</textarea></div>';
+        return '<div class="msg ' + (inbound ? 'them' : 'you') + '" style="width:88%"><div class="composer" style="padding:0"><textarea class="note-input" id="edit-' + a.id + '" rows="1" style="margin:0" autofocus onkeydown="saveNoteEdit(event,\'' + a.id + '\',' + id + ')">' + esc(a.text) + '</textarea><button class="send-btn" onclick="saveNoteEdit({key:\'Enter\',metaKey:true,target:document.getElementById(\'edit-' + a.id + '\')},\'' + a.id + '\',' + id + ')" title="Save"><i class="ti ti-check"></i></button></div></div>';
       }
       var content = a.summary
         ? '<div class="m-sum">' + esc(a.summary) + '</div><div class="m-raw">' + esc(text) + '</div>'
@@ -1878,7 +1892,7 @@ function openDetail(id) {
   }).join('') || '<p style="color:var(--text-secondary);font-size:13px">No conversation yet — emails with ' + esc(first) + ' appear here automatically.</p>') + '</div>';
   var notesHtml = notes.map(function(a){
     if (a.id && notesEditing[a.id]) {
-      return '<div class="note-item"><textarea class="note-input" rows="1" style="margin:0;width:100%" onkeydown="saveNoteEdit(event,\'' + a.id + '\',' + id + ')" autofocus>' + esc(a.text) + '</textarea><div style="font-size:10px;color:var(--text-tertiary);margin-top:3px">\u2318\u21a9 saves · Esc cancels</div></div>';
+      return '<div class="note-item"><div class="composer" style="padding:0"><textarea class="note-input" id="edit-' + a.id + '" rows="1" style="margin:0" onkeydown="saveNoteEdit(event,\'' + a.id + '\',' + id + ')" autofocus>' + esc(a.text) + '</textarea><button class="send-btn" onclick="saveNoteEdit({key:\'Enter\',metaKey:true,target:document.getElementById(\'edit-' + a.id + '\')},\'' + a.id + '\',' + id + ')" title="Save"><i class="ti ti-check"></i></button></div></div>';
     }
     var icons = a.id
       ? '<button class="note-ic" onclick="event.stopPropagation();startNoteEdit(\'' + a.id + '\',' + id + ')" title="Edit"><i class="ti ti-pencil"></i></button>'
@@ -1969,7 +1983,7 @@ function openDetail(id) {
         + (p.phone ? '<button class="btn-' + (p.email ? 'secondary' : 'primary') + ' btn-sm" onclick="textDraft(' + id + ')"><i class="ti ti-message"></i> Text it</button>' : '')
         + (p.form ? '<button class="btn-' + (p.email || p.phone ? 'secondary' : 'primary') + ' btn-sm" onclick="openBookingForm(' + id + ')"><i class="ti ti-external-link"></i> Open form</button>' : '')
         + '<button class="btn-secondary btn-sm" onclick="copyTpl(' + id + ')"><i class="ti ti-copy"></i> Copy</button>'
-        + '<button class="btn-secondary btn-sm" onclick="aiDraft(' + id + ')"><i class="ti ti-sparkles"></i> Draft with AI</button>'
+        + '<button class="btn-secondary btn-sm" onclick="aiDraft(' + id + ')"><i class="ti ti-sparkles"></i> ' + (activeTpl[id] ? 'Enhance with AI' : 'Draft with AI') + '</button>'
         + '</div>'
         + (p.email
           ? '<div style="border-top:0.5px solid var(--border-light);padding-top:12px;margin-top:12px">'
@@ -2026,14 +2040,14 @@ function openDetail(id) {
 }
 
 var draftText = {}; // per-entry draft (keyed by uuid) — survives re-renders
+var draftAI = {};   // last AI generation per entry — diffed against what you send
 function switchTpl(id, key) {
   var p = pipeline[id];
-  if (!key) { activeTpl[id] = null; return; } // "Select a template…" = no-op
+  if (!key) { activeTpl[id] = null; openDetail(id); return; }
   activeTpl[id] = key;
   var text = templates[key](p);
   draftText[p.uuid] = text;
-  var ta = document.getElementById('tpl-body-' + id);
-  if (ta) ta.value = text;
+  openDetail(id); // refresh: editor text + the Draft/Enhance button label
 }
 function stageIntent(p){
   if (p.s==='lead') return 'outreach';
@@ -2069,6 +2083,7 @@ function aiDraft(id) {
       .then(function(x){
         if (!x.ok) { showToast(x.j.error || 'AI draft failed', true); return; }
         draftText[p.uuid] = x.j.draft || '';
+        draftAI[p.uuid] = x.j.draft || '';
         var ta = document.getElementById('tpl-body-' + id);
         if (ta) { ta.value = draftText[p.uuid]; showToast('Draft ready — make it yours before sending'); }
       })
@@ -2243,7 +2258,7 @@ function scheduleSend(id) {
   } else { at = new Date(); at.setDate(at.getDate() + sel); at.setHours(9, 0, 0, 0); }
   sb.from('scheduled_messages').insert({
     artist_id: ME, pipeline_entry_id: p.uuid, to_email: p.email,
-    subject: defaultSubject(), body: body, send_at: at.toISOString(), human: now
+    subject: defaultSubject(), body: body, send_at: at.toISOString(), human: now, ai_draft: draftAI[p.uuid] || null
   }).select().single().then(function(r){
     if (r.error) { showToast('Could not schedule: ' + r.error.message, true); return; }
     p.sched = r.data;
