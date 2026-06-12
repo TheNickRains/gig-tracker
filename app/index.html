@@ -1723,6 +1723,12 @@ function openDetail(id) {
 
   // Tracker dots ARE the stage control. Passed/Dead are TOGGLES: tap on to
   // close out, tap the lit one again to restore the deal where it was.
+  var dealType = '<div style="display:flex;align-items:center;gap:8px;margin:-6px 0 14px;justify-content:flex-end">'
+    + '<span style="font-size:11px;color:var(--text-tertiary)">Deal type' + (!p.tOverride ? ' · from venue' : '') + '</span>'
+    + '<div class="followup-chips" style="margin:0">'
+    + '<div class="fu-chip' + (p.t==='soft'?' selected':'') + '" onclick="setDealTicket(' + id + ',\'soft\')">Soft</div>'
+    + '<div class="fu-chip' + (p.t==='hard'?' selected':'') + '" onclick="setDealTicket(' + id + ',\'hard\')">Hard</div>'
+    + '</div></div>';
   var statusActions = '<div class="closeout">'
     + '<button class="closeout-btn passed' + (p.s==='passed'?' on':'') + '" onclick="setStatus(' + id + ',\'passed\')"><i class="ti ti-archive"></i> ' + (p.s==='passed'?'Passed — tap to reopen':'Mark passed') + '</button>'
     + '<button class="closeout-btn deadend' + (p.s==='dead'?' on':'') + '" onclick="setStatus(' + id + ',\'dead\')"><i class="ti ti-circle-x"></i> ' + (p.s==='dead'?'Dead end — tap to reopen':'Dead end') + '</button></div>';
@@ -1779,6 +1785,7 @@ function openDetail(id) {
     + (stageIdx>=0 ? '<div class="stage-track" style="margin-bottom:20px">' + stageDots + '</div>' : '')
     + wonBanner
     + statusActions
+    + dealType
     + attnCard
     + gigDateBlock
     + contactSection(p, id)
@@ -2695,7 +2702,7 @@ function loadVenues(){
 
 function loadPipeline(){
   sb.from('pipeline_entries')
-    .select('id,status,prev_status,venue_id,contact_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs, venue:venues(name,city,state,venue_type,pay_range,ticket_type), contact:contacts(name,title,email,phone,linkedin,instagram)')
+    .select('id,status,prev_status,venue_id,contact_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs,ticket_type, venue:venues(name,city,state,venue_type,pay_range,ticket_type), contact:contacts(name,title,email,phone,linkedin,instagram)')
     .order('last_activity_at',{ascending:false}).then(function(r){
       if(r.error){ console.error('loadPipeline', r.error); return; }
       var rows=r.data||[];
@@ -2703,7 +2710,7 @@ function loadPipeline(){
         var v=e.venue||{}, c=e.contact||{};
         return {id:i, uuid:e.id, venue:v.name||'(unknown venue)', city:v.city||'', state:v.state||'',
                 contact:c.name||'(no contact)', title:c.title||'', email:c.email||'', phone:c.phone||'', linkedin:c.linkedin||'', instagram:c.instagram||'',
-                vtype:v.venue_type||'', pay:v.pay_range||'—', t:v.ticket_type||'soft', s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, contactId:e.contact_id||null, gig_date:e.gig_date||null, gigPay:e.gig_pay||'', gigCosts:e.gig_costs||'', days:daysAgo(e.last_activity_at), activity:[]};
+                vtype:v.venue_type||'', pay:v.pay_range||'—', t:(e.ticket_type||v.ticket_type||'soft'), tOverride:e.ticket_type||null, s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, contactId:e.contact_id||null, gig_date:e.gig_date||null, gigPay:e.gig_pay||'', gigCosts:e.gig_costs||'', days:daysAgo(e.last_activity_at), activity:[]};
       });
       updateHomeStats();
       backfillWins();
@@ -2763,6 +2770,15 @@ function updateHomeStats(){
 }
 
 // ── Status changes ──────────────────────────────────────
+function setDealTicket(id, t){
+  var p = pipeline[id]; if (!p || p.t === t) return;
+  p.t = t; p.tOverride = t;
+  openDetail(id);
+  sb.from('pipeline_entries').update({ ticket_type: t }).eq('id', p.uuid).then(function(r){
+    if (r.error) { showToast('Could not save: ' + r.error.message, true); return; }
+    showToast(t === 'hard' ? 'Hard ticket — Hold stage available, hard rate quoted' : 'Soft ticket — soft rate quoted');
+  });
+}
 function setStatus(id, s){
   var p = pipeline[id]; if(!p) return;
   var terminal = (s==='passed' || s==='dead');
