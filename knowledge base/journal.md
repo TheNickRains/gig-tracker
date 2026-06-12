@@ -27,6 +27,16 @@ tokens expire ~7 days idle (Settings flips to "Connect" — just reconnect); Gem
 caps (upgrade the key's project to billed before the roster leans on AI drafting); push notifications
 are per-device opt-in.
 
+## 2026-06-12 — Off-grid channels + SLICE G concept: the Booking Line
+Phone-only contacts (Julie/Victory Lap) are first-class via HAND-FED logs into the same engine:
+"You said…/They said…" quick-logs write email_out/in activities (bubbles, stage rules mirrored
+app-side, needs-you, AI context all work); phone-only deals get "Text it" (sms: with the draft body,
+schedule hidden — email-only); call icon taps AUTO-log a 'call' activity + arm the outcome log.
+HARD LIMIT (answered for Nick): iOS exposes no SMS/call content to any app — true auto-capture
+requires owning the number. **SLICE G — BOOKING LINE (roadmap):** Twilio number as the public booking
+number (forwards to cell): SMS in/out + calls auto-log via webhook, scheduled texts, text-from-app,
+SMS disconnect — full email parity. Adopt when card-stack outreach makes phone volume real.
+
 ## 2026-06-12 — THE PROMOTION SHIPPED: People × Rooms × Deals (migration 026)
 Trigger fired early — Nick holds THREE talent buyers + a stack of rooms, and said the words: "I have
 slept on this outreach for over a year… we need the full promotion for contacts." Built: `people`

@@ -1621,8 +1621,8 @@ function contactSection(p, id){
       + '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px;overflow-wrap:anywhere">' + esc(p.email || 'no email') + (p.phone ? ' · ' + esc(p.phone) : '') + '</div></div>'
       + '<div class="contact-actions">'
       + (p.email ? '<a class="btn-icon" title="Email" href="mailto:' + esc(p.email) + '"><i class="ti ti-mail"></i></a>' : '')
-      + (p.phone ? '<a class="btn-icon" title="Call" href="tel:' + esc(p.phone).replace(/[^+0-9]/g,'') + '"><i class="ti ti-phone"></i></a>' : '')
-      + (p.phone ? '<a class="btn-icon" title="Text" href="sms:' + esc(p.phone).replace(/[^+0-9]/g,'') + '"><i class="ti ti-message"></i></a>' : '')
+      + (p.phone ? '<a class="btn-icon" title="Call" href="tel:' + esc(p.phone).replace(/[^+0-9]/g,'') + '" onclick="logCallTap(' + id + ')"><i class="ti ti-phone"></i></a>' : '')
+      + (p.phone ? '<a class="btn-icon" title="Text" href="sms:' + esc(p.phone).replace(/[^+0-9]/g,'') + '" onclick="quickLogMode[pipeline[' + id + '].uuid]=\'out\';setTimeout(function(){openDetail(' + id + ')},400)"><i class="ti ti-message"></i></a>' : '')
       + (p.linkedin ? '<a class="btn-icon" title="LinkedIn" target="_blank" rel="noopener" href="' + esc(linkUrl(p.linkedin, 'linkedin')) + '"><i class="ti ti-brand-linkedin"></i></a>' : '')
       + (p.instagram ? '<a class="btn-icon" title="Instagram" target="_blank" rel="noopener" href="' + esc(linkUrl(p.instagram, 'instagram')) + '"><i class="ti ti-brand-instagram"></i></a>' : '')
       + '<button class="btn-icon" title="Edit contact" onclick="startContactEdit(' + id + ',\'' + (p.personId||'') + '\')"><i class="ti ti-pencil"></i></button>'
@@ -1973,6 +1973,15 @@ function textDraft(id){
   setTimeout(function(){ openDetail(id); }, 400);
 }
 var quickLogMode = {};
+function logCallTap(id){
+  var p = pipeline[id];
+  sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: 'call', body: 'Called ' + ((p.contact||'').split(' ')[0] || 'contact'), source: 'manual' }).then(function(r){
+    if (!r.error) sb.from('pipeline_entries').update({ last_activity_at: new Date().toISOString() }).eq('id', p.uuid).then(function(){ loadPipeline(); });
+  });
+  // arm the log for the outcome
+  quickLogMode[p.uuid] = 'out';
+  setTimeout(function(){ if (currentScreen==='detail' && currentDetailUuid===p.uuid) openDetail(id); }, 600);
+}
 function quickLog(id, dir){
   var p = pipeline[id];
   quickLogMode[p.uuid] = quickLogMode[p.uuid] === dir ? null : dir;
