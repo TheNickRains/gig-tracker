@@ -597,7 +597,7 @@
     font-size: 13px; line-height: 1.75; white-space: pre-wrap; min-height: 130px;
     border: 0.5px solid var(--border-light); color: var(--text-primary);
   }
-  .tpl-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .tpl-actions { display: flex; gap: 8px; margin-top: 10px;  flex-wrap: wrap; }
 
   /* Follow-up scheduler */
   .followup-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
@@ -1638,10 +1638,20 @@ function openPersonView(pid){
       + '<div style="font-size:12.5px;color:var(--text-secondary)">' + esc([per.title, per.org].filter(Boolean).join(' · ') || '—') + '</div></div>'
       + '<div class="contact-actions">' + icons + '</div></div>'
       + (per.email ? '<div style="font-size:12px;color:var(--text-tertiary);margin-bottom:16px;overflow-wrap:anywhere">' + esc(per.email) + (per.phone ? ' · ' + esc(per.phone) : '') + '</div>' : '<div style="margin-bottom:16px"></div>')
-      + '<div class="section-label">Books these rooms</div>'
+      + '<div class="section-label" style="display:flex;align-items:center;justify-content:space-between">Books these rooms'
+      + '<button class="vc-btn" onclick="togglePersonRoomAdd(\'' + pid + '\')"><i class="ti ti-plus"></i> Link a room</button></div>'
+      + '<div id="pp-room-add"></div>'
       + (rooms.length
-        ? '<div class="followup-chips" style="margin:0 0 18px">' + rooms.map(function(x){ return '<div class="fu-chip" onclick="openVenueDetail(\'' + x.venue.id + '\')">' + esc(x.venue.name) + (x.venue.city ? ' · ' + esc(x.venue.city) : '') + '</div>'; }).join('') + '</div>'
-        : '<div class="card" style="margin-bottom:18px;font-size:13px;color:var(--text-secondary)">No rooms linked yet.</div>')
+        ? '<div class="card card-flush" style="margin-bottom:18px">' + rooms.map(function(x){
+            var deal = pipeline.filter(function(pp){ return pp.personId === pid && pp.venueId === x.venue.id; })[0];
+            return '<div class="war-row" onclick="openVenueDetail(\'' + x.venue.id + '\')">'
+              + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(x.venue.name) + '</div><div class="war-sub">' + esc(x.venue.city || '') + (x.role ? ' · ' + esc(x.role) : '') + '</div></div>'
+              + (deal
+                ? '<button class="vchip" onclick="event.stopPropagation();openDetail(' + deal.id + ')">deal: ' + statusLabel[deal.s] + ' →</button>'
+                : '<button class="vchip primary" onclick="event.stopPropagation();startDealWithPerson(\'' + pid + '\',\'' + x.venue.id + '\')"><i class="ti ti-plus"></i> deal</button>')
+              + '</div>';
+          }).join('') + '</div>'
+        : '<div class="card" style="margin-bottom:18px;font-size:13px;color:var(--text-secondary)">No rooms linked yet — link one above.</div>')
       + '<div class="section-label">Your deals with them</div>'
       + (deals.length
         ? '<div class="card card-flush" style="margin-bottom:20px">' + deals.map(function(pp){
@@ -1650,6 +1660,39 @@ function openPersonView(pid){
               + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
           }).join('') + '</div>'
         : '<div class="card" style="margin-bottom:20px;font-size:13px;color:var(--text-secondary)">No deals yet — add one of their rooms to your pipeline.</div>');
+  });
+}
+
+// Person ↔ rooms: link another venue to this booker; spin deals per room.
+function togglePersonRoomAdd(pid){
+  var box = document.getElementById('pp-room-add'); if (!box) return;
+  if (box.innerHTML) { box.innerHTML = ''; return; }
+  box.innerHTML = '<input class="pipe-search" id="pp-room-q" placeholder="Search your venues…" autocomplete="off" oninput="ppRoomSearch(\'' + pid + '\',this.value)"><div id="pp-room-results" style="margin-bottom:12px"></div>';
+  var inp = document.getElementById('pp-room-q'); if (inp) inp.focus();
+}
+function ppRoomSearch(pid, q){
+  var out = document.getElementById('pp-room-results'); if (!out) return;
+  q = (q||'').toLowerCase();
+  if (q.length < 2) { out.innerHTML = ''; return; }
+  var hits = venues.filter(function(v){ return (v.name + ' ' + v.city).toLowerCase().indexOf(q) >= 0; }).slice(0, 5);
+  out.innerHTML = hits.length ? hits.map(function(v){
+    return '<div class="ws-row" onclick="linkRoomToPerson(\'' + pid + '\',\'' + v.id + '\')"><div class="ws-name">' + esc(v.name) + '</div><div class="ws-addr">' + esc(v.city || '') + '</div></div>';
+  }).join('') : '<div class="ws-row" style="cursor:default;color:var(--text-secondary);font-size:12px">No venue match — add the room via ⊕ first, then link.</div>';
+}
+function linkRoomToPerson(pid, venueId){
+  sb.from('venue_people').upsert({ venue_id: venueId, person_id: pid }).then(function(r){
+    if (r.error) { showToast('Could not link: ' + r.error.message, true); return; }
+    showToast('Room linked to this booker');
+    openPersonView(pid);
+  });
+}
+function startDealWithPerson(pid, venueId){
+  sb.from('pipeline_entries').insert({ artist_id: ME, venue_id: venueId, person_id: pid, status: 'lead' }).select().single().then(function(r){
+    if (r.error) { showToast('Could not start the deal: ' + r.error.message, true); return; }
+    sb.from('activities').insert({ pipeline_entry_id: r.data.id, kind: 'system', body: 'Added to pipeline', source: 'manual' }).then(function(){});
+    loadPipeline();
+    showToast('Opportunity opened — go get it');
+    location.hash = 'entry/' + r.data.id;
   });
 }
 
@@ -1820,7 +1863,7 @@ function openDetail(id) {
       var text = inbound ? a.text : a.text.replace(/^Sent:\s*/,'');
       var manual = a.id && a.source === 'manual';
       if (manual && notesEditing[a.id]) {
-        return '<div class="msg ' + (inbound ? 'them' : 'you') + '" style="width:88%"><input class="note-input" style="margin:0;width:100%" value="' + esc(a.text) + '" autofocus onkeydown="saveNoteEdit(event,\'' + a.id + '\',' + id + ')"></div>';
+        return '<div class="msg ' + (inbound ? 'them' : 'you') + '" style="width:88%"><textarea class="note-input" rows="1" style="margin:0;width:100%" autofocus onkeydown="saveNoteEdit(event,\'' + a.id + '\',' + id + ')">' + esc(a.text) + '</textarea></div>';
       }
       var content = a.summary
         ? '<div class="m-sum">' + esc(a.summary) + '</div><div class="m-raw">' + esc(text) + '</div>'
@@ -1835,7 +1878,7 @@ function openDetail(id) {
   }).join('') || '<p style="color:var(--text-secondary);font-size:13px">No conversation yet — emails with ' + esc(first) + ' appear here automatically.</p>') + '</div>';
   var notesHtml = notes.map(function(a){
     if (a.id && notesEditing[a.id]) {
-      return '<div class="note-item"><input class="note-input" style="margin:0;width:100%" value="' + esc(a.text) + '" onkeydown="saveNoteEdit(event,\'' + a.id + '\',' + id + ')" autofocus></div>';
+      return '<div class="note-item"><textarea class="note-input" rows="1" style="margin:0;width:100%" onkeydown="saveNoteEdit(event,\'' + a.id + '\',' + id + ')" autofocus>' + esc(a.text) + '</textarea><div style="font-size:10px;color:var(--text-tertiary);margin-top:3px">\u2318\u21a9 saves · Esc cancels</div></div>';
     }
     var icons = a.id
       ? '<button class="note-ic" onclick="event.stopPropagation();startNoteEdit(\'' + a.id + '\',' + id + ')" title="Edit"><i class="ti ti-pencil"></i></button>'
@@ -2016,7 +2059,12 @@ function aiDraft(id) {
     fetch(WORKER_URL + '/ai/draft', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
-      body: JSON.stringify({ entry_id: p.uuid })
+      body: JSON.stringify({
+        entry_id: p.uuid,
+        mode: activeTpl[id] ? 'enhance' : 'draft',
+        template_kind: activeTpl[id] || null,
+        template_text: activeTpl[id] ? ((document.getElementById('tpl-body-' + id) || {value:''}).value || '') : null
+      })
     }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
       .then(function(x){
         if (!x.ok) { showToast(x.j.error || 'AI draft failed', true); return; }
@@ -2211,7 +2259,8 @@ function pokeWorker(){
   sb.auth.getSession().then(function(s){
     var tok = s.data && s.data.session && s.data.session.access_token;
     if (!tok) return;
-    fetch(WORKER_URL + '/poke', { method:'POST', headers:{ 'Authorization':'Bearer ' + tok } }).catch(function(){});
+    var poke = function(){ return fetch(WORKER_URL + '/poke', { method:'POST', headers:{ 'Authorization':'Bearer ' + tok } }); };
+    poke().catch(function(){ setTimeout(function(){ poke().catch(function(){}); }, 5000); });
   });
 }
 function cancelScheduled(id) {
@@ -2534,6 +2583,7 @@ var notesEditing = {};
 function startNoteEdit(actId, id){ notesEditing[actId] = true; openDetail(id); }
 function saveNoteEdit(e, actId, id){
   if (e.key === 'Escape') { delete notesEditing[actId]; openDetail(id); return; }
+  if (e.key === 'Enter' && !(e.metaKey || e.ctrlKey)) return; // newline; ⌘↩ saves
   if (e.key !== 'Enter') return;
   var val = e.target.value.trim();
   if (!val) { showToast('Note is empty — use delete instead', true); return; }

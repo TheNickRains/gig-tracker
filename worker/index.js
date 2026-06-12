@@ -565,6 +565,9 @@ async function handleAiDraft(req, res, bodyStr) {
     if (!uid) { res.writeHead(401, hdr); res.end(JSON.stringify({ error: "Not signed in" })); return; }
     const parsed = JSON.parse(bodyStr || "{}");
     const entryId = (parsed.entry_id || "").replace(/[^a-zA-Z0-9-]/g, "");
+    const enhance = parsed.mode === "enhance" && parsed.template_text;
+    const templateKind = String(parsed.template_kind || "").slice(0, 20);
+    const templateText = String(parsed.template_text || "").slice(0, 2000);
     if (!entryId) { res.writeHead(400, hdr); res.end(JSON.stringify({ error: "entry_id required" })); return; }
     const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,gig_date,ticket_type,person_id,venue:venues(name,city,state,venue_type,ticket_type,pay_range,clientele,notes,booking_form_url),person:people(name,title,org),contact:contacts(name,title)`);
     if (!entries.length || entries[0].artist_id !== uid) { res.writeHead(404, hdr); res.end(JSON.stringify({ error: "Entry not found" })); return; }
@@ -586,6 +589,11 @@ async function handleAiDraft(req, res, bodyStr) {
     // The objective is DERIVED FROM EVIDENCE — conversation state, notes, stage,
     // dates — never assumed. Cold intro only when there is zero prior exchange.
     const hasOutbound = acts.some((x) => x.kind === "email_out");
+    if (enhance) {
+      // ENHANCE: keep the template's purpose and shape; make it specific with
+      // the full context (conversation, notes, venue, stage, person, rates).
+      var enhanceObjective = "OBJECTIVE: ENHANCE the artist's chosen \"" + templateKind + "\" template (provided below). Keep its purpose and rough structure, but personalize it deeply with the context: this venue, this contact, the conversation so far, the deal stage, the artist's profile and rates. Cut anything generic. Do not change what KIND of message it is.\nTEMPLATE TO ENHANCE:\n\"\"\"" + templateText + "\"\"\"";
+    }
     const gigWhen = e.gig_date ? new Date(e.gig_date).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : null;
     const firstTouch = !hasOutbound && !lastInbound;
     let objective;
@@ -597,7 +605,7 @@ async function handleAiDraft(req, res, bodyStr) {
     else objective = "OBJECTIVE: first-touch cold outreach — concise intro, why the artist fits THIS room specifically (use the venue notes/clientele), one listen link, clear ask: are they the right person / can we get a date.";
     const draft = await gemini(
       `Write a booking email from a working musician to a venue contact. Plain text only — no subject line, no markdown, no placeholders/brackets, under 160 words, direct and human (never marketing copy). Sign off with the artist's first name and phone.\n\n` +
-      objective + "\n\n" +
+      (enhance ? enhanceObjective : objective) + "\n\n" +
       `DEAL STAGE: ${e.status}${gigWhen ? " · TARGET DATE: " + gigWhen : ""}\n` +
       (lastInbound ? `THEIR LAST MESSAGE (answer this):\n"""${lastInbound.slice(0, 600)}"""\n` : "") +
       (convo ? `CONVERSATION SO FAR:\n${convo}\n` : "") +
