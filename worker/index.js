@@ -218,6 +218,39 @@ async function recordUnmatched(artistId, selfEmail, full) {
   if (r.ok) console.log("unmatched parked:", fromEmail, row.subject.slice(0, 40));
 }
 
+// Quiet backfill: pull the FULL Gmail history with a deal's contact into the
+// conversation (both directions, real dates, deduped). No notifications, no
+// stage moves — this is archaeology, not news.
+async function ingestContactHistory(artistId, token, entryId) {
+  const rows = await sGet(`pipeline_entries?id=eq.${entryId}&artist_id=eq.${artistId}&select=id,last_activity_at,person:people!pipeline_entries_person_id_fkey(email),contact:contacts(email)`);
+  if (!rows.length) return { added: 0, error: "deal not found" };
+  const entry = rows[0];
+  const email = (entry.person && entry.person.email) || (entry.contact && entry.contact.email);
+  if (!email) return { added: 0, error: "no email on contact" };
+  const msgs = await gmailSearch(token, `(from:${email} OR to:${email})`);
+  let added = 0, newest = null;
+  for (const m of msgs.slice(0, 25)) {
+    const full = await gmailGet(token, m.id);
+    if (!full) continue;
+    const from = (header(full, "From") || "").toLowerCase();
+    if (/mailer-daemon|postmaster/.test(from)) continue;
+    const inbound = from.includes(email.toLowerCase());
+    const text = cleanSnippet(extractPlainText(full.payload)) || cleanSnippet(full.snippet) || ("" + (header(full, "Subject") || ""));
+    const row = { pipeline_entry_id: entry.id, kind: inbound ? "email_in" : "email_out", body: text.slice(0, 1200), source: "email_sync", email_message_id: full.id };
+    if (full.internalDate) {
+      row.created_at = new Date(Number(full.internalDate)).toISOString();
+      if (!newest || row.created_at > newest) newest = row.created_at;
+    }
+    const isNew = await logActivity(row);
+    if (isNew) added++;
+  }
+  if (newest && (!entry.last_activity_at || newest > entry.last_activity_at)) {
+    await sPatch(`pipeline_entries?id=eq.${entry.id}`, { last_activity_at: newest });
+  }
+  console.log("history ingest:", email, "added", added, "of", msgs.length);
+  return { added };
+}
+
 // Shared: given a pipeline entry + a Gmail message, log it and advance the stage.
 async function applyMessage(entry, full, contactEmail, artistId) {
   const from = (header(full, "From") || "").toLowerCase();
@@ -789,6 +822,26 @@ http.createServer((req, res) => {
   if (req.method === "GET" && u.pathname === "/push/pubkey") {
     res.writeHead(200, corsHeaders(req));
     res.end(JSON.stringify({ key: VAPID_PUB || "" }));
+    return;
+  }
+  if (req.method === "POST" && u.pathname === "/thread/ingest") {
+    (async () => {
+      const hdr = corsHeaders(req);
+      const uid = await verifyUser(req);
+      if (!uid) { res.writeHead(401, hdr); res.end(JSON.stringify({ error: "Not signed in" })); return; }
+      let body = "";
+      req.on("data", (d) => (body += d));
+      req.on("end", async () => {
+        try {
+          const { entry_id } = JSON.parse(body || "{}");
+          const conns = await sGet(`google_connections?artist_id=eq.${uid}&select=refresh_token`);
+          if (!conns.length) { res.writeHead(400, hdr); res.end(JSON.stringify({ error: "Gmail not connected" })); return; }
+          const token = await refreshAccessToken(conns[0].refresh_token);
+          const out = await ingestContactHistory(uid, token, entry_id);
+          res.writeHead(200, hdr); res.end(JSON.stringify(out));
+        } catch (e) { res.writeHead(500, hdr); res.end(JSON.stringify({ error: e.message })); }
+      });
+    })();
     return;
   }
   if (req.method === "POST" && (u.pathname === "/poke" || u.pathname === "/scheduled/run")) {
