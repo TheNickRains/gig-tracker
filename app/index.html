@@ -108,7 +108,7 @@
   @media (min-width: 1100px) {
     /* Full landscape: the app owns the viewport. */
     .app { max-width: none; border: none; border-radius: 0; box-shadow: none; }
-    .screen { padding-left: 36px; padding-right: 36px; }
+    .screen { padding: 28px 56px 40px; }
     /* Home: 3-zone war room — bookings rail | needs-you stack | stats rail.
        Scoped to .active (the unscoped version glued Home over every screen). */
     /* Two TRUE columns — each its own pane, independently scrollable. */
@@ -119,11 +119,13 @@
     #screen-home.active .stat-grid { display: none; } /* funnel + momentum cover it */
     #screen-home.active #war-cal, #screen-home.active #war-up { display: block; }
     /* Detail: two working columns, capped for readability */
-    .detail-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; align-items: start; max-width: 1240px; }
+    .detail-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 40px; align-items: start; max-width: 1240px; margin: 0 auto; }
+    #screen-venue > div, #screen-event > div { max-width: 860px; margin: 0 auto; }
     /* Pipeline breathes */
     #pipe-list.grid { grid-template-columns: repeat(4, 1fr); }
-    #screen-pipeline { max-width: 1240px; }
-    #screen-discover { max-width: 1240px; }
+    #screen-pipeline { max-width: 1240px; margin: 0 auto; }
+    #screen-discover { max-width: 1240px; margin: 0 auto; }
+    .home-cols { gap: 0 44px; }
     /* Forms & calendar stay readable, centered */
     #screen-settings, #screen-add, #screen-profile { max-width: 680px; margin: 0 auto; }
     #screen-calendar { max-width: 760px; margin: 0 auto; }
@@ -2814,19 +2816,20 @@ function openVenueDetail(id){
   }
   var row = function(label, val){ return val ? ('<div class="field-row"><span class="field-label">' + label + '</span><span class="field-value">' + esc(val) + '</span></div>') : ''; };
   document.getElementById('venue-container').innerHTML =
-    '<button class="back-btn" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>'
-    + '<div class="detail-header"><div class="detail-icon"><i class="ti ti-building-store"></i></div>'
-    + '<div style="flex:1"><div class="detail-venue">' + esc(v.name) + '</div>'
-    + '<div class="detail-meta">' + esc([v.vtype, [v.city, v.state].filter(function(x){return x;}).join(', '), (v.pay && v.pay!=='—' ? v.pay : '')].filter(function(x){return x;}).join(' · ')) + '</div>'
-    + '<span class="badge badge-' + v.type + '" style="margin-top:6px">' + (v.type==='hard'?'Hard ticket':'Soft ticket') + '</span></div>'
-    + '</div>'
-    + '<div class="vchips">'
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
+    + '<button class="back-btn" style="margin-bottom:0" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>'
+    + '<div class="vchips" style="margin:0">'
     + (pipeline.some(function(pp){ return pp.venueId===v.id; })
       ? '<span class="vchip done"><i class="ti ti-check"></i> In pipeline</span>'
       : '<button class="vchip primary" onclick="addVenueToPipeline(\'' + v.id + '\')"><i class="ti ti-plus"></i> to Pipeline</button>')
     + '<button class="vchip" onclick="openVenueEdit(\'' + v.id + '\')"><i class="ti ti-pencil"></i> Edit</button>'
     + '<button class="vchip danger" id="vdel-chip" onclick="deleteVenueArmed(\'' + v.id + '\')"><i class="ti ti-trash"></i> Delete</button>'
-    + '</div>'
+    + '</div></div>'
+    + '<div class="detail-header"><div class="detail-icon"><i class="ti ti-building-store"></i></div>'
+    + '<div style="flex:1"><div class="detail-venue">' + esc(v.name) + '</div>'
+    + '<div class="detail-meta">' + esc([v.vtype, [v.city, v.state].filter(function(x){return x;}).join(', '), (v.pay && v.pay!=='—' ? v.pay : '')].filter(function(x){return x;}).join(' · ')) + '</div>'
+    + '<span class="badge badge-' + v.type + '" style="margin-top:6px">' + (v.type==='hard'?'Hard ticket':'Soft ticket') + '</span></div>'
+    + '</div></div>'
     + '<div class="card card-flush" style="margin-bottom:20px">'
     + row('Booking contact', v.contact && v.contact!=='—' ? v.contact : '')
     + row('Pay', v.pay && v.pay!=='—' ? v.pay : '')
