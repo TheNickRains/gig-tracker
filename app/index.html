@@ -1319,9 +1319,9 @@ function renderMiniCal(){
     var state = availMap[iso] || (dowRules[new Date(y, m, d).getDay()] ? 'busy' : '');
     cells += '<div class="mc-day' + (iso===todayIso?' today':'') + (state?' '+state:'') + '">' + d + (gigs[iso] ? '<span class="cal-gig-dot"></span>' : '') + '</div>';
   }
-  var glance = lsGet('gc_glance') || 'cal';
+  var glance = lsGet('gc_glance') || 'up';
   el.innerHTML = '<div class="section-label" style="display:flex;align-items:center;justify-content:space-between">'
-    + '<span>' + (glance==='cal' ? now.toLocaleDateString(undefined,{month:'long'}) + ' at a glance' : 'Upcoming') + '</span>'
+    + '<span>' + now.toLocaleDateString(undefined,{month:'long'}) + ' at a glance</span>'
     + '<span style="display:flex;gap:4px">'
     + '<button class="view-btn" style="width:26px;height:26px" onclick="lsSet(\'gc_glance\',\'cal\');renderHome()" title="Month"><i class="ti ti-calendar" style="font-size:13px;color:' + (glance==='cal'?'var(--amber-800)':'var(--text-tertiary)') + '"></i></button>'
     + '<button class="view-btn" style="width:26px;height:26px" onclick="lsSet(\'gc_glance\',\'up\');renderHome()" title="Upcoming"><i class="ti ti-list-details" style="font-size:13px;color:' + (glance==='up'?'var(--amber-800)':'var(--text-tertiary)') + '"></i></button>'

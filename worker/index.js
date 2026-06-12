@@ -59,7 +59,7 @@ async function logActivity(row) {
 }
 
 // ── Gemini (Slice C) ──
-async function gemini(prompt, asJson) {
+async function geminiOnce(prompt, asJson) {
   // maxOutputTokens generous + thinking budget 0: on 2.5 models internal
   // "thinking" tokens count AGAINST maxOutputTokens and silently truncate the
   // visible text (the cut-off-mid-sentence bug). We want fast, full output.
@@ -72,6 +72,18 @@ async function gemini(prompt, asJson) {
   if (!r.ok) throw new Error(`gemini ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const j = await r.json();
   return (((j.candidates || [])[0] || {}).content?.parts || []).map((p) => p.text || "").join("").trim();
+}
+// Free-tier RPM limits 429 readily — wait out the suggested delay once, then give up gracefully.
+async function gemini(prompt, asJson) {
+  try { return await geminiOnce(prompt, asJson); }
+  catch (e) {
+    if (!/429/.test(e.message)) throw e;
+    const m = e.message.match(/retryDelay[^0-9]*(\d+)/);
+    const wait = Math.min((m ? Number(m[1]) : 12), 25) * 1000;
+    console.log("gemini 429 — retrying in", wait / 1000, "s");
+    await new Promise((res) => setTimeout(res, wait));
+    return await geminiOnce(prompt, asJson);
+  }
 }
 
 // Summarize + classify a fresh inbound reply. Proposals only — never moves the stage.
@@ -478,6 +490,7 @@ async function tick() {
 }
 
 // ── /ai/draft: the app asks Gemini to write the outreach (Slice C) ──
+const pulseCache = new Map(); // venueId -> {summary, count, ts}
 const ALLOWED_ORIGINS = ["https://gig.nicholasrains.com", "https://gig-tracker-production.up.railway.app"];
 function corsHeaders(req) {
   const o = req.headers.origin || "";
@@ -546,8 +559,9 @@ async function handleAiDraft(req, res, bodyStr) {
     res.end(JSON.stringify({ draft }));
   } catch (err) {
     console.error("ai/draft", err.message);
-    res.writeHead(500, hdr);
-    res.end(JSON.stringify({ error: "Draft failed: " + err.message.slice(0, 120) }));
+    const limited = /429/.test(err.message);
+    res.writeHead(limited ? 429 : 500, hdr);
+    res.end(JSON.stringify({ error: limited ? "AI is catching its breath (rate limit) — try again in a minute" : "Draft failed: " + err.message.slice(0, 120) }));
   }
 }
 
@@ -575,10 +589,15 @@ http.createServer((req, res) => {
         const vid = ((JSON.parse(body || "{}").venue_id) || "").replace(/[^a-zA-Z0-9-]/g, "");
         const comments = await sGet(`venue_comments?venue_id=eq.${vid}&order=created_at.desc&limit=20&select=author_name,body`);
         if (comments.length < 2) { res.writeHead(200, hdr); res.end(JSON.stringify({ summary: null })); return; }
+        const cached = pulseCache.get(vid);
+        if (cached && cached.count === comments.length && Date.now() - cached.ts < 6 * 3600000) {
+          res.writeHead(200, hdr); res.end(JSON.stringify({ summary: cached.summary })); return;
+        }
         const text = comments.map((c) => `${c.author_name}: ${c.body}`).join("\n");
         const summary = await gemini(
           `Working musicians shared experiences about playing one venue:\n${text.slice(0, 3000)}\n\n` +
           `Distill the collective's take in <=50 words — concrete and useful (pay, crowd, staff, logistics, gotchas). Plain text, neutral tone.`, false);
+        pulseCache.set(vid, { summary: (summary || "").slice(0, 400), count: comments.length, ts: Date.now() });
         res.writeHead(200, hdr); res.end(JSON.stringify({ summary: (summary || "").slice(0, 400) }));
       } catch (err) { res.writeHead(500, hdr); res.end(JSON.stringify({ summary: null })); }
     });
