@@ -643,10 +643,12 @@ async function handleAiDraft(req, res, bodyStr) {
     else if (e.status === "played") objective = "OBJECTIVE: friendly check-in with a room the artist already played — reference the relationship, float availability for another date. Light, no hard sell.";
     else if (v.booking_form_url) objective = "OBJECTIVE: this venue books via a WEB FORM. Write copy ready to paste into their booking form: who the artist is, why they fit this room, draw, one listen link. Skip the salutation and sign-off if it reads more natural for a form; keep the phone/site so they can respond.";
     else objective = "OBJECTIVE: first-touch cold outreach — concise intro, why the artist fits THIS room specifically (use the venue notes/clientele), one listen link, clear ask: are they the right person / can we get a date.";
+    const today = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
     const draft = await gemini(
+      `TODAY IS ${today}. Never propose dates in the past; prefer concrete dates at least 5 days out (e.g. "Friday June 20"), and resolve phrases like "this weekend" against today.\n\n` +
       (isTextThread
-        ? `Write a TEXT MESSAGE (SMS) from a working musician to a venue contact. This thread lives in text messages — NOT email. 1-3 short sentences, casual and direct, no greeting line, no signature block, no "email" language, no links unless essential. It should read like a text from a friend who's also a pro.\n\n`
-        : `Write a booking email from a working musician to a venue contact. Plain text only — no subject line, no markdown, no placeholders/brackets, under 160 words, direct and human (never marketing copy). Do NOT add a signature, name, or phone number at the end — the artist's branded signature is appended automatically on send. End with the ask, or at most a short "Thanks," line.\n\n`) +
+        ? `CHANNEL: TEXT MESSAGE (SMS). This thread lives in texts — NOT email. Write 1-3 short sentences, casual and direct: no greeting line, NO sign-off of any kind (no name, no phone — texts from the artist's own phone carry identity), no "email" vocabulary, links only if essential. It should read like a text from a friend who's also a pro.\n\n`
+        : `CHANNEL: EMAIL. Plain text only — no subject line, no markdown, no placeholders/brackets, under 160 words, direct and human (never marketing copy). Do NOT add a signature, name, or phone number at the end — the artist's branded signature is appended automatically on send. End with the ask, or at most a short "Thanks," line.\n\n`) +
       (enhance ? enhanceObjective : objective) + "\n\n" +
       `DEAL STAGE: ${e.status}${gigWhen ? " · TARGET DATE: " + gigWhen : ""}\n` +
       (lastInbound ? `THEIR LAST MESSAGE (answer this):\n"""${lastInbound.slice(0, 600)}"""\n` : "") +
