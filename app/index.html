@@ -2310,8 +2310,11 @@ function renderWizard(step, ticket, data) {
     + payFields
     + '<div class="form-row-2"><div class="form-field"><label class="form-label">Contact first name</label><input class="form-input" id="wcf" placeholder="Mike"></div>'
     + '<div class="form-field"><label class="form-label">Last name</label><input class="form-input" id="wcl" placeholder="Dosey"></div></div>'
+    + '<div class="form-field"><label class="form-label">Role / title</label><input class="form-input" id="wctitle" placeholder="Booking manager · GM · Owner"></div>'
     + '<div class="form-field"><label class="form-label">Email</label><input class="form-input" id="wcemail" type="email" placeholder="booking@venue.com"></div>'
     + '<div class="form-field"><label class="form-label">Phone</label><input class="form-input" id="wcphone" type="tel" placeholder="(713) 555-0182"></div>'
+    + '<div class="form-row-2"><div class="form-field"><label class="form-label">LinkedIn <span style="font-weight:400;color:var(--text-tertiary)">(optional)</span></label><input class="form-input" id="wclinkedin" placeholder="linkedin.com/in/…"></div>'
+    + '<div class="form-field"><label class="form-label">Instagram <span style="font-weight:400;color:var(--text-tertiary)">(optional)</span></label><input class="form-input" id="wcinstagram" placeholder="@handle"></div></div>'
     + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(2,\'' + ticket + '\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(3,\'' + ticket + '\')">Continue</button></div>';
   } else if (step===4) {
     html = '<div class="wiz-header"><div class="wiz-step-label">Step 4 of 4</div><div class="wiz-title">Notes for the collective</div></div>'
@@ -2809,8 +2812,11 @@ function wizCapture(step, ticket){
       wizData.pay = (lo&&hi) ? ('$'+lo+'–'+hi) : (lo ? ('$'+lo+'+') : (hi ? ('up to $'+hi) : ''));
     }
     wizData.contactName=(val('wcf').trim()+' '+val('wcl').trim()).trim();
+    wizData.contactTitle=val('wctitle').trim();
     wizData.contactEmail=val('wcemail').trim();
     wizData.contactPhone=val('wcphone').trim();
+    wizData.contactLinkedin=val('wclinkedin').trim();
+    wizData.contactInstagram=val('wcinstagram').trim();
   } else if(step===4){
     wizData.clientele=val('wkl').trim(); wizData.notes=val('wnt').trim();
   }
@@ -2830,9 +2836,9 @@ function wizSubmit(ticket){
   sb.from('venues').insert(venuePayload).select().single().then(function(vr){
     if(vr.error){ alert('Could not save venue: ' + vr.error.message); if(btn){ btn.disabled=false; btn.textContent='Add to collective ↗'; } return; }
     var venueId=vr.data.id;
-    var needContact = wizData.contactName || cEmail || cPhone;
+    var needContact = wizData.contactName || cEmail || cPhone || wizData.contactTitle || wizData.contactLinkedin || wizData.contactInstagram;
     var contactStep = needContact
-      ? sb.from('contacts').insert({venue_id:venueId, name:wizData.contactName||null, email:cEmail, phone:cPhone, verified_by:ME, verified_at:new Date().toISOString()}).select().single()
+      ? sb.from('contacts').insert({venue_id:venueId, name:wizData.contactName||null, title:wizData.contactTitle||null, email:cEmail, phone:cPhone, linkedin:wizData.contactLinkedin||null, instagram:wizData.contactInstagram||null, verified_by:ME, verified_at:new Date().toISOString()}).select().single()
       : Promise.resolve({data:null});
     contactStep.then(function(cr){
       var contactId = (cr && cr.data) ? cr.data.id : null;
