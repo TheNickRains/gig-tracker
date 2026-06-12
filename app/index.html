@@ -111,15 +111,19 @@
     .screen { padding-left: 36px; padding-right: 36px; }
     /* Home: 3-zone war room — bookings rail | needs-you stack | stats rail.
        Scoped to .active (the unscoped version glued Home over every screen). */
-    /* Columns: 1 = Needs you · 2 = the war room (stats/actions/sends/collective)
-       · 3 = at a glance (mini cal + upcoming). Independent vertical flows. */
-    #screen-home.active { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 340px; gap: 0 32px; align-items: start; grid-auto-flow: dense; }
+    /* Two columns. Left: health, sends, collective. Right: needs-you, actions,
+       month at a glance, upcoming. Independent vertical flows. */
+    #screen-home.active { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 36px; align-items: start; }
     #screen-home.active > div:first-child { grid-column: 1 / -1; }
-    #screen-home.active #war-needs { grid-column: 1; grid-row: 2 / span 8; }
-    #screen-home.active .stat-grid, #screen-home.active #war-funnel, #screen-home.active .war-actions, #screen-home.active #war-sends,
-    #screen-home.active > .section-label, #screen-home.active > .card.placeholder { grid-column: 2; }
-    #screen-home.active #war-cal { display: block; grid-column: 3; grid-row: 2; }
-    #screen-home.active #war-up { display: block; grid-column: 3; grid-row: 3 / span 6; }
+    #screen-home.active .stat-grid { display: none; } /* funnel + momentum cover it */
+    #screen-home.active #war-funnel { grid-column: 1; grid-row: 2; }
+    #screen-home.active #war-sends { grid-column: 1; grid-row: 3; }
+    #screen-home.active > .section-label { grid-column: 1; grid-row: 4; }
+    #screen-home.active > .card.placeholder, #screen-home.active #war-feed { grid-column: 1; grid-row: 5; }
+    #screen-home.active #war-needs { grid-column: 2; grid-row: 2; }
+    #screen-home.active .war-actions { grid-column: 2; grid-row: 3; }
+    #screen-home.active #war-cal { display: block; grid-column: 2; grid-row: 4; }
+    #screen-home.active #war-up { display: block; grid-column: 2; grid-row: 5; }
     /* Detail: two working columns, capped for readability */
     .detail-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; align-items: start; max-width: 1240px; }
     /* Pipeline breathes */
@@ -377,6 +381,9 @@
   .pipe-search:focus { outline: none; border-color: var(--amber-400); background: var(--bg-primary); }
   .venue-card { position: relative; }
   .vp-check { position: absolute; top: 9px; right: 9px; font-size: 16px; color: var(--booked-text); }
+  .vp-new { position: absolute; top: 11px; left: 11px; width: 9px; height: 9px; border-radius: 50%; background: var(--talks-text); border: 2px solid var(--bg-primary); }
+  .pulse-card { background: var(--talks-bg); border-left: 3px solid var(--talks-text); border-radius: 12px; padding: 11px 12px; font-size: 13px; line-height: 1.5; color: #2b2a26; margin-bottom: 10px; }
+  .pulse-card .pc-label { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--talks-text); margin-bottom: 4px; }
   .pipe-filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 10px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .pipe-filters::-webkit-scrollbar { display: none; }
   .pf-chip { flex-shrink: 0; font-size: 12px; padding: 5px 11px; border-radius: 999px; border: 1px solid transparent; color: var(--text-secondary); cursor: pointer; background: var(--bg-secondary); font-family: inherit; opacity: 0.85; }
@@ -394,6 +401,7 @@
   .group-hdr.collapsed .group-hdr-chevron { transform: rotate(0deg); }
   /* Floating island nav (the island IS the navigation) */
   .bnav { position: fixed; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); left: 50%; transform: translateX(-50%); width: min(calc(100% - 28px), 432px); height: 62px; background: var(--bg-primary); background: color-mix(in srgb, var(--bg-primary) 86%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 0.5px solid var(--border-mid); border-radius: 999px; box-shadow: 0 10px 30px rgba(0,0,0,0.24); display: flex; align-items: center; justify-content: space-around; padding: 0 10px; z-index: 90; }
+  .bnav-fade { position: fixed; bottom: 0; left: 0; right: 0; height: calc(env(safe-area-inset-bottom, 0px) + 92px); pointer-events: none; z-index: 85; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); -webkit-mask-image: linear-gradient(to top, black 30%, transparent); mask-image: linear-gradient(to top, black 30%, transparent); }
   .bnav-item { display: flex; flex-direction: column; align-items: center; gap: 2px; background: none; border: none; font-family: inherit; font-size: 10px; color: var(--text-secondary); cursor: pointer; padding: 6px 11px; border-radius: 999px; }
   .bnav-item i { font-size: 20px; }
   .bnav-item.active { color: var(--amber-800); background: var(--amber-50); }
@@ -675,6 +683,7 @@
   </nav>
 
   <!-- Floating island nav: Home is the base of operations, center throne -->
+  <div class="bnav-fade" aria-hidden="true"></div>
   <nav class="bnav" aria-label="Primary">
     <button class="bnav-item" id="tab-pipeline" onclick="go('pipeline')"><i class="ti ti-layout-list"></i><span>Pipeline</span></button>
     <button class="bnav-item" id="tab-discover" onclick="go('discover')"><i class="ti ti-compass"></i><span>Discover</span></button>
@@ -703,18 +712,8 @@
     <div id="war-sends"></div>
     <div id="war-cal"></div>
     <div id="war-up"></div>
-    <div class="section-label">Collective activity <span class="soon">feature incomplete: coming soon</span></div>
-    <div class="card placeholder">
-      <div class="feed-item">
-        <div class="feed-av ph-av">—</div>
-        <div><div class="feed-name ph-text">Artist name <span class="feed-action">— recent activity</span></div><div class="feed-time">Market · time</div></div>
-      </div>
-      <div class="feed-item">
-        <div class="feed-av ph-av">—</div>
-        <div><div class="feed-name ph-text">Artist name <span class="feed-action">— recent activity</span></div><div class="feed-time">Market · time</div></div>
-      </div>
-      <div class="ph-caption">When your roster joins, their venue wins and new contacts show up here.</div>
-    </div>
+    <div class="section-label">Collective activity</div>
+    <div id="war-feed"></div>
   </div>
 
   <!-- DISCOVER -->
@@ -943,12 +942,15 @@
     <div id="cal-upcoming"></div>
   </div>
 
+  <!-- EVENT (gig) -->
+  <div class="screen" id="screen-event"><div id="event-container"></div></div>
+
   <!-- SETTINGS -->
   <div class="screen" id="screen-settings">
     <div class="page-title" style="margin-bottom:16px">Settings</div>
     <div class="card card-flush" style="margin-bottom:20px">
       <div class="setting-row"><div class="setting-icon"><i class="ti ti-bell"></i></div><div class="setting-label">Push notifications<div class="section-sub" style="margin-top:2px">Replies, sends &amp; reviews — on this device</div></div><label class="switch"><input type="checkbox" id="push-toggle" onchange="togglePush()"><span></span></label></div>
-      <div class="setting-row soon-dim"><div class="setting-icon"><i class="ti ti-map-pin"></i></div><div class="setting-label">Home market <span class="soon">soon</span></div><i class="ti ti-chevron-right"></i></div>
+      <div class="setting-row"><div class="setting-icon"><i class="ti ti-map-pin"></i></div><div class="setting-label">Home market<div class="section-sub" style="margin-top:2px">Anchors Discover + the AI\u2019s sense of place</div></div><input class="pipe-search" id="home-market-input" style="margin:0;max-width:150px;font-size:12.5px" placeholder="e.g. Austin, TX" onchange="saveHomeMarket()"></div>
       <div class="setting-row" onclick="googleRowClick()"><div class="setting-icon"><i class="ti ti-brand-google"></i></div><div class="setting-label">Gmail &amp; Calendar</div><span class="setting-value" id="google-conn-status">Connect</span><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row"><div class="setting-icon"><i class="ti ti-send"></i></div><div class="setting-label">Let the assistant send email<div class="section-sub" style="margin-top:2px">Off — it drafts only; you send</div></div><label class="switch"><input type="checkbox" id="auto-send-toggle" onchange="saveAutoSend()"><span></span></label></div>
       <div class="setting-row" onclick="signOut()"><div class="setting-icon"><i class="ti ti-logout"></i></div><div class="setting-label" style="color:var(--dead-text)">Sign out</div></div>
@@ -1017,7 +1019,7 @@ var tplKeys = ['outreach','followup','pitch','checkin'];
 var tplLabels = ['Cold outreach','Follow-up','Full pitch','Check-in'];
 
 // ── Navigation ──────────────────────────────────────────
-var TAB_FOR = { home:'home', pipeline:'pipeline', detail:'pipeline', discover:'discover', venue:'discover', calendar:'calendar', settings:'settings' };
+var TAB_FOR = { home:'home', pipeline:'pipeline', detail:'pipeline', discover:'discover', venue:'discover', calendar:'calendar', event:'calendar', settings:'settings' };
 function setActiveTab(screen){
   document.querySelectorAll('.bnav-item, .bnav-home').forEach(function(b){ b.classList.remove('active'); });
   var t = TAB_FOR[screen];
@@ -1031,7 +1033,7 @@ function go(screen) {
   document.getElementById('avatar-btn').classList.remove('active');
   currentScreen = screen;
   if (screen === 'home') renderHome();
-  if (screen === 'discover') renderDiscover();
+  if (screen === 'discover') { renderDiscover(); setTimeout(function(){ lsSet('gc_disc_seen', String(Date.now())); }, 4000); }
   if (screen === 'pipeline') {
     // Fresh view every visit: filter back to All, search cleared (view type persists).
     pipeFilter = 'all'; pipeQuery = '';
@@ -1052,6 +1054,7 @@ function syncHash(screen){
   if (APPLYING_ROUTE) return;
   var h = screen;
   if (screen === 'detail') { if (!currentDetailUuid) return; h = 'entry/' + currentDetailUuid; }
+  if (screen === 'event')  { if (!currentEventUuid)  return; h = 'event/' + currentEventUuid; }
   if (screen === 'venue')  { if (!currentVenueId)  return; h = 'venue/' + currentVenueId; }
   if (location.hash !== '#' + h) {
     var prev = (location.hash || '').replace(/^#/, '') || 'home';
@@ -1075,6 +1078,10 @@ function applyRoute(){
       pipeline.forEach(function(p, i){ if (p.uuid === u) idx = i; });
       if (idx >= 0) { if (currentScreen !== 'detail' || currentDetailUuid !== u) openDetail(idx); }
       else pendingRoute = true; // pipeline not loaded yet — retried after load
+    } else if (h.indexOf('event/') === 0) {
+      var eu = h.slice(6);
+      if (pipeline.some(function(x){ return x.uuid === eu; })) { if (currentScreen !== 'event' || currentEventUuid !== eu) openEventView(eu); }
+      else pendingRoute = true;
     } else if (h.indexOf('venue/') === 0) {
       var vid = h.slice(6);
       if (venues.some(function(x){ return x.id === vid; })) { if (currentScreen !== 'venue' || currentVenueId !== vid) openVenueDetail(vid); }
@@ -1127,6 +1134,7 @@ function renderDiscover() {
     + '<div class="venue-loc">' + esc(v.city) + ', ' + esc(v.state) + '</div>'
     + '<span class="badge badge-' + v.type + '">' + esc(v.vtype) + '</span>'
     + (inPipe[v.id] ? '<i class="ti ti-circle-check-filled vp-check" title="In your pipeline"></i>' : '')
+    + (isNewFromCollective(v) ? '<span class="vp-new" title="New from the collective"></span>' : '')
     + '<div class="venue-tag"><i class="ti ti-currency-dollar"></i>' + esc(v.pay) + '</div>'
     + '<div class="venue-tag"><i class="ti ti-user"></i>' + esc(v.contact) + '</div>'
     + '</div>';
@@ -1235,6 +1243,30 @@ function lastInboundPreview(p){
   }
   return '';
 }
+// Collective feed: real shared signals — comments + new venues from the roster.
+var feedCache = null;
+function renderFeed(){
+  var el = document.getElementById('war-feed'); if (!el) return;
+  if (feedCache) { el.innerHTML = feedCache; return; }
+  Promise.all([
+    sb.from('venue_comments').select('author_name,body,created_at,venue_id').order('created_at',{ascending:false}).limit(5),
+    sb.from('venues').select('id,name,city,created_at,created_by').order('created_at',{ascending:false}).limit(5)
+  ]).then(function(rs){
+    var items = [];
+    ((rs[0].data)||[]).forEach(function(cm){ items.push({ t: new Date(cm.created_at).getTime(), ic:'ti-message-circle', txt:'<strong>' + esc(cm.author_name||'A member') + '</strong> on a venue: ' + esc(cm.body.slice(0,80)), vid: cm.venue_id, time: relTime(cm.created_at) }); });
+    ((rs[1].data)||[]).forEach(function(v){ if (v.created_by && v.created_by !== ME) items.push({ t: new Date(v.created_at).getTime(), ic:'ti-map-pin-plus', txt:'New venue in Discover: <strong>' + esc(v.name) + '</strong>' + (v.city ? ' · ' + esc(v.city) : ''), vid: v.id, time: relTime(v.created_at) }); });
+    items.sort(function(a,b){ return b.t - a.t; });
+    items = items.slice(0, 6);
+    feedCache = items.length
+      ? '<div class="card card-flush" style="margin-bottom:20px">' + items.map(function(it){
+          return '<div class="war-row" onclick="openVenueDetail(\'' + it.vid + '\')"><div class="war-ic" style="background:var(--bg-secondary);color:var(--text-secondary)"><i class="ti ' + it.ic + '"></i></div>'
+            + '<div style="flex:1;min-width:0"><div class="war-sub" style="-webkit-line-clamp:2">' + it.txt + '</div><div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">' + it.time + '</div></div></div>';
+        }).join('') + '</div>'
+      : '<div class="card placeholder" style="margin-bottom:20px"><div class="ph-caption">Quiet so far — when your roster posts venue intel or adds rooms, it shows here.</div></div>';
+    el.innerHTML = feedCache;
+  });
+}
+
 // The cockpit: pipeline funnel (click a stage to fly there) + weekly momentum.
 function renderFunnel(){
   var el = document.getElementById('war-funnel'); if (!el) return;
@@ -1329,6 +1361,7 @@ function renderHome(){
   el.innerHTML = html;
   renderMiniCal();
   renderFunnel();
+  renderFeed();
   var sends = pipeline.filter(function(p){ return p.sched && p.sched.status==='scheduled'; });
   var se = document.getElementById('war-sends');
   if (se) se.innerHTML = sends.length
@@ -1758,6 +1791,66 @@ function togglePush(){
   }
 }
 
+// ── Event view: the gig as a calendar event (two-way with pipeline + Google) ──
+var currentEventUuid = null;
+function openEventView(uuid){
+  var p = null, idx = -1;
+  pipeline.forEach(function(x,i){ if (x.uuid===uuid) { p = x; idx = i; } });
+  if (!p) return;
+  currentEventUuid = uuid;
+  var gd = p.gig_date ? toLocalDT(p.gig_date) : '';
+  var html = '<button class="back-btn" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>'
+    + '<div class="page-title" style="margin-bottom:2px">' + (p.s==='hold' ? 'HOLD: ' : 'Gig: ') + esc(p.venue) + '</div>'
+    + '<div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:16px">' + esc(p.city) + (p.state ? ', ' + esc(p.state) : '') + ' · booking@ calendar · <span style="color:var(--amber-800);cursor:pointer" onclick="openDetail(' + idx + ')">open the deal →</span></div>'
+    + '<div class="card" style="margin-bottom:12px">'
+    + '<div class="field-row"><span class="field-label">Date</span><input type="date" class="pipe-search" style="margin:0;flex:1" id="ev-date" value="' + (gd ? gd.slice(0,10) : '') + '"></div>'
+    + '<div class="field-row"><span class="field-label">Start</span><input type="time" class="pipe-search" style="margin:0;width:130px" id="ev-time" value="' + (gd ? gd.slice(11,16) : '20:00') + '" step="900"></div>'
+    + '<div class="field-row"><span class="field-label">Ends</span><span class="field-value" id="ev-end" style="color:var(--text-tertiary)">~3 hours later</span></div>'
+    + '<div class="field-row"><span class="field-label">Status</span><div class="followup-chips" style="margin:0">'
+    +   '<div class="fu-chip' + (p.s==='hold'?' selected':'') + '" onclick="evStage=\'hold\';renderEvChips()">Hold · tentative</div>'
+    +   '<div class="fu-chip' + (p.s==='booked'?' selected':'') + '" onclick="evStage=\'booked\';renderEvChips()">Booked · confirmed</div>'
+    + '</div></div>'
+    + '<div class="field-row"><span class="field-label">Contact</span><span class="field-value">' + esc(p.contact) + '</span></div>'
+    + '</div>'
+    + '<div style="display:flex;gap:8px">'
+    + '<button class="btn-primary" style="flex:1" onclick="saveEventView()"><i class="ti ti-check"></i> Save</button>'
+    + '<button class="btn-secondary" onclick="clearEventDate()"><i class="ti ti-calendar-off"></i> Remove date</button>'
+    + '</div>'
+    + '<div style="font-size:11px;color:var(--text-tertiary);margin-top:10px">Saving mirrors to your Google Calendar in seconds. Hold = tentative event, Booked = confirmed.</div>';
+  document.getElementById('event-container').innerHTML = html;
+  evStage = (p.s==='hold'||p.s==='booked') ? p.s : 'booked';
+  go('event');
+}
+var evStage = 'booked';
+function renderEvChips(){
+  var chips = document.querySelectorAll('#screen-event .fu-chip');
+  if (chips.length>=2){ chips[0].classList.toggle('selected', evStage==='hold'); chips[1].classList.toggle('selected', evStage==='booked'); }
+}
+function saveEventView(){
+  var p = null, idx=-1; pipeline.forEach(function(x,i){ if (x.uuid===currentEventUuid){ p=x; idx=i; } });
+  if (!p) return;
+  var di = document.getElementById('ev-date'), ti = document.getElementById('ev-time');
+  if (!di.value) { showToast('Pick a date', true); return; }
+  var val = new Date(di.value + 'T' + (ti.value || '20:00')).toISOString();
+  var patch = { gig_date: val, gig_date_dirty: true };
+  var stageChanged = evStage !== p.s;
+  if (stageChanged) patch.status = evStage;
+  sb.from('pipeline_entries').update(patch).eq('id', p.uuid).then(function(r){
+    if (r.error) { showToast('Could not save: ' + r.error.message, true); return; }
+    p.gig_date = val; if (stageChanged) { p.s = evStage; sb.from('activities').insert({pipeline_entry_id:p.uuid, kind:'status_change', body:'Moved to ' + statusLabel[evStage], source:'manual'}).then(function(){}); }
+    showToast('Saved — syncing to your calendar');
+    pokeWorker(); renderCalendar(); renderHome();
+  });
+}
+function clearEventDate(){
+  var p = null; pipeline.forEach(function(x){ if (x.uuid===currentEventUuid) p=x; });
+  if (!p || !p.gig_date) { showToast('No date to remove', true); return; }
+  sb.from('pipeline_entries').update({ gig_date: null, gig_date_dirty: true }).eq('id', p.uuid).then(function(r){
+    if (r.error) { showToast('Could not remove: ' + r.error.message, true); return; }
+    p.gig_date = null; showToast('Date removed — clearing from calendar'); pokeWorker(); renderCalendar(); renderHome(); goBack();
+  });
+}
+
 // ── Calendar (Slice D start): availability painting ──
 var calMonth = (function(){ var d = new Date(); d.setDate(1); return d; })();
 var availMap = {};
@@ -1855,7 +1948,7 @@ function renderUpcoming(gigs){
   el.innerHTML = rows.length
     ? '<div class="section-label" style="margin-top:18px">Upcoming</div><div class="card card-flush">' + rows.map(function(p){
         var d = new Date(p.gig_date);
-        return '<div class="war-row" onclick="openDetail(' + p.id + ')">'
+        return '<div class="war-row" onclick="openEventView(\'' + p.uuid + '\')">'
           + '<div class="war-ic" style="background:var(--' + p.s + '-bg);color:var(--' + p.s + '-text)"><i class="ti ti-music"></i></div>'
           + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(p.venue) + '</div><div class="war-sub">' + d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) + ' · ' + d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) + ' · ' + statusLabel[p.s] + '</div></div>'
           + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
@@ -1883,7 +1976,7 @@ function loadAvail(){
 var calGigs = {};
 // A day with a gig opens the gig; an open day cycles availability.
 function dayTap(iso){
-  if (calGigs[iso] && calGigs[iso].length) { openDetail(calGigs[iso][0].id); return; }
+  if (calGigs[iso] && calGigs[iso].length) { openEventView(calGigs[iso][0].uuid); return; }
   cycleAvail(iso);
 }
 function cycleAvail(iso){
@@ -2224,6 +2317,15 @@ function disconnectGoogle(){
   });
 }
 
+function saveHomeMarket(){
+  var v = document.getElementById('home-market-input').value.trim();
+  sb.from('artists').update({ home_market: v || null }).eq('id', ME).then(function(r){
+    if (r.error) { showToast('Could not save: ' + r.error.message, true); return; }
+    profile.home_market = v;
+    showToast(v ? 'Home market set: ' + v : 'Home market cleared');
+  });
+}
+
 // ── Preference: assistant send ──
 function saveAutoSend(){
   var on = document.getElementById('auto-send-toggle').checked;
@@ -2297,6 +2399,8 @@ function loadProfile(){
     profile.phone=a.phone||''; profile.web=a.website||''; profile.epk=a.epk||''; profile.spotify=a.spotify||'';
     profile.draw=a.draw_claim||''; profile.crowd=a.typical_crowd||''; profile.formats=a.set_formats||''; profile.notable=a.notable||'';
     profile.rate_soft=a.rate_soft||''; profile.rate_hard=a.rate_hard||'';
+    profile.home_market=a.home_market||'';
+    var hmi=document.getElementById('home-market-input'); if(hmi) hmi.value=profile.home_market;
     markets = a.markets || [];
     notables = (profile.notable||'').split(',').map(function(s){ return s.trim(); }).filter(Boolean);
     setGoogleConnectedUI(!!a.gmail_connected);
@@ -2337,7 +2441,7 @@ function loadVenues(){
     var rows=r.data||[]; cities={};
     venues = rows.map(function(v){
       if(v.state){ cities[v.state]=cities[v.state]||[]; if(v.city && cities[v.state].indexOf(v.city)<0) cities[v.state].push(v.city); }
-      return {id:v.id, name:v.name, city:v.city||'', state:v.state||'', type:v.ticket_type||'soft',
+      return {id:v.id, name:v.name, city:v.city||'', state:v.state||'', type:v.ticket_type||'soft', createdAt:v.created_at||null, createdBy:v.created_by||null,
               vtype:v.venue_type||'', pay:v.pay_range||'—', contact:(v.contacts&&v.contacts[0]?v.contacts[0].name:'—'),
               address:v.address||'', clientele:v.clientele||'', notes:v.notes||''};
     });
@@ -2542,8 +2646,68 @@ function openVenueDetail(id){
     + (v.notes ? ('<div class="field-row"><span class="field-label">Notes</span><div class="field-value">' + notesList_(v.notes) + '</div></div>') : '')
     + (!(v.contact && v.contact!=='—') && !v.address && !v.clientele && !v.notes && (!v.pay || v.pay==='—') ? '<div class="field-row"><span class="field-value empty">No details yet — tap Edit to add them.</span></div>' : '')
     + '</div>'
-    + mapBlock;
+    + mapBlock
+    + '<div class="section-label" style="margin-top:16px">Collective intel</div>'
+    + '<div id="venue-pulse"></div>'
+    + '<div class="card card-flush" style="margin-bottom:20px"><div id="venue-comments"><p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">Loading…</p></div>'
+    + '<div><input class="note-input" placeholder="Share intel for the collective… press Enter" onkeydown="postVenueComment(event,\'' + v.id + '\')"></div></div>';
   go('venue');
+  loadVenueComments(v.id);
+}
+
+// ── Collective: venue comments + AI pulse ──
+function isNewFromCollective(v){
+  var seen = Number(lsGet('gc_disc_seen') || 0);
+  return v.createdAt && v.createdBy && v.createdBy !== ME && new Date(v.createdAt).getTime() > seen;
+}
+var pulseCache = {};
+function loadVenueComments(venueId){
+  sb.from('venue_comments').select('*').eq('venue_id', venueId).order('created_at',{ascending:false}).limit(30).then(function(r){
+    var el = document.getElementById('venue-comments'); if (!el) return;
+    if (r.error) { el.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">Comments unavailable: ' + esc(r.error.message) + '</p>'; return; }
+    var rows = r.data || [];
+    el.innerHTML = rows.length ? rows.map(function(cm){
+      var mine = cm.artist_id === ME;
+      return '<div class="note-item"><div style="display:flex;gap:6px;align-items:flex-start"><div style="flex:1;min-width:0">'
+        + '<div style="font-size:11px;font-weight:600;color:var(--amber-800);margin-bottom:2px">' + esc(cm.author_name || 'A member') + ' <span style="font-weight:400;color:var(--text-tertiary)">· ' + relTime(cm.created_at) + '</span></div>'
+        + '<div class="act-ctx">' + esc(cm.body) + '</div></div>'
+        + (mine ? '<button class="note-ic" onclick="deleteVenueComment(\'' + cm.id + '\',\'' + venueId + '\')" title="Delete"><i class="ti ti-trash"></i></button>' : '')
+        + '</div></div>';
+    }).join('') : '<p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">No intel yet — first to play it, first to post.</p>';
+    renderVenuePulse(venueId, rows.length);
+  });
+}
+function postVenueComment(e, venueId){
+  if (e.key !== 'Enter' || !e.target.value.trim()) return;
+  var body = e.target.value.trim(); e.target.value = '';
+  sb.from('venue_comments').insert({ venue_id: venueId, artist_id: ME, author_name: profile.name || 'A member', body: body }).then(function(r){
+    if (r.error) { showToast('Could not post: ' + r.error.message, true); return; }
+    delete pulseCache[venueId];
+    loadVenueComments(venueId);
+  });
+}
+function deleteVenueComment(id, venueId){
+  sb.from('venue_comments').delete().eq('id', id).then(function(r){
+    if (r.error) { showToast('Could not delete: ' + r.error.message, true); return; }
+    delete pulseCache[venueId];
+    loadVenueComments(venueId);
+  });
+}
+function renderVenuePulse(venueId, count){
+  var el = document.getElementById('venue-pulse'); if (!el) return;
+  if (count < 2) { el.innerHTML = ''; return; }
+  if (pulseCache[venueId]) { el.innerHTML = '<div class="pulse-card"><div class="pc-label"><i class="ti ti-sparkles"></i> The collective says</div>' + esc(pulseCache[venueId]) + '</div>'; return; }
+  el.innerHTML = '<div class="pulse-card"><div class="pc-label">Distilling the collective\u2019s take…</div></div>';
+  sb.auth.getSession().then(function(ss){
+    var tok = ss.data && ss.data.session && ss.data.session.access_token; if (!tok) return;
+    fetch(WORKER_URL + '/ai/venue-pulse', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + tok }, body: JSON.stringify({ venue_id: venueId }) })
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if (j.summary) { pulseCache[venueId] = j.summary; }
+        var el2 = document.getElementById('venue-pulse'); if (!el2) return;
+        el2.innerHTML = j.summary ? '<div class="pulse-card"><div class="pc-label"><i class="ti ti-sparkles"></i> The collective says</div>' + esc(j.summary) + '</div>' : '';
+      }).catch(function(){ var el2 = document.getElementById('venue-pulse'); if (el2) el2.innerHTML=''; });
+  });
 }
 // Discover → pipeline, one tap. Uses the venue's first contact when there is one.
 function addVenueToPipeline(venueId){

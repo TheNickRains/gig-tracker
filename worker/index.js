@@ -390,7 +390,7 @@ async function syncCalendar(artistId, token) {
       if (e.google_event_id) {
         if (!e.gig_date_dirty) continue; // never touch an existing event unprompted
         const er = await fetch(evUrl(e.google_event_id), { method: "PATCH", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(ev) });
-        if (er.ok) { await sPatch(`pipeline_entries?id=eq.${e.id}`, { gig_date_dirty: false }); console.log("calendar: event updated (artist edit)", e.id); }
+        if (er.ok) { const ju = await er.json(); await sPatch(`pipeline_entries?id=eq.${e.id}`, { gig_date_dirty: false }); console.log("calendar: event updated (artist edit)", e.id, "start", ju.start && (ju.start.dateTime || ju.start.date), ju.htmlLink); }
         else console.error("calendar update failed", e.id, er.status, (await er.text()).slice(0, 120));
         continue;
       }
@@ -398,7 +398,7 @@ async function syncCalendar(artistId, token) {
       if (er.ok) {
         const j = await er.json();
         if (j.id) await sPatch(`pipeline_entries?id=eq.${e.id}`, { google_event_id: j.id, gig_date_dirty: false });
-        console.log("calendar:", e.status, "event created", e.id);
+        console.log("calendar:", e.status, "event created", e.id, "start", j.start && (j.start.dateTime || j.start.date), j.htmlLink);
       } else console.error("calendar event failed", e.id, er.status, (await er.text()).slice(0, 120));
     }
   } catch (err) { console.error("syncCalendar", artistId, err.message); }
@@ -509,7 +509,7 @@ async function handleAiDraft(req, res, bodyStr) {
     const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,venue:venues(name,city,state,venue_type,ticket_type,pay_range,clientele,notes),contact:contacts(name,title)`);
     if (!entries.length || entries[0].artist_id !== uid) { res.writeHead(404, hdr); res.end(JSON.stringify({ error: "Entry not found" })); return; }
     const e = entries[0], v = e.venue || {}, c = e.contact || {};
-    const arts = await sGet(`artists?id=eq.${uid}&select=display_name,genre,oneliner,website,epk,spotify,draw_claim,typical_crowd,set_formats,notable,markets,phone,tone_profile,rate_soft,rate_hard`);
+    const arts = await sGet(`artists?id=eq.${uid}&select=display_name,genre,oneliner,website,epk,spotify,draw_claim,typical_crowd,set_formats,notable,markets,phone,tone_profile,rate_soft,rate_hard,home_market`);
     const a = arts[0] || {};
     const rateLine = (a.rate_soft || a.rate_hard)
       ? `RATES (the artist's own numbers — quote these EXACTLY when rate comes up; NEVER invent, discount, or underbid): soft ticket ${a.rate_soft || "not set"} · hard ticket ${a.rate_hard || "not set"}\n`
@@ -537,7 +537,7 @@ async function handleAiDraft(req, res, bodyStr) {
       `CONTACT: ${c.name || "the booker"}${c.title ? " (" + c.title + ")" : ""}\n` +
       rateLine +
       (firstTouch
-        ? `ARTIST (use what's relevant — this is a first touch): ${a.display_name || ""} — ${a.genre || ""}. ${a.oneliner || ""} Draw: ${a.draw_claim || "n/a"}. Crowd: ${a.typical_crowd || "n/a"}. Formats: ${a.set_formats || "n/a"}. Notable rooms: ${a.notable || "n/a"}. Site: ${a.website || ""} ${a.epk ? "EPK: " + a.epk : ""} ${a.spotify ? "Spotify: " + a.spotify : ""} Phone: ${a.phone || ""}\n`
+        ? `ARTIST (use what's relevant — this is a first touch): ${a.display_name || ""} — ${a.genre || ""}. ${a.oneliner || ""} Draw: ${a.draw_claim || "n/a"}. Crowd: ${a.typical_crowd || "n/a"}. Formats: ${a.set_formats || "n/a"}. Notable rooms: ${a.notable || "n/a"}. Home market: ${a.home_market || "n/a"}. Site: ${a.website || ""} ${a.epk ? "EPK: " + a.epk : ""} ${a.spotify ? "Spotify: " + a.spotify : ""} Phone: ${a.phone || ""}\n`
         : `ARTIST (background only — do NOT pitch credentials mid-conversation): ${a.display_name || ""}, ${a.genre || ""}. Phone: ${a.phone || ""}\n`) +
       (a.tone_profile ? `\nTONE CARD — write indistinguishably in THIS voice:\n${a.tone_profile}\n` : "") +
       `\nWrite only the email body.`, false);
@@ -559,6 +559,28 @@ http.createServer((req, res) => {
     let body = "";
     req.on("data", (d) => (body += d));
     req.on("end", () => { handleAiDraft(req, res, body); });
+    return;
+  }
+  if (req.method === "POST" && u.pathname === "/ai/venue-pulse") {
+    // The collective's pulse on a venue: Gemini distills the comment thread.
+    let body = "";
+    req.on("data", (d) => (body += d));
+    req.on("end", async () => {
+      const hdr = corsHeaders(req);
+      try {
+        if (!GEMINI_KEY) { res.writeHead(503, hdr); res.end(JSON.stringify({ summary: null })); return; }
+        const uid = await verifyUser(req);
+        if (!uid) { res.writeHead(401, hdr); res.end(JSON.stringify({ error: "Not signed in" })); return; }
+        const vid = ((JSON.parse(body || "{}").venue_id) || "").replace(/[^a-zA-Z0-9-]/g, "");
+        const comments = await sGet(`venue_comments?venue_id=eq.${vid}&order=created_at.desc&limit=20&select=author_name,body`);
+        if (comments.length < 2) { res.writeHead(200, hdr); res.end(JSON.stringify({ summary: null })); return; }
+        const text = comments.map((c) => `${c.author_name}: ${c.body}`).join("\n");
+        const summary = await gemini(
+          `Working musicians shared experiences about playing one venue:\n${text.slice(0, 3000)}\n\n` +
+          `Distill the collective's take in <=50 words — concrete and useful (pay, crowd, staff, logistics, gotchas). Plain text, neutral tone.`, false);
+        res.writeHead(200, hdr); res.end(JSON.stringify({ summary: (summary || "").slice(0, 400) }));
+      } catch (err) { res.writeHead(500, hdr); res.end(JSON.stringify({ summary: null })); }
+    });
     return;
   }
   if (req.method === "GET" && u.pathname === "/push/pubkey") {

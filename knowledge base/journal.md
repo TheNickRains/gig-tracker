@@ -17,6 +17,23 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-12 — SLICE E BEGINS (Collective) + event view + 2-col cockpit + island fade
+**Slice E v1 (migration 020):** venue_comments (RLS: read=all authed, write own; author_name
+denormalized — artists rows are private) + venues.created_by (default auth.uid()) + artists.home_market.
+**Built:** "Collective intel" on every Discover venue detail — comment thread (post on Enter, delete own)
+with a Gemini **pulse card** pinned on top ("The collective says…", worker POST /ai/venue-pulse, ≥2
+comments, cached client-side); LIVE collective feed on Home (latest comments + new venues, replaces the
+dashed placeholder); **blue "new from the collective" dots** on Discover cards (created_by ≠ me,
+created_at > gc_disc_seen, marked seen 4s into a visit); **Home market** setting (Settings inline input
+→ artists.home_market, injected into the AI draft prompt). **Event view (#8):** dedicated
+`#event/<uuid>` screen — date/start-time fields, Hold(tentative)/Booked(confirmed) chips, contact,
+"open the deal →", Save (gig_date+dirty+stage) + Remove date; Upcoming rows + gig-day taps open IT now
+(not pipeline detail); two-way with Google via dirty-flag poke. **Desktop Home = 2 columns** per Nick
+(left: Pipeline health, Scheduled sends, Collective activity · right: Needs you, actions, month at a
+glance, Upcoming; stat cards hidden on desktop — funnel covers them). **bnav-fade:** fixed gradient
+gaussian blur under the island nav (backdrop-filter + mask-image). #7 debug: worker now logs event
+start + htmlLink on create/update to pinpoint which calendar the event landed on.
+
 ## 2026-06-12 — Cockpit v1, bubble ink fix, You've Got Mail, vision: Collective + Tour (Slice E/F)
 **Bubble bug:** pastel bubble bgs have no dark-mode variants, so dark-mode's near-white text was
 invisible — bubbles now use fixed dark ink (#2b2a26). Conversation order back to NEWEST-FIRST (it's an
