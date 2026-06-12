@@ -1309,6 +1309,7 @@ function renderDiscover() {
   var g = document.getElementById('venue-grid');
   if (!f.length) { g.innerHTML = '<p style="color:var(--text-secondary);font-size:14px;grid-column:1/-1">No venues match this filter.</p>'; return; }
   var inPipe = {}; pipeline.forEach(function(p){ if (p.venueId) inPipe[p.venueId] = true; });
+  Object.keys(dealVenueMap).forEach(function(vid){ inPipe[vid] = true; });
   g.innerHTML = f.map(function(v){
     return '<div class="venue-card" onclick="openVenueDetail(\'' + v.id + '\')">'
     + '<div class="venue-name"><i class="ti ' + venueIcon(v.vtype) + '" style="margin-right:6px;color:var(--text-tertiary)"></i>' + esc(v.name) + '</div>'
@@ -3231,8 +3232,18 @@ function loadPipeline(){
       if(currentScreen==='pipeline') renderPipeline();
       retryPendingRoute();
       var ids = rows.map(function(e){ return e.id; });
-      if(ids.length) { loadActivities(ids); loadScheduled(ids); }
+      if(ids.length) { loadActivities(ids); loadScheduled(ids); loadDealVenueMap(ids); }
     });
+}
+// Secondary rooms count as "in pipeline" too — a room in play on a deal is tracked.
+var dealVenueMap = {}; // venue_id -> entry uuid of the deal it's in play on
+function loadDealVenueMap(ids){
+  sb.from('deal_venues').select('entry_id,venue_id').in('entry_id', ids).then(function(r){
+    if (r.error) return;
+    dealVenueMap = {};
+    (r.data||[]).forEach(function(dv){ dealVenueMap[dv.venue_id] = dv.entry_id; });
+    if (currentScreen==='discover') renderVenues();
+  });
 }
 function loadActivities(ids){
   sb.from('activities').select('*').in('pipeline_entry_id',ids).order('created_at',{ascending:false}).then(function(r){
@@ -3524,9 +3535,13 @@ function openVenueDetail(id){
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
     + '<button class="back-btn" style="margin-bottom:0" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>'
     + '<div class="vchips" style="margin:0">'
-    + (pipeline.some(function(pp){ return pp.venueId===v.id; })
-      ? '<span class="vchip done"><i class="ti ti-check"></i> In pipeline</span>'
-      : '<button class="vchip primary" onclick="addVenueToPipeline(\'' + v.id + '\')"><i class="ti ti-plus"></i> to Pipeline</button>')
+    + (function(){
+        if (pipeline.some(function(pp){ return pp.venueId===v.id; })) return '<span class="vchip done"><i class="ti ti-check"></i> In pipeline</span>';
+        var euuid = dealVenueMap[v.id];
+        var di = euuid ? pipeline.map(function(pp){return pp.uuid;}).indexOf(euuid) : -1;
+        if (di >= 0) return '<button class="vchip done" onclick="openDetail(' + di + ')" title="Open the deal this room is in play on"><i class="ti ti-check"></i> In play — ' + esc(pipeline[di].venue) + '</button>';
+        return '<button class="vchip primary" onclick="addVenueToPipeline(\'' + v.id + '\')"><i class="ti ti-plus"></i> to Pipeline</button>';
+      })()
     + '<button class="vchip" onclick="openVenueEdit(\'' + v.id + '\')"><i class="ti ti-pencil"></i> Edit</button>'
     + '<button class="vchip danger" id="vdel-chip" onclick="deleteVenueArmed(\'' + v.id + '\')"><i class="ti ti-trash"></i> Delete</button>'
     + '</div></div>'
