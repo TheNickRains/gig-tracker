@@ -409,6 +409,8 @@
   .pf-chip.on { border-color: currentColor; font-weight: 600; opacity: 1; }
   .pipe-sort { font-size: 12px; font-family: inherit; color: var(--text-secondary); background: var(--bg-secondary); border: none; border-radius: 8px; padding: 6px 8px; }
   .view-btn { width: 30px; height: 30px; border-radius: 8px; border: none; background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  button:focus { outline: none; }
+  button:focus-visible { outline: 2px solid var(--amber-400); outline-offset: 2px; }
   .view-btn:focus, .view-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--amber-400); }
   .view-btn:focus:not(:focus-visible) { box-shadow: none; }
   .view-btn.on { background: var(--amber-50); color: var(--amber-800); }
@@ -2445,7 +2447,7 @@ function sendMagicLink(){
   gateMsg('Sending…', true);
   sb.auth.signInWithOtp({ email: email, options:{ emailRedirectTo: window.location.origin + '/app', shouldCreateUser: true } }).then(function(r){
     if(r.error) gateMsg(r.error.message);
-    else gateMsg('Sent. Open the NEWEST link in your inbox (check spam). Links are one-time use.', true);
+    else gateMsg('Sent — check your inbox.', true);
   });
 }
 function signInGoogle(){
