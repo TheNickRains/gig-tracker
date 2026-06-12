@@ -646,7 +646,7 @@ async function handleAiDraft(req, res, bodyStr) {
     const draft = await gemini(
       (isTextThread
         ? `Write a TEXT MESSAGE (SMS) from a working musician to a venue contact. This thread lives in text messages — NOT email. 1-3 short sentences, casual and direct, no greeting line, no signature block, no "email" language, no links unless essential. It should read like a text from a friend who's also a pro.\n\n`
-        : `Write a booking email from a working musician to a venue contact. Plain text only — no subject line, no markdown, no placeholders/brackets, under 160 words, direct and human (never marketing copy). Sign off with the artist's first name and phone.\n\n`) +
+        : `Write a booking email from a working musician to a venue contact. Plain text only — no subject line, no markdown, no placeholders/brackets, under 160 words, direct and human (never marketing copy). Do NOT add a signature, name, or phone number at the end — the artist's branded signature is appended automatically on send. End with the ask, or at most a short "Thanks," line.\n\n`) +
       (enhance ? enhanceObjective : objective) + "\n\n" +
       `DEAL STAGE: ${e.status}${gigWhen ? " · TARGET DATE: " + gigWhen : ""}\n` +
       (lastInbound ? `THEIR LAST MESSAGE (answer this):\n"""${lastInbound.slice(0, 600)}"""\n` : "") +
