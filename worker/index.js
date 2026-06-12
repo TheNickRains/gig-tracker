@@ -283,8 +283,10 @@ async function ensureVapid() {
   let keys = rows.length ? rows[0].value : null;
   if (!keys || !keys.publicKey) {
     keys = webpush.generateVAPIDKeys();
-    await fetch(`${SUPA}/rest/v1/app_secrets`, { method: "POST", headers: { ...sHeaders, Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ id: "vapid", value: keys }) });
-    console.log("vapid: generated new keypair");
+    const r = await fetch(`${SUPA}/rest/v1/app_secrets`, { method: "POST", headers: { ...sHeaders, Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ id: "vapid", value: keys }) });
+    console.log("vapid: generated new keypair —", r.ok ? "persisted" : "PERSIST FAILED " + r.status);
+  } else {
+    console.log("vapid: loaded persisted keypair");
   }
   VAPID_PUB = keys.publicKey;
   webpush.setVapidDetails("mailto:thenickrains@gmail.com", keys.publicKey, keys.privateKey);

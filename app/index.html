@@ -89,7 +89,9 @@
       border: 0.5px solid var(--border-mid);
       box-shadow: 0 2px 18px rgba(0,0,0,0.18);
     }
-    .nav { top: calc(env(safe-area-inset-top, 0px) + 8px); border-radius: 22px 22px 0 0; }
+    .nav { top: calc(env(safe-area-inset-top, 0px) + 8px); border-radius: 22px 22px 0 0; z-index: 70; }
+    /* Keep the top gutter clean while scrolling — content can't slide through it. */
+    body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: calc(env(safe-area-inset-top, 0px) + 8px); background: var(--bg-page); z-index: 80; pointer-events: none; }
   }
   /* Desktop: use the landscape. The whole app widens; screens adapt. */
   @media (min-width: 600px) {
@@ -109,8 +111,9 @@
     #screen-home { display: grid; grid-template-columns: 1fr 360px; gap: 0 28px; align-items: start; }
     #screen-home > div:first-child { grid-column: 1 / -1; }
     #screen-home #war-needs { grid-column: 1; grid-row: 2 / span 4; }
-    #screen-home .stat-grid, #screen-home .war-actions, #screen-home #war-sends,
+    #screen-home .stat-grid, #screen-home .war-actions, #screen-home #war-sends, #screen-home #war-cal,
     #screen-home > .section-label, #screen-home > .card.placeholder { grid-column: 2; }
+    #war-cal { display: block !important; }
     /* Detail: two working columns */
     .detail-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; align-items: start; }
     /* Pipeline grid view gets a third column */
@@ -409,6 +412,16 @@
   .cal-dow { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); text-align: center; padding: 4px 0; }
   .cal-day { aspect-ratio: 1; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 13px; cursor: pointer; border: 0.5px solid transparent; position: relative; }
   .cal-gig-dot { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); width: 5px; height: 5px; border-radius: 50%; background: var(--amber-800); }
+  /* Mini bookings calendar (desktop war room rail) */
+  #war-cal { display: none; }
+  .mc-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .mc-dow { font-size: 9px; text-transform: uppercase; color: var(--text-tertiary); text-align: center; padding: 2px 0; }
+  .mc-day { aspect-ratio: 1; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 10.5px; position: relative; }
+  .mc-day.other { opacity: 0.25; }
+  .mc-day.today { border: 1px solid var(--amber-800); font-weight: 700; }
+  .mc-day.available { background: var(--booked-bg); color: var(--booked-text); }
+  .mc-day.busy { background: var(--dead-bg); color: var(--dead-text); }
+  .mc-day .cal-gig-dot { bottom: 1px; width: 4px; height: 4px; }
   .cal-day:hover { border-color: var(--amber-400); }
   .cal-day.other { opacity: 0.3; }
   .cal-day.today { border-color: var(--amber-800); font-weight: 700; }
@@ -643,6 +656,7 @@
       <button class="btn-secondary" onclick="go('discover')"><i class="ti ti-compass"></i> Discover</button>
     </div>
     <div id="war-sends"></div>
+    <div id="war-cal"></div>
     <div class="section-label">Collective activity <span class="soon">feature incomplete: coming soon</span></div>
     <div class="card placeholder">
       <div class="feed-item">
@@ -1161,6 +1175,25 @@ function lastInboundPreview(p){
   }
   return '';
 }
+// Desktop war-room rail: this month at a glance (bookings + availability).
+function renderMiniCal(){
+  var el = document.getElementById('war-cal'); if (!el) return;
+  var now = new Date(), y = now.getFullYear(), m = now.getMonth();
+  var firstIdx = new Date(y, m, 1).getDay();
+  var dim = new Date(y, m + 1, 0).getDate();
+  var todayIso = isoDay(y, m, now.getDate());
+  var gigs = gigByDay();
+  var cells = '';
+  for (var i = 0; i < firstIdx; i++) cells += '<div class="mc-day other"></div>';
+  for (var d = 1; d <= dim; d++) {
+    var iso = isoDay(y, m, d);
+    var state = availMap[iso] || (dowRules[new Date(y, m, d).getDay()] ? 'busy' : '');
+    cells += '<div class="mc-day' + (iso===todayIso?' today':'') + (state?' '+state:'') + '">' + d + (gigs[iso] ? '<span class="cal-gig-dot"></span>' : '') + '</div>';
+  }
+  el.innerHTML = '<div class="section-label">' + now.toLocaleDateString(undefined,{month:'long'}) + ' at a glance</div>'
+    + '<div class="card" style="margin-bottom:20px;cursor:pointer" onclick="go(\'calendar\')" title="Open calendar">'
+    + '<div class="mc-grid">' + ['S','M','T','W','T','F','S'].map(function(x){ return '<div class="mc-dow">' + x + '</div>'; }).join('') + cells + '</div></div>';
+}
 var warPrevCount = 0;
 // The war room: Home leads with what needs you, then the scheduled queue.
 function renderHome(){
@@ -1194,6 +1227,7 @@ function renderHome(){
     + '</div>';
   }
   el.innerHTML = html;
+  renderMiniCal();
   var sends = pipeline.filter(function(p){ return p.sched && p.sched.status==='scheduled'; });
   var se = document.getElementById('war-sends');
   if (se) se.innerHTML = sends.length
@@ -1656,6 +1690,7 @@ function renderCalendar(){
   var days = document.getElementById('cal-days'); if (days) days.innerHTML = cells;
   renderDowChips();
   renderUpcoming(gigs);
+  renderMiniCal();
 }
 function renderDowChips(){
   var el = document.getElementById('dow-chips'); if (!el) return;
@@ -2083,7 +2118,7 @@ function showApp(session){
 }
 
 // ── Load ────────────────────────────────────────────────
-function loadAll(){ loadProfile(); loadVenues(); loadPipeline(); subscribeRealtime(); }
+function loadAll(){ loadProfile(); loadVenues(); loadPipeline(); loadAvail(); subscribeRealtime(); }
 
 // Live updates over websockets: when the worker writes a reply/stage change,
 // Supabase Realtime pushes it here and we refresh — no manual reload. RLS means
