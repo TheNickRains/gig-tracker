@@ -2835,10 +2835,12 @@ function wizSubmit(ticket){
     contactStep.then(function(cr){
       var contactId = (cr && cr.data) ? cr.data.id : null;
       sb.from('pipeline_entries').insert({artist_id:ME, venue_id:venueId, contact_id:contactId, status:'lead'}).select().single().then(function(pr){
-        if(pr.error){ alert('Venue saved, but could not start your pipeline: ' + pr.error.message); }
-        else { sb.from('activities').insert({pipeline_entry_id:pr.data.id, kind:'system', body:'Added to pipeline', source:'manual'}); }
+        if(pr.error){ alert('Venue saved, but could not start your pipeline: ' + pr.error.message); loadVenues(); loadPipeline(); renderWizard(5, null, {}); return; }
+        sb.from('activities').insert({pipeline_entry_id:pr.data.id, kind:'system', body:'Added to pipeline', source:'manual'}).then(function(){});
         loadVenues(); loadPipeline();
-        renderWizard(5, null, {});
+        // Straight into the deal — pitch while the card's still warm.
+        showToast('In your pipeline — go get it');
+        location.hash = 'entry/' + pr.data.id;
       });
     });
   });
