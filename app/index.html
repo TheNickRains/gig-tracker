@@ -1071,8 +1071,8 @@ var happyPath = ['lead','pitched','talks','hold','booked','played'];
 function stagesFor(p){ return p.t==='hard' ? happyPath : happyPath.filter(function(s){ return s!=='hold'; }); }
 function followupDue(p){ return p.s==='pitched' && p.days>=7; }
 
-var softTypes = ['Bar / Pub','Coffee shop','Restaurant','Hotel bar','Winery / Brewery','Casino floor','Festival stage','Other'];
-var hardTypes = ['Listening room','Theater','Concert hall','Performing arts center','Music club (ticketed)','Other'];
+var softTypes = ['Bar / Pub','Coffee shop','Restaurant','Hotel bar','Winery / Brewery','Casino floor','Festival stage','Promoter / agency','Corporate / private','Other'];
+var hardTypes = ['Listening room','Theater','Concert hall','Performing arts center','Music club (ticketed)','Promoter / agency','Other'];
 
 var activeTpl = {};
 var selectedFollowup = {};
