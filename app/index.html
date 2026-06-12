@@ -1513,6 +1513,13 @@ function renderPipeFilterSelect(){
 }
 
 // ── Pipeline detail ─────────────────────────────────────
+function linkUrl(v, kind){
+  v = (v || '').trim();
+  if (/^https?:\/\//i.test(v)) return v;
+  if (kind === 'instagram') return 'https://instagram.com/' + v.replace(/^@/, '');
+  if (kind === 'linkedin') return 'https://' + v.replace(/^\/+/, '');
+  return 'https://' + v;
+}
 // ── Contact management: edit, switch, add — straight from the deal ──
 var contactEditing = {};   // entry uuid -> contact id being edited ('new' = adding)
 function contactSection(p, id){
@@ -1529,6 +1536,8 @@ function contactSection(p, id){
       + '<div class="contact-actions">'
       + (p.email ? '<a class="btn-icon" title="Email" href="mailto:' + esc(p.email) + '"><i class="ti ti-mail"></i></a>' : '')
       + (p.phone ? '<a class="btn-icon" title="Call" href="tel:' + esc(p.phone).replace(/[^+0-9]/g,'') + '"><i class="ti ti-phone"></i></a>' : '')
+      + (p.linkedin ? '<a class="btn-icon" title="LinkedIn" target="_blank" rel="noopener" href="' + esc(linkUrl(p.linkedin, 'linkedin')) + '"><i class="ti ti-brand-linkedin"></i></a>' : '')
+      + (p.instagram ? '<a class="btn-icon" title="Instagram" target="_blank" rel="noopener" href="' + esc(linkUrl(p.instagram, 'instagram')) + '"><i class="ti ti-brand-instagram"></i></a>' : '')
       + '<button class="btn-icon" title="Edit contact" onclick="startContactEdit(' + id + ',\'' + (p.contactId||'') + '\')"><i class="ti ti-pencil"></i></button>'
       + '</div></div>';
     // other contacts at this venue -> tap to make primary for this deal
@@ -1550,6 +1559,8 @@ function contactForm(p, id, c){
     + '<div class="field-row"><span class="field-label">Role / title</span><input class="form-input" id="cf-title" placeholder="Booking manager" value="' + esc(c.title||'') + '"></div>'
     + '<div class="field-row"><span class="field-label">Email</span><input class="form-input" id="cf-email" placeholder="marcy@venue.com" value="' + esc(c.email||'') + '"></div>'
     + '<div class="field-row"><span class="field-label">Phone</span><input class="form-input" id="cf-phone" placeholder="(512) 555-0100" value="' + esc(c.phone||'') + '"></div>'
+    + '<div class="field-row"><span class="field-label">LinkedIn <span style="font-weight:400;color:var(--text-tertiary)">(optional)</span></span><input class="form-input" id="cf-linkedin" placeholder="linkedin.com/in/marcyhayes" value="' + esc(c.linkedin||'') + '"></div>'
+    + '<div class="field-row"><span class="field-label">Instagram <span style="font-weight:400;color:var(--text-tertiary)">(optional)</span></span><input class="form-input" id="cf-instagram" placeholder="@marcybooks" value="' + esc(c.instagram||'') + '"></div>'
     + '<div class="save-row"><button class="btn-primary btn-sm" onclick="saveContact(' + id + ',\'' + (c.id||'') + '\')">' + (isNew ? 'Add contact' : 'Save') + '</button>'
     + '<button class="btn-secondary btn-sm" onclick="cancelContactEdit(' + id + ')">Cancel</button></div></div>';
 }
@@ -1561,7 +1572,9 @@ function saveContact(id, cid){
     name: document.getElementById('cf-name').value.trim(),
     title: document.getElementById('cf-title').value.trim() || null,
     email: document.getElementById('cf-email').value.trim() || null,
-    phone: document.getElementById('cf-phone').value.trim() || null
+    phone: document.getElementById('cf-phone').value.trim() || null,
+    linkedin: document.getElementById('cf-linkedin').value.trim() || null,
+    instagram: document.getElementById('cf-instagram').value.trim() || null
   };
   if (!row.name && !row.email) { showToast('Need at least a name or an email', true); return; }
   delete contactEditing[p.uuid];
@@ -1590,7 +1603,7 @@ function switchContact(id, cid){
 }
 function fetchVenueContacts(p){
   if (!p.venueId) return;
-  sb.from('contacts').select('id,name,title,email,phone').eq('venue_id', p.venueId).then(function(r){
+  sb.from('contacts').select('id,name,title,email,phone,linkedin,instagram').eq('venue_id', p.venueId).then(function(r){
     if (r.error) return;
     p.contactsAll = r.data || [];
     rerenderOpenDetail();
@@ -2673,14 +2686,14 @@ function loadVenues(){
 
 function loadPipeline(){
   sb.from('pipeline_entries')
-    .select('id,status,prev_status,venue_id,contact_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs, venue:venues(name,city,state,venue_type,pay_range,ticket_type), contact:contacts(name,title,email,phone)')
+    .select('id,status,prev_status,venue_id,contact_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs, venue:venues(name,city,state,venue_type,pay_range,ticket_type), contact:contacts(name,title,email,phone,linkedin,instagram)')
     .order('last_activity_at',{ascending:false}).then(function(r){
       if(r.error){ console.error('loadPipeline', r.error); return; }
       var rows=r.data||[];
       pipeline = rows.map(function(e,i){
         var v=e.venue||{}, c=e.contact||{};
         return {id:i, uuid:e.id, venue:v.name||'(unknown venue)', city:v.city||'', state:v.state||'',
-                contact:c.name||'(no contact)', title:c.title||'', email:c.email||'', phone:c.phone||'',
+                contact:c.name||'(no contact)', title:c.title||'', email:c.email||'', phone:c.phone||'', linkedin:c.linkedin||'', instagram:c.instagram||'',
                 vtype:v.venue_type||'', pay:v.pay_range||'—', t:v.ticket_type||'soft', s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, contactId:e.contact_id||null, gig_date:e.gig_date||null, gigPay:e.gig_pay||'', gigCosts:e.gig_costs||'', days:daysAgo(e.last_activity_at), activity:[]};
       });
       updateHomeStats();
