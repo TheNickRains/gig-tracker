@@ -1854,12 +1854,12 @@ function openDetail(id) {
 
   // Tracker dots ARE the stage control. Passed/Dead are TOGGLES: tap on to
   // close out, tap the lit one again to restore the deal where it was.
-  var dealType = '<div style="display:flex;align-items:center;gap:8px;margin:-6px 0 14px;justify-content:flex-end">'
-    + '<span style="font-size:11px;color:var(--text-tertiary)">Deal type' + (!p.tOverride ? ' · from venue' : '') + '</span>'
-    + '<div class="followup-chips" style="margin:0">'
-    + '<div class="fu-chip' + (p.t==='soft'?' selected':'') + '" onclick="setDealTicket(' + id + ',\'soft\')">Soft</div>'
-    + '<div class="fu-chip' + (p.t==='hard'?' selected':'') + '" onclick="setDealTicket(' + id + ',\'hard\')">Hard</div>'
-    + '</div></div>';
+  var dealType = '<div style="margin-left:auto;align-self:flex-start;display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0">'
+    + '<div class="followup-chips" style="margin:0" title="Deal type' + (!p.tOverride ? ' (from venue default)' : '') + '">'
+    + '<div class="fu-chip' + (p.t==='soft'?' selected':'') + '" style="font-size:10.5px;padding:3px 9px" onclick="setDealTicket(' + id + ',\'soft\')">Soft</div>'
+    + '<div class="fu-chip' + (p.t==='hard'?' selected':'') + '" style="font-size:10.5px;padding:3px 9px" onclick="setDealTicket(' + id + ',\'hard\')">Hard</div>'
+    + '</div>'
+    + '<span style="font-size:9.5px;color:var(--text-tertiary)">deal type' + (!p.tOverride ? ' · venue default' : '') + '</span></div>';
   var statusActions = '<div class="closeout">'
     + '<button class="closeout-btn passed' + (p.s==='passed'?' on':'') + '" onclick="setStatus(' + id + ',\'passed\')"><i class="ti ti-archive"></i> ' + (p.s==='passed'?'Passed — tap to reopen':'Mark passed') + '</button>'
     + '<button class="closeout-btn deadend' + (p.s==='dead'?' on':'') + '" onclick="setStatus(' + id + ',\'dead\')"><i class="ti ti-circle-x"></i> ' + (p.s==='dead'?'Dead end — tap to reopen':'Dead end') + '</button></div>';
@@ -1915,12 +1915,12 @@ function openDetail(id) {
     '<button class="back-btn" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>'
     + '<div class="detail-cols"><div>'
     + '<div class="detail-header"><div class="detail-icon"><i class="ti ' + venueIcon(p.vtype) + '"></i></div>'
-    + '<div><div class="detail-venue">' + p.venue + '</div><div class="detail-meta">' + p.vtype + ' · ' + p.city + ', ' + p.state + ' · ' + p.pay + '</div>'
-    + '<span class="badge badge-' + p.s + '" style="margin-top:6px">' + statusLabel[p.s] + '</span></div></div>'
+    + '<div style="min-width:0"><div class="detail-venue">' + p.venue + '</div><div class="detail-meta">' + p.vtype + ' · ' + p.city + ', ' + p.state + ' · ' + p.pay + '</div>'
+    + '<span class="badge badge-' + p.s + '" style="margin-top:6px">' + statusLabel[p.s] + '</span></div>'
+    + dealType + '</div>'
     + (stageIdx>=0 ? '<div class="stage-track" style="margin-bottom:20px">' + stageDots + '</div>' : '')
     + wonBanner
     + statusActions
-    + dealType
     + attnCard
     + gigDateBlock
     + contactSection(p, id)
