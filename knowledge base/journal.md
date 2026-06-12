@@ -27,6 +27,15 @@ tokens expire ~7 days idle (Settings flips to "Connect" — just reconnect); Gem
 caps (upgrade the key's project to billed before the roster leans on AI drafting); push notifications
 are per-device opt-in.
 
+## 2026-06-12 — Talent buyers: today's playbook + the future person-model
+In-house buyer = just a contact ROLE ("Talent buyer"). External multi-room buyer (promoter booking
+several venues): TODAY add them as a contact on each room they book (deals correctly live per venue);
+worker hardened so a colliding email matches the MOST RECENTLY ACTIVE deal (was arbitrary). Known limit:
+one Gmail thread per buyer email — court one room at a time per buyer. DESIGNED, NOT BUILT (build when a
+real multi-room buyer enters the pipeline): first-class `people` table (email/name/socials) +
+`venue_contacts` join (person↔venue, role) + deals referencing person — one human, N rooms, replies
+disambiguated by thread/recency. Don't bolt this on speculatively.
+
 ## 2026-06-12 — DESIGN IDENTITY LOCKED: "Ink on paper"
 Nick: "That's it — ink on paper." The settled language after brown → violet → sage: warm paper
 neutrals, ink (#2E2A24) as the only chrome authority, stage pastels as the sole color voices
