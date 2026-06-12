@@ -769,7 +769,10 @@
 
   <!-- DISCOVER -->
   <div class="screen" id="screen-discover">
-    <div class="page-title" style="margin-bottom:16px">Discover venues</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div class="page-title" style="margin-bottom:0">Discover venues</div>
+      <button class="view-btn" onclick="go('add')" title="Add venue" style="background:var(--amber-800);color:#fff"><i class="ti ti-plus"></i></button>
+    </div>
     <div class="filter-row">
       <select class="form-select" id="state-filter" onchange="filterCities()">
         <option value="">All states</option>
@@ -800,6 +803,7 @@
           <option value="priority">Priority</option>
           <option value="name">Name</option>
         </select>
+        <button class="view-btn" onclick="go('add')" title="Add venue" style="background:var(--amber-800);color:#fff"><i class="ti ti-plus"></i></button>
         <button class="view-btn" id="view-list" onclick="setPipeView('list')" title="List view"><i class="ti ti-list"></i></button>
         <button class="view-btn" id="view-grid" onclick="setPipeView('grid')" title="Grid view"><i class="ti ti-layout-grid"></i></button>
         <button class="view-btn" id="group-btn" onclick="togglePipeGroup()" title="Group by stage"><i class="ti ti-stack-2"></i></button>
