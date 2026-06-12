@@ -1858,6 +1858,7 @@ function openDetail(id) {
   var p = pipeline[id];
   currentDetailUuid = p ? p.uuid : null;
   if (p && !p.contactsAll) fetchVenueContacts(p);
+  if (p && p.dealVenues === undefined) { p.dealVenues = []; fetchDealVenues(p); }
   var sts = stagesFor(p);
   var stageIdx = sts.indexOf(p.s);
   var stageDots = sts.map(function(s,i){
@@ -2041,6 +2042,13 @@ function openDetail(id) {
     + (stageIdx>=0 ? '<div class="stage-track" style="margin-bottom:20px">' + stageDots + '</div>' : '')
     + wonBanner
     + statusActions
+    + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 12px">'
+    + '<span style="font-size:10.5px;color:var(--text-tertiary)">rooms in play:</span>'
+    + '<span class="vchip done" style="cursor:default">' + esc(p.venue) + '</span>'
+    + (p.dealVenues || []).map(function(dv){ return '<span class="vchip" style="cursor:default">' + esc(dv.name) + ' <i class="ti ti-x" style="cursor:pointer" onclick="removeDealVenue(' + id + ',\'' + dv.id + '\')"></i></span>'; }).join('')
+    + '<button class="vchip" onclick="toggleAddRoom(' + id + ')" title="Add a room to this opportunity"><i class="ti ti-plus"></i></button>'
+    + '</div>'
+    + (addRoomOpen[p.uuid] ? '<div class="card" style="margin-bottom:12px"><div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Add a room to this opportunity (the AI pitches the set; lock one later):</div><input class="pipe-search" id="ar-room-q" placeholder="Search your venues…" autocomplete="off" oninput="addRoomSearch(' + id + ',this.value)" style="margin:0"><div id="ar-room-results"></div></div>' : '')
     + (moveRoomOpen[p.uuid] ? '<div class="card" style="margin-bottom:12px"><div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Move this deal — conversation, notes, and stage come along:</div><input class="pipe-search" id="mv-room-q" placeholder="Search your venues…" autocomplete="off" oninput="dealRoomSearch(' + id + ',this.value)" style="margin:0"><div id="mv-room-results"></div></div>' : '')
     + attnCard
     + gigDateBlock
@@ -3179,6 +3187,45 @@ function setDealTicket(id, t){
     showToast(t === 'hard' ? 'Hard ticket — Hold stage available, hard rate quoted' : 'Soft ticket — soft rate quoted');
   });
 }
+// Rooms in play: one opportunity, several of the booker's rooms.
+var addRoomOpen = {};
+function toggleAddRoom(id){
+  var p = pipeline[id];
+  addRoomOpen[p.uuid] = !addRoomOpen[p.uuid];
+  openDetail(id);
+  var inp = document.getElementById('ar-room-q'); if (inp) inp.focus();
+}
+function addRoomSearch(id, q){
+  var out = document.getElementById('ar-room-results'); if (!out) return;
+  q = (q || '').toLowerCase();
+  if (q.length < 2) { out.innerHTML = ''; return; }
+  var p = pipeline[id];
+  var taken = [p.venueId].concat((p.dealVenues||[]).map(function(x){ return x.id; }));
+  var hits = venues.filter(function(v){ return taken.indexOf(v.id) < 0 && (v.name + ' ' + v.city).toLowerCase().indexOf(q) >= 0; }).slice(0, 5);
+  out.innerHTML = hits.map(function(v){
+    return '<div class="ws-row" onclick="addDealVenue(' + id + ',\'' + v.id + '\')"><div class="ws-name">' + esc(v.name) + '</div><div class="ws-addr">' + esc(v.city || '') + '</div></div>';
+  }).join('') || '<div class="ws-row" style="cursor:default;color:var(--text-secondary);font-size:12px">No match.</div>';
+}
+function addDealVenue(id, venueId){
+  var p = pipeline[id];
+  addRoomOpen[p.uuid] = false;
+  sb.from('deal_venues').insert({ entry_id: p.uuid, venue_id: venueId }).then(function(r){
+    if (r.error) { showToast('Could not add: ' + r.error.message, true); return; }
+    fetchDealVenues(p);
+    showToast('Room added to the opportunity');
+  });
+}
+function removeDealVenue(id, venueId){
+  var p = pipeline[id];
+  sb.from('deal_venues').delete().eq('entry_id', p.uuid).eq('venue_id', venueId).then(function(){ fetchDealVenues(p); });
+}
+function fetchDealVenues(p){
+  sb.from('deal_venues').select('venue:venues(id,name)').eq('entry_id', p.uuid).then(function(r){
+    p.dealVenues = ((r.data)||[]).map(function(x){ return x.venue; }).filter(Boolean);
+    rerenderOpenDetail();
+  });
+}
+
 // Move a deal to a different room (the org-deal -> real-room case): the
 // conversation, notes, stage, and person all travel with it.
 var moveRoomOpen = {};

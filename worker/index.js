@@ -598,6 +598,15 @@ async function handleAiDraft(req, res, bodyStr) {
     // The objective is DERIVED FROM EVIDENCE — conversation state, notes, stage,
     // dates — never assumed. Cold intro only when there is zero prior exchange.
     const hasOutbound = acts.some((x) => x.kind === "email_out");
+    // Channel detection: contact without email whose thread is hand-logged
+    // texts/calls => the draft must BE a text message, not an email.
+    const persons = e.person_id ? await sGet(`people?id=eq.${e.person_id}&select=email,phone`) : [];
+    const hasEmail = !!(persons[0] && persons[0].email);
+    const textish = acts.filter((x) => /^[💬📞🤝]/.test(x.body || "")).length;
+    const isTextThread = !hasEmail || (textish > 0 && textish >= acts.filter((x) => x.kind !== "note").length / 2);
+    // rooms in play (multi-room opportunity)
+    const dvs = await sGet(`deal_venues?entry_id=eq.${entryId}&select=venue:venues(name)`);
+    const roomsInPlay = dvs.map((x) => x.venue && x.venue.name).filter(Boolean);
     if (enhance) {
       // ENHANCE: keep the template's purpose and shape; make it specific with
       // the full context (conversation, notes, venue, stage, person, rates).
@@ -608,16 +617,19 @@ async function handleAiDraft(req, res, bodyStr) {
     let objective;
     if (e.status === "hold" || e.status === "booked") objective = "OBJECTIVE: the deal is at " + e.status + (gigWhen ? " for " + gigWhen : "") + ". Confirm/advance the date and logistics (load-in, set length, rate as agreed). No self-promotion — they already want the artist.";
     else if (lastInbound) objective = "OBJECTIVE: live conversation — their message is the latest word. Reply DIRECTLY to it: answer every question they asked, propose or lock concrete specifics (dates, times, rate, logistics), move the booking one step closer. Do NOT re-introduce the artist, do NOT add credentials or sales language — they already know who they're talking to.";
-    else if (hasOutbound) objective = "OBJECTIVE: they haven't replied to the earlier email(s) below. Write a brief, warm follow-up that adds ONE new angle or ask (a specific date works well) without repeating the original pitch. 2-4 sentences. Never re-introduce from scratch.";
+    else if (hasOutbound) objective = "OBJECTIVE: they haven't replied to the earlier message(s) below. Write a brief, warm follow-up that adds ONE new angle or ask (a specific date works well) without repeating the original pitch. 2-4 sentences. Never re-introduce from scratch.";
     else if (e.status === "played") objective = "OBJECTIVE: friendly check-in with a room the artist already played — reference the relationship, float availability for another date. Light, no hard sell.";
     else if (v.booking_form_url) objective = "OBJECTIVE: this venue books via a WEB FORM. Write copy ready to paste into their booking form: who the artist is, why they fit this room, draw, one listen link. Skip the salutation and sign-off if it reads more natural for a form; keep the phone/site so they can respond.";
     else objective = "OBJECTIVE: first-touch cold outreach — concise intro, why the artist fits THIS room specifically (use the venue notes/clientele), one listen link, clear ask: are they the right person / can we get a date.";
     const draft = await gemini(
-      `Write a booking email from a working musician to a venue contact. Plain text only — no subject line, no markdown, no placeholders/brackets, under 160 words, direct and human (never marketing copy). Sign off with the artist's first name and phone.\n\n` +
+      (isTextThread
+        ? `Write a TEXT MESSAGE (SMS) from a working musician to a venue contact. This thread lives in text messages — NOT email. 1-3 short sentences, casual and direct, no greeting line, no signature block, no "email" language, no links unless essential. It should read like a text from a friend who's also a pro.\n\n`
+        : `Write a booking email from a working musician to a venue contact. Plain text only — no subject line, no markdown, no placeholders/brackets, under 160 words, direct and human (never marketing copy). Sign off with the artist's first name and phone.\n\n`) +
       (enhance ? enhanceObjective : objective) + "\n\n" +
       `DEAL STAGE: ${e.status}${gigWhen ? " · TARGET DATE: " + gigWhen : ""}\n` +
       (lastInbound ? `THEIR LAST MESSAGE (answer this):\n"""${lastInbound.slice(0, 600)}"""\n` : "") +
       (convo ? `CONVERSATION SO FAR:\n${convo}\n` : "") +
+      (roomsInPlay.length ? `ROOMS IN PLAY (one conversation, several of their rooms — speak to the set, push toward locking ONE): ${[v.name].concat(roomsInPlay).filter((x, i, arr) => x && arr.indexOf(x) === i).join(", ")}\n` : "") +
       `VENUE: ${v.name || ""} (${v.venue_type || ""}, ${e.ticket_type || v.ticket_type || "soft"} ticket — quote the matching rate) in ${v.city || ""}, ${v.state || ""}. ${v.clientele ? "Clientele: " + v.clientele + "." : ""} ${v.notes ? "My notes on this venue: " + v.notes : ""}\n` +
       `CONTACT: ${c.name || "the booker"}${c.title ? " (" + c.title + ")" : ""}${c.org ? " of " + c.org : ""}${otherRooms}\n` +
       rateLine +
