@@ -1265,11 +1265,11 @@ function renderPipeline() {
   else rows.sort(function(a,b){ return a.days - b.days; });
   function dLabel(d){ return d===0 ? 'today' : (d===1 ? 'yesterday' : d + 'd ago'); }
   function metaFor(p){
-    return followupDue(p)
-      ? '<div style="font-size:11px;font-weight:500;color:var(--pitched-text)">Follow up</div><div class="pipe-date">' + (p.days-7) + 'd overdue</div>'
-      : (needsReply(p)
-        ? '<div style="font-size:11px;font-weight:500;color:var(--talks-text)">Reply waiting</div><div class="pipe-date">' + dLabel(p.days) + '</div>'
-        : '<div class="pipe-date">' + dLabel(p.days) + '</div>');
+    if (followupDue(p)) return '<div style="font-size:11px;font-weight:500;color:var(--pitched-text)">Follow up</div><div class="pipe-date">' + (p.days-7) + 'd overdue</div>';
+    if (needsReply(p)) return '<div style="font-size:11px;font-weight:500;color:var(--talks-text)">Reply waiting</div><div class="pipe-date">' + dLabel(p.days) + '</div>';
+    if (p.sched && p.sched.status==='ready') return '<div style="font-size:11px;font-weight:500;color:var(--pitched-text)">Ready to send</div><div class="pipe-date">awaiting you</div>';
+    if (p.sched && p.sched.status==='scheduled') return '<div style="font-size:11px;font-weight:500;color:var(--text-secondary)"><i class="ti ti-clock-hour-4" style="font-size:11px"></i> Scheduled</div><div class="pipe-date">' + new Date(p.sched.send_at).toLocaleDateString(undefined,{weekday:'short'}) + ' ' + new Date(p.sched.send_at).toLocaleTimeString(undefined,{hour:'numeric'}) + '</div>';
+    return '<div class="pipe-date">' + dLabel(p.days) + '</div>';
   }
   var list = document.getElementById('pipe-list');
   list.classList.toggle('grid', pipeView==='grid' && !pipeGroup);
@@ -1500,6 +1500,7 @@ function priorityScore(p) {
   if (followupDue(p))                 return 80 + p.days;  // pitched, gone quiet
   if (p.s === 'pitched')              return 60 + p.days;  // clock running
   if (p.s === 'talks')                return 55;
+  if (p.sched && p.sched.status === 'scheduled') return 30; // handled — resting until it fires
   if (p.s === 'lead' || p.s === 'hold') return 40 + p.days;
   if (p.s === 'booked')               return 5;
   if (p.s === 'played')               return 3;
