@@ -559,9 +559,8 @@ async function handleAiDraft(req, res, bodyStr) {
     if (!uid) { res.writeHead(401, hdr); res.end(JSON.stringify({ error: "Not signed in" })); return; }
     const parsed = JSON.parse(bodyStr || "{}");
     const entryId = (parsed.entry_id || "").replace(/[^a-zA-Z0-9-]/g, "");
-    const intent = ["outreach", "followup", "pitch", "checkin"].includes(parsed.intent) ? parsed.intent : "outreach";
     if (!entryId) { res.writeHead(400, hdr); res.end(JSON.stringify({ error: "entry_id required" })); return; }
-    const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,venue:venues(name,city,state,venue_type,ticket_type,pay_range,clientele,notes),contact:contacts(name,title)`);
+    const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,gig_date,venue:venues(name,city,state,venue_type,ticket_type,pay_range,clientele,notes),contact:contacts(name,title)`);
     if (!entries.length || entries[0].artist_id !== uid) { res.writeHead(404, hdr); res.end(JSON.stringify({ error: "Entry not found" })); return; }
     const e = entries[0], v = e.venue || {}, c = e.contact || {};
     const arts = await sGet(`artists?id=eq.${uid}&select=display_name,genre,oneliner,website,epk,spotify,draw_claim,typical_crowd,set_formats,notable,markets,phone,tone_profile,rate_soft,rate_hard,home_market`);
@@ -572,20 +571,21 @@ async function handleAiDraft(req, res, bodyStr) {
     const acts = await sGet(`activities?pipeline_entry_id=eq.${entryId}&kind=in.(email_in,email_out,note)&order=created_at.desc&limit=8&select=kind,body`);
     const lastInbound = (acts.find((x) => x.kind === "email_in") || {}).body || "";
     const convo = acts.slice().reverse().map((x) => (x.kind === "email_in" ? "THEM: " : x.kind === "email_out" ? "ME: " : "MY NOTE: ") + x.body).join("\n");
-    // The objective comes FIRST. Mid-deal the job is to advance the booking —
-    // answer what they asked, lock specifics — not to re-pitch credentials.
-    const firstTouch = ["lead", "pitched", "outreach"].includes(e.status) && intent !== "checkin";
+    // The objective is DERIVED FROM EVIDENCE — conversation state, notes, stage,
+    // dates — never assumed. Cold intro only when there is zero prior exchange.
+    const hasOutbound = acts.some((x) => x.kind === "email_out");
+    const gigWhen = e.gig_date ? new Date(e.gig_date).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : null;
+    const firstTouch = !hasOutbound && !lastInbound;
     let objective;
-    if (e.status === "hold") objective = "OBJECTIVE: confirm the date and terms on the table. Be concrete (date, time, rate). No self-promotion — they already want you.";
-    else if (lastInbound && (e.status === "talks" || e.status === "waiting")) objective = "OBJECTIVE: this is a live negotiation. Reply DIRECTLY to their last message (quoted below): answer every question they asked, propose or lock concrete specifics (dates, times, rate, logistics), and move the booking one step closer to confirmed. Do NOT re-introduce yourself, do NOT add credentials, links, or sales language — they already know who you are.";
-    else if (intent === "followup") objective = "OBJECTIVE: a brief, warm nudge on the earlier pitch. 2-4 sentences max. One clear ask (a date or a yes/no). No new credentials.";
-    else if (intent === "pitch") objective = "OBJECTIVE: a full first pitch — who the artist is, why they fit THIS room, draw, link, and a clear ask for a date.";
-    else if (intent === "checkin") objective = "OBJECTIVE: friendly relationship check-in with a venue you've played or talked to. Light, short, no hard sell.";
-    else objective = "OBJECTIVE: first-touch cold outreach — concise intro, why the artist fits THIS room, one listen link, clear ask: are they the right person / can we get a date.";
+    if (e.status === "hold" || e.status === "booked") objective = "OBJECTIVE: the deal is at " + e.status + (gigWhen ? " for " + gigWhen : "") + ". Confirm/advance the date and logistics (load-in, set length, rate as agreed). No self-promotion — they already want the artist.";
+    else if (lastInbound) objective = "OBJECTIVE: live conversation — their message is the latest word. Reply DIRECTLY to it: answer every question they asked, propose or lock concrete specifics (dates, times, rate, logistics), move the booking one step closer. Do NOT re-introduce the artist, do NOT add credentials or sales language — they already know who they're talking to.";
+    else if (hasOutbound) objective = "OBJECTIVE: they haven't replied to the earlier email(s) below. Write a brief, warm follow-up that adds ONE new angle or ask (a specific date works well) without repeating the original pitch. 2-4 sentences. Never re-introduce from scratch.";
+    else if (e.status === "played") objective = "OBJECTIVE: friendly check-in with a room the artist already played — reference the relationship, float availability for another date. Light, no hard sell.";
+    else objective = "OBJECTIVE: first-touch cold outreach — concise intro, why the artist fits THIS room specifically (use the venue notes/clientele), one listen link, clear ask: are they the right person / can we get a date.";
     const draft = await gemini(
       `Write a booking email from a working musician to a venue contact. Plain text only — no subject line, no markdown, no placeholders/brackets, under 160 words, direct and human (never marketing copy). Sign off with the artist's first name and phone.\n\n` +
       objective + "\n\n" +
-      `DEAL STAGE: ${e.status}\n` +
+      `DEAL STAGE: ${e.status}${gigWhen ? " · TARGET DATE: " + gigWhen : ""}\n` +
       (lastInbound ? `THEIR LAST MESSAGE (answer this):\n"""${lastInbound.slice(0, 600)}"""\n` : "") +
       (convo ? `CONVERSATION SO FAR:\n${convo}\n` : "") +
       `VENUE: ${v.name || ""} (${v.venue_type || ""}, ${v.ticket_type || "soft"} ticket) in ${v.city || ""}, ${v.state || ""}. ${v.clientele ? "Clientele: " + v.clientele + "." : ""} ${v.notes ? "My notes on this venue: " + v.notes : ""}\n` +

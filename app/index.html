@@ -1827,7 +1827,7 @@ function aiDraft(id) {
     fetch(WORKER_URL + '/ai/draft', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
-      body: JSON.stringify({ entry_id: p.uuid, intent: activeTpl[id] || stageIntent(p) })
+      body: JSON.stringify({ entry_id: p.uuid })
     }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
       .then(function(x){
         if (!x.ok) { showToast(x.j.error || 'AI draft failed', true); return; }
