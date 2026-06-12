@@ -371,6 +371,14 @@
   .closeout-btn i { font-size: 14px; }
   .closeout-btn.passed:hover { background: var(--passed-bg); border-color: var(--passed-text); color: var(--passed-text); }
   .closeout-btn.deadend:hover { background: var(--dead-bg); border-color: var(--dead-text); color: var(--dead-text); }
+  .welcome-overlay { position: fixed; inset: 0; z-index: 120; background: var(--bg-tertiary); overflow-y: auto; display: none; }
+  .welcome-card { max-width: 440px; margin: 0 auto; padding: 56px 22px calc(env(safe-area-inset-bottom, 0px) + 40px); }
+  .wstep { display: flex; gap: 13px; align-items: center; padding: 15px 14px; border: 0.5px solid var(--border-mid); border-radius: 14px; margin-bottom: 10px; cursor: pointer; background: var(--bg-primary); }
+  .wstep.done { opacity: 0.6; }
+  .wstep .wnum { width: 30px; height: 30px; border-radius: 50%; background: var(--amber-50); color: var(--amber-800); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+  .wstep.done .wnum { background: var(--booked-bg); color: var(--booked-text); }
+  .wstep .wt { font-size: 14px; font-weight: 600; }
+  .wstep .wd { font-size: 12px; color: var(--text-secondary); margin-top: 1px; }
   .pipe-search { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid transparent; border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13.5px; font-family: inherit; margin-bottom: 8px; }
   .pipe-search:focus { outline: none; border-color: var(--amber-400); background: var(--bg-primary); }
   .venue-card { position: relative; }
@@ -957,6 +965,7 @@
   <div class="screen" id="screen-settings">
     <div class="page-title" style="margin-bottom:16px">Settings</div>
     <div class="card card-flush" style="margin-bottom:20px">
+      <div class="setting-row" onclick="goProfile()"><div class="setting-icon"><i class="ti ti-id-badge-2"></i></div><div class="setting-label">Artist profile<div class="section-sub" style="margin-top:2px">EPK, rates, links — powers your outreach</div></div><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row"><div class="setting-icon"><i class="ti ti-bell"></i></div><div class="setting-label">Push notifications<div class="section-sub" style="margin-top:2px">Replies, sends &amp; reviews — on this device</div></div><label class="switch"><input type="checkbox" id="push-toggle" onchange="togglePush()"><span></span></label></div>
       <div class="setting-row"><div class="setting-icon"><i class="ti ti-map-pin"></i></div><div class="setting-label">Home market<div class="section-sub" style="margin-top:2px">Where you live — anchors routing &amp; the AI&rsquo;s sense of place</div></div><input class="pipe-search" id="home-market-input" style="margin:0;max-width:150px;font-size:12.5px" placeholder="e.g. Austin, TX" onchange="saveHomeMarket()"></div>
       <div class="setting-row" onclick="googleRowClick()"><div class="setting-icon"><i class="ti ti-brand-google"></i></div><div class="setting-label">Gmail &amp; Calendar</div><span class="setting-value" id="google-conn-status">Connect</span><i class="ti ti-chevron-right"></i></div>
@@ -967,6 +976,15 @@
 
 </div><!-- /app -->
 
+<div class="welcome-overlay" id="welcome">
+  <div class="welcome-card">
+    <img src="/logo.png" alt="" class="logo-img" style="width:44px;height:44px;margin-bottom:14px">
+    <div class="page-title" style="margin-bottom:4px">Welcome to Gig Collective</div>
+    <div style="font-size:14px;color:var(--text-secondary);margin-bottom:22px">Your booking assistant. Three steps and you're operational.</div>
+    <div id="welcome-steps"></div>
+    <div style="text-align:center;margin-top:18px"><button class="vc-btn" style="font-size:12px" onclick="finishOnboarding(true)">I'll explore on my own →</button></div>
+  </div>
+</div>
 <div class="toast" id="toast"><i class="ti ti-check" style="margin-right:6px"></i>Copied to clipboard</div>
 
 <script>
@@ -1106,6 +1124,37 @@ if (window.visualViewport) {
     var kb = (window.innerHeight - window.visualViewport.height) > 140;
     var b = document.querySelector('.bnav'); if (b) b.style.display = kb ? 'none' : '';
   });
+}
+
+// ── First-run onboarding: profile → first venue → the war room ──
+function welcomeSteps(){
+  var s1 = !!(profile.genre && profile.oneliner);
+  var s2 = pipeline.length > 0;
+  return [
+    { done: s1, t: 'Set up your artist profile', d: 'Name, sound, links, rates — this is what your outreach is built from', act: function(){ hideWelcome(); goProfile(); editSection('identity'); } },
+    { done: s2, t: 'Add your first venue', d: 'Got a business card? Put it in — contact and all', act: function(){ hideWelcome(); go('add'); } },
+    { done: false, t: 'Enter the war room', d: 'Draft with AI, send, and let the assistant work your pipeline', act: function(){ finishOnboarding(false); } }
+  ];
+}
+function renderWelcome(){
+  var el = document.getElementById('welcome-steps'); if (!el) return;
+  var steps = welcomeSteps();
+  el.innerHTML = steps.map(function(st, i){
+    return '<div class="wstep' + (st.done ? ' done' : '') + '" onclick="welcomeAct(' + i + ')">'
+      + '<div class="wnum">' + (st.done ? '<i class="ti ti-check"></i>' : (i+1)) + '</div>'
+      + '<div style="flex:1"><div class="wt">' + st.t + '</div><div class="wd">' + st.d + '</div></div>'
+      + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
+  }).join('');
+}
+function welcomeAct(i){ welcomeSteps()[i].act(); }
+function showWelcome(){ var w = document.getElementById('welcome'); if (w) { renderWelcome(); w.style.display = 'block'; } }
+function hideWelcome(){ var w = document.getElementById('welcome'); if (w) w.style.display = 'none'; }
+function finishOnboarding(skipped){
+  hideWelcome();
+  profile.onboarded = true;
+  sb.from('artists').update({ onboarded: true }).eq('id', ME).then(function(){});
+  go('home');
+  showToast(skipped ? 'The war room is yours' : 'You\u2019re operational — go book some rooms');
 }
 
 function goProfile() {
@@ -1425,9 +1474,94 @@ function renderPipeFilterSelect(){
 }
 
 // ── Pipeline detail ─────────────────────────────────────
+// ── Contact management: edit, switch, add — straight from the deal ──
+var contactEditing = {};   // entry uuid -> contact id being edited ('new' = adding)
+function contactSection(p, id){
+  var h = '<div class="section-label" style="display:flex;align-items:center;justify-content:space-between">Contact'
+    + '<button class="vc-btn" onclick="startContactEdit(' + id + ',\'new\')"><i class="ti ti-user-plus"></i> Add contact</button></div>'
+    + '<div class="card card-flush" style="margin-bottom:12px">';
+  var editing = contactEditing[p.uuid];
+  if (editing && editing !== 'new') {
+    h += contactForm(p, id, (p.contactsAll||[]).filter(function(c){ return c.id===editing; })[0] || {});
+  } else {
+    h += '<div class="contact-row"><div class="contact-av">' + esc(initials(p.contact)) + '</div>'
+      + '<div style="flex:1;min-width:0"><div class="contact-name">' + esc(p.contact) + '</div><div class="contact-title">' + esc(p.title || '') + '</div>'
+      + '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px;overflow-wrap:anywhere">' + esc(p.email || 'no email') + (p.phone ? ' · ' + esc(p.phone) : '') + '</div></div>'
+      + '<div class="contact-actions">'
+      + (p.email ? '<a class="btn-icon" title="Email" href="mailto:' + esc(p.email) + '"><i class="ti ti-mail"></i></a>' : '')
+      + (p.phone ? '<a class="btn-icon" title="Call" href="tel:' + esc(p.phone).replace(/[^+0-9]/g,'') + '"><i class="ti ti-phone"></i></a>' : '')
+      + '<button class="btn-icon" title="Edit contact" onclick="startContactEdit(' + id + ',\'' + (p.contactId||'') + '\')"><i class="ti ti-pencil"></i></button>'
+      + '</div></div>';
+    // other contacts at this venue -> tap to make primary for this deal
+    var others = (p.contactsAll||[]).filter(function(c){ return c.id !== p.contactId; });
+    if (others.length) {
+      h += '<div style="padding:8px 12px 10px"><div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">Also at this venue — tap to use for this deal:</div><div class="followup-chips" style="margin:0">'
+        + others.map(function(c){ return '<div class="fu-chip" onclick="switchContact(' + id + ',\'' + c.id + '\')">' + esc(c.name || c.email || 'contact') + (c.title ? ' · ' + esc(c.title) : '') + '</div>'; }).join('')
+        + '</div></div>';
+    }
+  }
+  if (editing === 'new') h += contactForm(p, id, {});
+  h += '</div>';
+  return h;
+}
+function contactForm(p, id, c){
+  var isNew = !c.id;
+  return '<div style="padding:12px">'
+    + '<div class="field-row"><span class="field-label">Name</span><input class="form-input" id="cf-name" placeholder="Marcy Hayes" value="' + esc(c.name||'') + '"></div>'
+    + '<div class="field-row"><span class="field-label">Role / title</span><input class="form-input" id="cf-title" placeholder="Booking manager" value="' + esc(c.title||'') + '"></div>'
+    + '<div class="field-row"><span class="field-label">Email</span><input class="form-input" id="cf-email" placeholder="marcy@venue.com" value="' + esc(c.email||'') + '"></div>'
+    + '<div class="field-row"><span class="field-label">Phone</span><input class="form-input" id="cf-phone" placeholder="(512) 555-0100" value="' + esc(c.phone||'') + '"></div>'
+    + '<div class="save-row"><button class="btn-primary btn-sm" onclick="saveContact(' + id + ',\'' + (c.id||'') + '\')">' + (isNew ? 'Add contact' : 'Save') + '</button>'
+    + '<button class="btn-secondary btn-sm" onclick="cancelContactEdit(' + id + ')">Cancel</button></div></div>';
+}
+function startContactEdit(id, cid){ var p = pipeline[id]; contactEditing[p.uuid] = cid || p.contactId; openDetail(id); }
+function cancelContactEdit(id){ var p = pipeline[id]; delete contactEditing[p.uuid]; openDetail(id); }
+function saveContact(id, cid){
+  var p = pipeline[id];
+  var row = {
+    name: document.getElementById('cf-name').value.trim(),
+    title: document.getElementById('cf-title').value.trim() || null,
+    email: document.getElementById('cf-email').value.trim() || null,
+    phone: document.getElementById('cf-phone').value.trim() || null
+  };
+  if (!row.name && !row.email) { showToast('Need at least a name or an email', true); return; }
+  delete contactEditing[p.uuid];
+  if (cid) {
+    sb.from('contacts').update(row).eq('id', cid).then(function(r){
+      if (r.error) { showToast('Could not save: ' + r.error.message, true); return; }
+      showToast('Contact updated'); loadPipeline(); fetchVenueContacts(p);
+    });
+  } else {
+    row.venue_id = p.venueId;
+    sb.from('contacts').insert(row).select().single().then(function(r){
+      if (r.error) { showToast('Could not add: ' + r.error.message, true); return; }
+      // New contact becomes this deal's contact immediately.
+      sb.from('pipeline_entries').update({ contact_id: r.data.id }).eq('id', p.uuid).then(function(){
+        showToast('Contact added'); loadPipeline(); fetchVenueContacts(p);
+      });
+    });
+  }
+}
+function switchContact(id, cid){
+  var p = pipeline[id];
+  sb.from('pipeline_entries').update({ contact_id: cid }).eq('id', p.uuid).then(function(r){
+    if (r.error) { showToast('Could not switch: ' + r.error.message, true); return; }
+    showToast('Contact switched for this deal'); loadPipeline();
+  });
+}
+function fetchVenueContacts(p){
+  if (!p.venueId) return;
+  sb.from('contacts').select('id,name,title,email,phone').eq('venue_id', p.venueId).then(function(r){
+    if (r.error) return;
+    p.contactsAll = r.data || [];
+    rerenderOpenDetail();
+  });
+}
+
 function openDetail(id) {
   var p = pipeline[id];
   currentDetailUuid = p ? p.uuid : null;
+  if (p && !p.contactsAll) fetchVenueContacts(p);
   var sts = stagesFor(p);
   var stageIdx = sts.indexOf(p.s);
   var stageDots = sts.map(function(s,i){
@@ -1591,13 +1725,7 @@ function openDetail(id) {
     + statusActions
     + attnCard
     + gigDateBlock
-    + '<div class="section-label">Contact</div>'
-    + '<div class="card card-flush" style="margin-bottom:12px">'
-    + '<div class="contact-row"><div class="contact-av">' + p.contact.split(' ').map(function(n){return n[0];}).join('') + '</div>'
-    + '<div><div class="contact-name">' + p.contact + '</div><div class="contact-title">' + p.title + '</div></div>'
-    + '<div class="contact-actions"><div class="btn-icon" title="Email"><i class="ti ti-mail"></i></div><div class="btn-icon" title="Call"><i class="ti ti-phone"></i></div></div></div>'
-    + '<div style="padding:8px 0 4px"><div style="font-size:12px;color:var(--text-secondary);margin-bottom:2px">' + p.email + '</div><div style="font-size:12px;color:var(--text-secondary)">' + p.phone + '</div></div>'
-    + '</div>'
+    + contactSection(p, id)
     + '<div class="section-label">Notes</div>'
     + '<div class="card card-flush" style="margin-bottom:12px">' + notesHtml
     + '<div><input class="note-input" placeholder="Add a note… press Enter to save" onkeydown="addNote(event,' + id + ')"></div>'
@@ -2372,7 +2500,12 @@ function applyAvatar(url){
   [document.getElementById('avatar-btn'), document.getElementById('profile-av')].forEach(function(el){
     if(!el) return;
     if(url){ el.style.backgroundImage = 'url("' + url + '")'; el.style.backgroundSize='cover'; el.style.backgroundPosition='center'; el.textContent=''; }
-    else { el.style.backgroundImage=''; el.textContent = initials(profile.name); }
+    else {
+      el.style.backgroundImage='';
+      var ini = initials(profile.name);
+      if (ini && ini !== '?') el.textContent = ini;
+      else el.innerHTML = '<i class="ti ti-user" style="font-size:15px"></i>';
+    }
   });
 }
 function uploadAvatar(e){
@@ -2445,6 +2578,8 @@ function loadProfile(){
     setGoogleConnectedUI(!!a.gmail_connected);
     profile.avatar_url = a.avatar_url || '';
     var ast = document.getElementById('auto-send-toggle'); if(ast) ast.checked = !!a.allow_auto_send;
+    profile.onboarded = (a.onboarded !== false); // column may predate migration 022
+    if (a.onboarded === false) showWelcome();
     profile.allow_auto_send = !!a.allow_auto_send;
     fillProfileDom(); renderMarkets(); renderNotables(); updateProfilePreview(); updateHomeStats();
   });
@@ -2491,7 +2626,7 @@ function loadVenues(){
 
 function loadPipeline(){
   sb.from('pipeline_entries')
-    .select('id,status,prev_status,venue_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs, venue:venues(name,city,state,venue_type,pay_range,ticket_type), contact:contacts(name,title,email,phone)')
+    .select('id,status,prev_status,venue_id,contact_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs, venue:venues(name,city,state,venue_type,pay_range,ticket_type), contact:contacts(name,title,email,phone)')
     .order('last_activity_at',{ascending:false}).then(function(r){
       if(r.error){ console.error('loadPipeline', r.error); return; }
       var rows=r.data||[];
@@ -2499,7 +2634,7 @@ function loadPipeline(){
         var v=e.venue||{}, c=e.contact||{};
         return {id:i, uuid:e.id, venue:v.name||'(unknown venue)', city:v.city||'', state:v.state||'',
                 contact:c.name||'(no contact)', title:c.title||'', email:c.email||'', phone:c.phone||'',
-                vtype:v.venue_type||'', pay:v.pay_range||'—', t:v.ticket_type||'soft', s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, gig_date:e.gig_date||null, gigPay:e.gig_pay||'', gigCosts:e.gig_costs||'', days:daysAgo(e.last_activity_at), activity:[]};
+                vtype:v.venue_type||'', pay:v.pay_range||'—', t:v.ticket_type||'soft', s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, contactId:e.contact_id||null, gig_date:e.gig_date||null, gigPay:e.gig_pay||'', gigCosts:e.gig_costs||'', days:daysAgo(e.last_activity_at), activity:[]};
       });
       updateHomeStats();
       backfillWins();

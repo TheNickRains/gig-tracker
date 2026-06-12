@@ -27,6 +27,18 @@ tokens expire ~7 days idle (Settings flips to "Connect" — just reconnect); Gem
 caps (upgrade the key's project to billed before the roster leans on AI drafting); push notifications
 are per-device opt-in.
 
+## 2026-06-12 — Derick's field reports: onboarding flow + real contact management
+First external user (Derick) immediately hit: (1) Profile unreachable without knowing the avatar is a
+button → avatar now falls back to a person ICON when no name/photo (never invisible), and Settings
+gained an explicit "Artist profile" row. (1.1) **First-run onboarding** (migration 022 artists.onboarded,
+existing members backfilled true): full-screen welcome with 3 live-state steps — profile → first venue →
+"enter the war room" — each tappable to the right surface, skippable, finishes by flagging onboarded.
+(2) **Contact management from the deal** (the bunk icons): mail/phone icons are now real mailto:/tel:
+links (hidden when empty); pencil opens an inline edit form (name/role/email/phone → contacts row,
+shared intelligence); "Add contact" inserts a new contact at the venue AND makes it this deal's primary;
+other venue contacts render as chips — tap to switch the deal's contact (pipeline_entries.contact_id).
+fetchVenueContacts lazy-loads per detail open.
+
 ## 2026-06-12 — E polish: live social, wins backfill, glance toggle; calendar mystery closed
 **#7 FINAL:** Nick's own screenshot shows the event ON booking@'s Google Calendar — the gap was Spark
 (client) not showing/syncing that calendar. The mystery "booking page (30 mins)" was NOT us (we only
