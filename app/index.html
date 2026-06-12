@@ -3117,7 +3117,7 @@ function loadVenues(){
 
 function loadPipeline(){
   sb.from('pipeline_entries')
-    .select('id,status,prev_status,venue_id,contact_id,person_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs,ticket_type, venue:venues(name,city,state,venue_type,pay_range,ticket_type,booking_form_url), person:people(name,title,org,email,phone,linkedin,instagram), contact:contacts(name,title,email,phone,linkedin,instagram)')
+    .select('id,status,prev_status,venue_id,contact_id,person_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs,ticket_type, venue:venues!pipeline_entries_venue_id_fkey(name,city,state,venue_type,pay_range,ticket_type,booking_form_url), person:people(name,title,org,email,phone,linkedin,instagram), contact:contacts(name,title,email,phone,linkedin,instagram)')
     .order('last_activity_at',{ascending:false}).then(function(r){
       if(r.error){
         console.error('loadPipeline', r.error);

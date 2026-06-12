@@ -451,7 +451,7 @@ async function syncCalendar(artistId, token) {
     // -- export holds/bookings + flip played --
     // Agent policy: the worker CREATES events on its own, but only EDITS or
     // DELETES one when the ARTIST changed the date in the app (gig_date_dirty).
-    const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&status=in.(hold,booked,played)&or=(gig_date.not.is.null,google_event_id.not.is.null)&select=id,status,gig_date,google_event_id,gig_date_dirty,gig_pay,gig_costs,venue:venues(name)`);
+    const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&status=in.(hold,booked,played)&or=(gig_date.not.is.null,google_event_id.not.is.null)&select=id,status,gig_date,google_event_id,gig_date_dirty,gig_pay,gig_costs,venue:venues!pipeline_entries_venue_id_fkey(name)`);
     for (const e of entries) {
       const evUrl = (idp) => `https://www.googleapis.com/calendar/v3/calendars/primary/events${idp ? "/" + idp : ""}`;
       // Date cleared by the artist -> remove the event.
@@ -600,7 +600,7 @@ async function handleAiDraft(req, res, bodyStr) {
     const templateKind = String(parsed.template_kind || "").slice(0, 20);
     const templateText = String(parsed.template_text || "").slice(0, 2000);
     if (!entryId) { res.writeHead(400, hdr); res.end(JSON.stringify({ error: "entry_id required" })); return; }
-    const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,gig_date,ticket_type,person_id,venue:venues(name,city,state,venue_type,ticket_type,pay_range,clientele,notes,booking_form_url),person:people(name,title,org),contact:contacts(name,title)`);
+    const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,gig_date,ticket_type,person_id,venue:venues!pipeline_entries_venue_id_fkey(name,city,state,venue_type,ticket_type,pay_range,clientele,notes,booking_form_url),person:people(name,title,org),contact:contacts(name,title)`);
     if (!entries.length || entries[0].artist_id !== uid) { res.writeHead(404, hdr); res.end(JSON.stringify({ error: "Entry not found" })); return; }
     const e = entries[0], v = e.venue || {}, c = e.person || e.contact || {};
     let otherRooms = "";
