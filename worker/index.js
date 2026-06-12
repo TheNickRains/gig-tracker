@@ -153,10 +153,31 @@ function header(msg, name) {
 }
 function b64url(s) { return Buffer.from(s).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
 function mimeWord(s) { return /[^\x20-\x7E]/.test(s) ? "=?UTF-8?B?" + Buffer.from(s).toString("base64") + "?=" : s; }
-async function gmailSend(token, to, subject, body, thread) {
-  let headers = `To: ${to}\r\nSubject: ${mimeWord(subject)}\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset="UTF-8"\r\n`;
+function escHtml(t) { return (t || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+async function gmailSend(token, to, subject, body, thread, sig) {
+  let headers = `To: ${to}\r\nSubject: ${mimeWord(subject)}\r\nMIME-Version: 1.0\r\n`;
   if (thread && thread.msgId) headers += `In-Reply-To: ${thread.msgId}\r\nReferences: ${thread.msgId}\r\n`;
-  const payload = { raw: b64url(headers + "\r\n" + body) };
+  let raw;
+  if (sig && (sig.logo || sig.name)) {
+    // multipart/alternative: plain text + HTML with the branded signature
+    const sigText = "\n\n--\n" + [sig.name, sig.phone, sig.site].filter(Boolean).join(" · ");
+    const sigHtml = '<br><br><div style="border-top:1px solid #ddd;padding-top:12px;margin-top:4px">'
+      + (sig.logo ? '<img src="' + sig.logo + '" width="120" alt="' + escHtml(sig.name || "") + '" style="display:block;margin-bottom:8px"><br>' : "")
+      + '<strong style="font:14px -apple-system,Segoe UI,Helvetica,Arial,sans-serif">' + escHtml(sig.name || "") + "</strong>"
+      + '<div style="font:12px/1.5 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#666">'
+      + [sig.phone, sig.site].filter(Boolean).map(escHtml).join(" · ") + "</div></div>";
+    const htmlBody = '<div style="font:14px/1.55 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#222;white-space:pre-wrap">' + escHtml(body) + "</div>" + sigHtml;
+    const bnd = "gigc_" + Date.now().toString(36);
+    headers += `Content-Type: multipart/alternative; boundary="${bnd}"\r\n`;
+    raw =
+      headers + "\r\n" +
+      `--${bnd}\r\nContent-Type: text/plain; charset="UTF-8"\r\n\r\n` + body + sigText + `\r\n` +
+      `--${bnd}\r\nContent-Type: text/html; charset="UTF-8"\r\n\r\n` + htmlBody + `\r\n--${bnd}--`;
+  } else {
+    headers += `Content-Type: text/plain; charset="UTF-8"\r\n`;
+    raw = headers + "\r\n" + body;
+  }
+  const payload = { raw: b64url(raw) };
   if (thread && thread.threadId) payload.threadId = thread.threadId;
   const r = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(payload),
@@ -434,7 +455,7 @@ async function processScheduled() {
           console.log("scheduled: canceled (reply arrived)", m.id);
           continue;
         }
-        const arts = await sGet(`artists?id=eq.${m.artist_id}&select=allow_auto_send`);
+        const arts = await sGet(`artists?id=eq.${m.artist_id}&select=allow_auto_send,display_name,phone,website,sig_logo_url`);
         if (!arts.length || !arts[0].allow_auto_send) {
           await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "ready" });
           notify(m.artist_id, "Send awaiting your review", m.subject, "/app#entry/" + m.pipeline_entry_id).catch(() => {});
@@ -449,7 +470,10 @@ async function processScheduled() {
       }
       const token = await refreshAccessToken(conns[0].refresh_token);
       const thread = await findThread(token, m.to_email).catch(() => null);
-      const gid = await gmailSend(token, m.to_email, (thread && thread.subject) || m.subject, m.body, thread);
+      const sigRows = await sGet(`artists?id=eq.${m.artist_id}&select=display_name,phone,website,sig_logo_url`);
+      const sa = sigRows[0] || {};
+      const sig = { name: sa.display_name, phone: sa.phone, site: sa.website, logo: sa.sig_logo_url };
+      const gid = await gmailSend(token, m.to_email, (thread && thread.subject) || m.subject, m.body, thread, sig);
       await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "sent", sent_at: new Date().toISOString() });
       await logActivity({ pipeline_entry_id: m.pipeline_entry_id, kind: "email_out", body: m.body.slice(0, 600), source: "email_sync", email_message_id: gid });
       const entries = await sGet(`pipeline_entries?id=eq.${m.pipeline_entry_id}&select=status`);
