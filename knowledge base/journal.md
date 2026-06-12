@@ -17,6 +17,28 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-11 — Big feedback round: threads, bubbles, blank canvas, toggles, rates, desktop fix
+**Critical fix:** desktop nav was dead — `#screen-home{display:grid}` wasn't scoped to `.active` so
+Home rendered over every screen; now `#screen-home.active`, and desktop is FULL-WIDTH (≥1100: app
+max-width none, 3-zone Home = bookings rail | needs-you | stats rail, detail 2-col capped 1240).
+**Mobile gutter = TOP ONLY** (sides full-bleed, "seamless immersion"). **Draft editor:** blank canvas
+default + micro-tutorial placeholder; "Select a template…" dropdown (no auto-load); actions order
+Send now · Copy · Draft with AI; schedule = nothing preselected, chips toggle off, Custom is a
+full-row dashed "Choose a date & time…" button; AI intent falls back by stage. **Sends:** human=true
+("Send now") bypasses auto-send gate AND reply-cancel (migration 018); worker now replies IN THREAD
+(findThread → threadId + In-Reply-To + "Re:" subject; new thread only when none exists). **Calendar
+events are CREATE-ONLY** (Nick's rule: agent creates, never edits; date changes post-sync are manual).
+**Conversation = 2-way bubbles** (.convo: them left/blue rail, you right/amber rail, chronological,
+AI summary bold + raw dim, system lines centered) — this is the AI's context surface. **Passed/Dead
+are toggles** (lit button → tap again reopens via prev_status). **Discover ↔ pipeline:** "Add to
+pipeline" button on venue detail (greys to "Added ✓"), "In pipeline ✓" chip on cards (needed venue_id
+in the pipeline select). **Profile/Artist-RAG:** rate_soft + rate_hard fields (AI prompt quotes them
+EXACTLY, forbidden to invent/underbid; rates-unset ⇒ defer on numbers); "Set formats" → "Lineup
+options". **Weekly blocks stage + "Confirm weekly blocks"** before persisting. Calendar day with a
+gig dot opens the gig (no accidental availability cycling). Long URLs wrap (overflow-wrap). NOTE:
+the "busy 28th" confusion = Google-import marks busy, but Upcoming only lists entries with gig_date —
+set the gig date on the booked venue.
+
 ## 2026-06-11 — Push notifications, draft persistence, gutter island returns, calendar v2
 **Push (worker grew its first npm dep, web-push):** VAPID keypair self-manages in `app_secrets`
 (service-role only, migration 017); `GET /push/pubkey`; `notify()` on new inbound reply / send fired /

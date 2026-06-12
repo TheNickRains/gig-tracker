@@ -82,12 +82,13 @@
      slim safe-area gutter; the bottom nav is its companion island. */
   body { touch-action: manipulation; background: var(--bg-page); }
   @media (max-width: 599px) {
-    body { padding: calc(env(safe-area-inset-top, 0px) + 8px) 8px calc(env(safe-area-inset-bottom, 0px) + 8px); }
+    /* Top gutter only — sides bleed to the edge for seamless immersion. */
+    body { padding: calc(env(safe-area-inset-top, 0px) + 8px) 0 0; }
     .app {
-      min-height: calc(100vh - 16px);
-      border-radius: 22px;
-      border: 0.5px solid var(--border-mid);
-      box-shadow: 0 2px 18px rgba(0,0,0,0.18);
+      min-height: calc(100vh - env(safe-area-inset-top, 0px) - 8px);
+      border-radius: 22px 22px 0 0;
+      border-top: 0.5px solid var(--border-mid);
+      box-shadow: 0 -2px 18px rgba(0,0,0,0.12);
     }
     .nav { top: calc(env(safe-area-inset-top, 0px) + 8px); border-radius: 22px 22px 0 0; z-index: 70; }
     /* Keep the top gutter clean while scrolling — content can't slide through it. */
@@ -105,22 +106,27 @@
   }
   .detail-cols { display: block; }
   @media (min-width: 1100px) {
-    .app { max-width: 1100px; }
-    .screen { padding-left: 28px; padding-right: 28px; }
-    /* Home: war-room dashboard */
-    #screen-home { display: grid; grid-template-columns: 1fr 360px; gap: 0 28px; align-items: start; }
-    #screen-home > div:first-child { grid-column: 1 / -1; }
-    #screen-home #war-needs { grid-column: 1; grid-row: 2 / span 4; }
-    #screen-home .stat-grid, #screen-home .war-actions, #screen-home #war-sends, #screen-home #war-cal,
-    #screen-home > .section-label, #screen-home > .card.placeholder { grid-column: 2; }
-    #war-cal { display: block !important; }
-    /* Detail: two working columns */
-    .detail-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; align-items: start; }
-    /* Pipeline grid view gets a third column */
-    #pipe-list.grid { grid-template-columns: 1fr 1fr 1fr; }
+    /* Full landscape: the app owns the viewport. */
+    .app { max-width: none; border: none; border-radius: 0; box-shadow: none; }
+    .screen { padding-left: 36px; padding-right: 36px; }
+    /* Home: 3-zone war room — bookings rail | needs-you stack | stats rail.
+       Scoped to .active (the unscoped version glued Home over every screen). */
+    #screen-home.active { display: grid; grid-template-columns: 340px minmax(0, 1fr) 360px; gap: 0 32px; align-items: start; }
+    #screen-home.active > div:first-child { grid-column: 1 / -1; }
+    #screen-home.active #war-cal { display: block; grid-column: 1; }
+    #screen-home.active #war-up { display: block; grid-column: 1; }
+    #screen-home.active #war-needs { grid-column: 2; grid-row: 2 / span 6; }
+    #screen-home.active .stat-grid, #screen-home.active .war-actions, #screen-home.active #war-sends,
+    #screen-home.active > .section-label, #screen-home.active > .card.placeholder { grid-column: 3; }
+    /* Detail: two working columns, capped for readability */
+    .detail-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; align-items: start; max-width: 1240px; }
+    /* Pipeline breathes */
+    #pipe-list.grid { grid-template-columns: repeat(4, 1fr); }
+    #screen-pipeline { max-width: 1240px; }
+    #screen-discover { max-width: 1240px; }
     /* Forms & calendar stay readable, centered */
-    #screen-settings, #screen-add, #screen-profile { max-width: 640px; margin: 0 auto; }
-    #screen-calendar { max-width: 720px; margin: 0 auto; }
+    #screen-settings, #screen-add, #screen-profile { max-width: 680px; margin: 0 auto; }
+    #screen-calendar { max-width: 760px; margin: 0 auto; }
   }
 
   /* ── Nav ── */
@@ -412,8 +418,28 @@
   .cal-dow { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); text-align: center; padding: 4px 0; }
   .cal-day { aspect-ratio: 1; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 13px; cursor: pointer; border: 0.5px solid transparent; position: relative; }
   .cal-gig-dot { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); width: 5px; height: 5px; border-radius: 50%; background: var(--amber-800); }
-  /* Mini bookings calendar (desktop war room rail) */
-  #war-cal { display: none; }
+  /* Conversation: 2-way message bubbles — them left/blue rail, you right/amber rail */
+  .convo { display: flex; flex-direction: column; gap: 9px; padding: 12px; }
+  .msg { max-width: 88%; padding: 9px 11px; border-radius: 12px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; color: var(--text-primary); }
+  .msg.them { align-self: flex-start; background: var(--talks-bg); border-left: 3px solid var(--talks-text); border-top-left-radius: 4px; }
+  .msg.you { align-self: flex-end; background: var(--pitched-bg); border-right: 3px solid var(--pitched-text); border-top-right-radius: 4px; }
+  .msg .m-sum { font-weight: 600; margin-bottom: 3px; }
+  .msg .m-raw { font-size: 12.5px; opacity: 0.75; margin-top: 3px; }
+  .msg .m-meta { font-size: 10px; color: var(--text-tertiary); margin-top: 5px; display: flex; gap: 8px; }
+  .msg.them .m-meta { color: var(--talks-text); opacity: 0.7; }
+  .msg.you .m-meta { color: var(--pitched-text); opacity: 0.7; justify-content: flex-end; }
+  .sys-line { align-self: center; font-size: 11px; color: var(--text-tertiary); display: flex; gap: 6px; align-items: baseline; text-align: center; }
+  /* Terminal-stage toggles */
+  .closeout-btn.on { font-weight: 600; }
+  .closeout-btn.on.passed { background: var(--passed-bg); border-color: var(--passed-text); color: var(--passed-text); }
+  .closeout-btn.on.deadend { background: var(--dead-bg); border-color: var(--dead-text); color: var(--dead-text); }
+  /* Long URLs (Spotify, EPK) wrap instead of breaking layout */
+  .field-value, .tpl-preview, .act-ctx, .war-sub { overflow-wrap: anywhere; }
+  /* Full-row custom schedule button */
+  .custom-sched-btn { width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 10px; margin-top: 8px; border: 1px dashed var(--border-mid); border-radius: 10px; background: none; font-family: inherit; font-size: 12.5px; color: var(--text-secondary); cursor: pointer; }
+  .custom-sched-btn:hover, .custom-sched-btn.on { border-color: var(--amber-400); color: var(--amber-800); border-style: solid; }
+  /* Mini bookings calendar + upcoming (desktop war room rail) */
+  #war-cal, #war-up { display: none; }
   .mc-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
   .mc-dow { font-size: 9px; text-transform: uppercase; color: var(--text-tertiary); text-align: center; padding: 2px 0; }
   .mc-day { aspect-ratio: 1; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 10.5px; position: relative; }
@@ -657,6 +683,7 @@
     </div>
     <div id="war-sends"></div>
     <div id="war-cal"></div>
+    <div id="war-up"></div>
     <div class="section-label">Collective activity <span class="soon">feature incomplete: coming soon</span></div>
     <div class="card placeholder">
       <div class="feed-item">
@@ -815,12 +842,16 @@
       <div id="view-draw">
         <div class="field-row"><span class="field-label">Draw claim</span><span class="field-value" id="fv-draw">Strong draw in Houston and Austin, building Nashville</span></div>
         <div class="field-row"><span class="field-label">Typical crowd</span><span class="field-value" id="fv-crowd">35–55, seated, attentive — good fit for listening rooms</span></div>
-        <div class="field-row"><span class="field-label">Set formats</span><span class="field-value" id="fv-formats">Solo acoustic · Full band</span></div>
+        <div class="field-row"><span class="field-label">Lineup options</span><span class="field-value" id="fv-formats">Solo acoustic · Full band</span></div>
+        <div class="field-row"><span class="field-label">Soft-ticket rate</span><span class="field-value" id="fv-rate-soft">Not set</span></div>
+        <div class="field-row"><span class="field-label">Hard-ticket pricing</span><span class="field-value" id="fv-rate-hard">Not set</span></div>
       </div>
       <div id="edit-draw" style="display:none">
         <div class="field-row"><span class="field-label">Draw claim</span><input class="form-input" id="fi-draw" value="Strong draw in Houston and Austin, building Nashville"></div>
         <div class="field-row"><span class="field-label">Typical crowd</span><input class="form-input" id="fi-crowd" value="35–55, seated, attentive — good fit for listening rooms"></div>
-        <div class="field-row"><span class="field-label">Set formats</span><input class="form-input" id="fi-formats" value="Solo acoustic · Full band"></div>
+        <div class="field-row"><span class="field-label">Lineup options <span style="font-weight:400;color:var(--text-tertiary)">(solo / duo / full band)</span></span><input class="form-input" id="fi-formats" value="Solo acoustic · Full band"></div>
+        <div class="field-row"><span class="field-label">Soft-ticket rate <span style="font-weight:400;color:var(--text-tertiary)">($/hr or flat — the AI quotes this, never invents)</span></span><input class="form-input" id="fi-rate-soft" placeholder="e.g. $200/hr · 3hr min"></div>
+        <div class="field-row"><span class="field-label">Hard-ticket pricing <span style="font-weight:400;color:var(--text-tertiary)">(ticket range + deal, e.g. $15–25 / door split)</span></span><input class="form-input" id="fi-rate-hard" placeholder="e.g. $15–25 tickets · 80/20 door"></div>
         <div class="save-row"><button class="btn-primary btn-sm" onclick="saveSection('draw')">Save</button><button class="btn-secondary btn-sm" onclick="cancelSection('draw')">Cancel</button></div>
       </div>
     </div>
@@ -1062,11 +1093,13 @@ function renderDiscover() {
   var f = venues.filter(function(v){ return (!state||v.state===state)&&(!city||v.city===city)&&(!type||v.type===type); });
   var g = document.getElementById('venue-grid');
   if (!f.length) { g.innerHTML = '<p style="color:var(--text-secondary);font-size:14px;grid-column:1/-1">No venues match this filter.</p>'; return; }
+  var inPipe = {}; pipeline.forEach(function(p){ if (p.venueId) inPipe[p.venueId] = true; });
   g.innerHTML = f.map(function(v){
     return '<div class="venue-card" onclick="openVenueDetail(\'' + v.id + '\')">'
     + '<div class="venue-name">' + esc(v.name) + '</div>'
     + '<div class="venue-loc">' + esc(v.city) + ', ' + esc(v.state) + '</div>'
     + '<span class="badge badge-' + v.type + '">' + esc(v.vtype) + '</span>'
+    + (inPipe[v.id] ? ' <span class="badge" style="background:var(--bg-secondary);color:var(--text-tertiary)">In pipeline ✓</span>' : '')
     + '<div class="venue-tag"><i class="ti ti-currency-dollar"></i>' + esc(v.pay) + '</div>'
     + '<div class="venue-tag"><i class="ti ti-user"></i>' + esc(v.contact) + '</div>'
     + '</div>';
@@ -1193,6 +1226,20 @@ function renderMiniCal(){
   el.innerHTML = '<div class="section-label">' + now.toLocaleDateString(undefined,{month:'long'}) + ' at a glance</div>'
     + '<div class="card" style="margin-bottom:20px;cursor:pointer" onclick="go(\'calendar\')" title="Open calendar">'
     + '<div class="mc-grid">' + ['S','M','T','W','T','F','S'].map(function(x){ return '<div class="mc-dow">' + x + '</div>'; }).join('') + cells + '</div></div>';
+  // Upcoming gigs under the mini calendar (desktop rail).
+  var up = document.getElementById('war-up');
+  if (up) {
+    var rows = [];
+    Object.keys(gigs).sort().forEach(function(iso){ gigs[iso].forEach(function(p){ if (new Date(p.gig_date) >= new Date(Date.now() - 86400000)) rows.push(p); }); });
+    rows = rows.slice(0, 6);
+    up.innerHTML = rows.length
+      ? '<div class="section-label">Upcoming</div><div class="card card-flush" style="margin-bottom:20px">' + rows.map(function(p){
+          var d = new Date(p.gig_date);
+          return '<div class="war-row" onclick="openDetail(' + p.id + ')"><div class="war-ic" style="background:var(--' + p.s + '-bg);color:var(--' + p.s + '-text)"><i class="ti ti-music"></i></div>'
+            + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(p.venue) + '</div><div class="war-sub">' + d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) + ' · ' + statusLabel[p.s] + '</div></div></div>';
+        }).join('') + '</div>'
+      : '<div class="section-label">Upcoming</div><div class="card" style="margin-bottom:20px;font-size:12.5px;color:var(--text-secondary)">No dated gigs yet — set a gig date on a Hold or Booked venue and it shows here + on Google Calendar.</div>';
+  }
 }
 var warPrevCount = 0;
 // The war room: Home leads with what needs you, then the scheduled queue.
@@ -1274,7 +1321,6 @@ function openDetail(id) {
     return '<div class="stage-step" onclick="setStatus(' + id + ',\'' + s + '\')" title="Move to ' + statusLabel[s] + '"><div class="stage-dot ' + cls + '">' + inner + '</div><div class="stage-label' + (i===stageIdx?' current':'') + '">' + statusLabel[s] + '</div></div>';
   }).join('');
 
-  if (!activeTpl[id]) activeTpl[id] = (p.s==='lead'||p.s==='outreach') ? 'outreach' : ((p.s==='pitched'||p.s==='talks'||p.s==='waiting'||p.s==='followup') ? 'followup' : 'checkin');
 
 
   // Conversation = the thread with the venue (both directions, prominent).
@@ -1307,24 +1353,20 @@ function openDetail(id) {
   }
   var convo = p.activity.filter(function(a){ return a.kind!=='note'; });
   var notes = p.activity.filter(function(a){ return a.kind==='note'; });
-  var actHtml = convo.map(function(a){
+  // Two-way thread: their bubbles left (blue rail), yours right (amber rail).
+  // Chronological top→bottom like any messenger; system events sit centered.
+  var actHtml = '<div class="convo">' + (convo.slice().reverse().map(function(a){
     if (a.kind==='email_in' || a.kind==='email_out') {
       var inbound = a.kind==='email_in';
-      var label = inbound ? esc(first) + ' → you' : 'You → ' + esc(first);
       var text = inbound ? a.text : a.text.replace(/^Sent:\s*/,'');
-      // AI summary (when present) is the headline; the raw words sit under it.
       var content = a.summary
-        ? '<div class="act-ctx">' + esc(a.summary) + '</div><div class="act-raw">' + esc(text) + '</div>'
-        : '<div class="act-ctx">' + esc(text) + '</div>';
-      return '<div class="activity-item ctx">'
-        + '<div class="act-rail" style="background:' + a.dot + '"></div>'
-        + '<div class="act-body"><div class="act-kind" style="color:' + a.dot + '">' + label + '<span class="act-time">' + a.time + '</span></div>'
-        + content + '</div></div>';
+        ? '<div class="m-sum">' + esc(a.summary) + '</div><div class="m-raw">' + esc(text) + '</div>'
+        : esc(text);
+      return '<div class="msg ' + (inbound ? 'them' : 'you') + '">' + content
+        + '<div class="m-meta"><span>' + (inbound ? esc(first) : 'You') + '</span><span>' + a.time + '</span></div></div>';
     }
-    return '<div class="activity-item action">'
-      + '<div class="act-dot-sm"></div>'
-      + '<div class="act-line"><span class="act-action-text">' + esc(a.text) + '</span><span class="act-time">' + a.time + '</span></div></div>';
-  }).join('') || '<p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">No conversation yet — emails with ' + esc(first) + ' appear here automatically.</p>';
+    return '<div class="sys-line"><span>' + esc(a.text) + '</span><span>· ' + a.time + '</span></div>';
+  }).join('') || '<p style="color:var(--text-secondary);font-size:13px">No conversation yet — emails with ' + esc(first) + ' appear here automatically.</p>') + '</div>';
   var notesHtml = notes.map(function(a){
     if (a.id && notesEditing[a.id]) {
       return '<div class="note-item"><input class="note-input" style="margin:0;width:100%" value="' + esc(a.text) + '" onkeydown="saveNoteEdit(event,\'' + a.id + '\',' + id + ')" autofocus></div>';
@@ -1351,16 +1393,13 @@ function openDetail(id) {
       + '<button class="btn-secondary btn-sm" onclick="markScheduledSent(' + id + ')">Mark sent</button>'
       + '<button class="sched-x" onclick="cancelScheduled(' + id + ')">Cancel</button></div>';
   } else {
-    if (sendChipDays[id] === undefined) sendChipDays[id] = 1; // Tomorrow 9am: the default that gets venue responses
-    var chipsDef = [['Tomorrow 9am',1],['In 3 days',3],['In 7 days',7],['Custom…','custom']];
-    var sel = sendChipDays[id];
+    var chipsDef = [['Tomorrow 9am',1],['In 3 days',3],['In 7 days',7]];
+    var sel = sendChipDays[id]; // nothing pre-selected — scheduling is a choice
     schedBlock = '<div class="followup-chips" id="send-chips-' + id + '">'
       + chipsDef.map(function(c){ return '<div class="fu-chip' + (sel===c[1]?' selected':'') + '" onclick="pickSendChip(' + id + ',\'' + c[1] + '\')">' + c[0] + '</div>'; }).join('')
       + '</div>'
-      + (sel==='custom'
-        ? '<div style="font-size:12px;color:var(--text-secondary);margin:10px 0 4px">Sends exactly when you pick:</div>'
-          + '<input type="datetime-local" class="pipe-search" id="custom-at-' + id + '" style="margin:0">'
-        : '')
+      + '<button class="custom-sched-btn' + (sel==='custom'?' on':'') + '" onclick="pickSendChip(' + id + ',\'custom\')"><i class="ti ti-calendar-time"></i> Choose a date &amp; time…</button>'
+      + (sel==='custom' ? '<input type="datetime-local" class="pipe-search" id="custom-at-' + id + '" style="margin:8px 0 0">' : '')
       + '<div style="display:flex;gap:8px;margin-top:10px;align-items:center">'
       + '<button class="btn-secondary btn-sm" onclick="scheduleSend(' + id + ')"><i class="ti ti-clock-hour-4"></i> Schedule send</button>'
       + '<span style="font-size:11px;color:var(--text-tertiary)">cancels if they reply first</span></div>';
@@ -1368,19 +1407,11 @@ function openDetail(id) {
 
   var wonBanner = (p.s==='booked'||p.s==='played'||p.s==='won') ? '<div class="won-banner"><i class="ti ti-' + (p.s==='played'?'music':'trophy') + '"></i><div><div class="won-banner-title">' + (p.s==='played'?'Played':'Booked') + '</div><div class="won-banner-sub">' + p.venue + '</div></div></div>' : '';
 
-  // Tracker dots ARE the stage control. Closing out is a deliberate act, so it
-  // gets real buttons; from a terminal state the full chip row returns instead.
-  var statusActions;
-  if (stageIdx >= 0) {
-    statusActions = '<div class="closeout">'
-      + '<button class="closeout-btn passed" onclick="setStatus(' + id + ',\'passed\')"><i class="ti ti-archive"></i> Mark passed</button>'
-      + '<button class="closeout-btn deadend" onclick="setStatus(' + id + ',\'dead\')"><i class="ti ti-circle-x"></i> Dead end</button></div>';
-  } else {
-    var allStatuses = stagesFor(p).concat(['passed','dead']);
-    statusActions = '<div class="section-label">Move stage</div><div class="card" style="margin-bottom:12px"><div class="followup-chips">'
-      + allStatuses.map(function(st){ return '<div class="fu-chip' + (p.s===st?' selected':'') + '" onclick="setStatus(' + id + ',\'' + st + '\')">' + statusLabel[st] + '</div>'; }).join('')
-      + '</div></div>';
-  }
+  // Tracker dots ARE the stage control. Passed/Dead are TOGGLES: tap on to
+  // close out, tap the lit one again to restore the deal where it was.
+  var statusActions = '<div class="closeout">'
+    + '<button class="closeout-btn passed' + (p.s==='passed'?' on':'') + '" onclick="setStatus(' + id + ',\'passed\')"><i class="ti ti-archive"></i> ' + (p.s==='passed'?'Passed — tap to reopen':'Mark passed') + '</button>'
+    + '<button class="closeout-btn deadend' + (p.s==='dead'?' on':'') + '" onclick="setStatus(' + id + ',\'dead\')"><i class="ti ti-circle-x"></i> ' + (p.s==='dead'?'Dead end — tap to reopen':'Dead end') + '</button></div>';
 
   // Once a send is scheduled the draft LOCKS: you see exactly what will go out
   // (read-only), with an explicit Edit step. The editor only shows pre-schedule.
@@ -1402,22 +1433,24 @@ function openDetail(id) {
         + '<div class="card" style="margin-bottom:12px">' + draftBlock
         + '<div style="border-top:0.5px solid var(--border-light);padding-top:12px;margin-top:12px">' + schedBlock + '</div></div>';
     } else {
-      // Draft survives re-renders (realtime, chip taps) via draftText[uuid] —
-      // the editor is the source of truth until the send is scheduled.
-      var draftVal = draftText[p.uuid] !== undefined ? draftText[p.uuid] : templates[activeTpl[id]](p);
+      // Blank canvas by default — your words, AI's words, or a loaded template.
+      // draftText[uuid] survives every re-render; nothing overwrites it silently.
+      var draftVal = draftText[p.uuid] !== undefined ? draftText[p.uuid] : '';
+      var ph = 'Write your message here…\n\n— or —\n\n✨ Draft with AI: reads this conversation, the venue, your profile + rates, and writes in your voice.\n\nOr load a starting point from the template menu above.';
       tplSection = '<div class="section-label" style="margin-top:4px">Draft outreach</div>'
         + '<div class="card" style="margin-bottom:12px">'
         + '<select class="pipe-sort" style="margin-bottom:10px" onchange="switchTpl(' + id + ',this.value)" title="Load a template">'
+        + '<option value=""' + (!activeTpl[id] ? ' selected' : '') + '>Select a template…</option>'
         + tplKeys.map(function(k,i){ return '<option value="' + k + '"' + (activeTpl[id]===k?' selected':'') + '>' + tplLabels[i] + '</option>'; }).join('')
         + '</select>'
-        + '<textarea class="tpl-body" id="tpl-body-' + id + '" spellcheck="false" oninput="draftText[\'' + p.uuid + '\']=this.value">' + esc(draftVal) + '</textarea>'
+        + '<textarea class="tpl-body" id="tpl-body-' + id + '" spellcheck="false" placeholder="' + esc(ph) + '" oninput="draftText[\'' + p.uuid + '\']=this.value">' + esc(draftVal) + '</textarea>'
         + '<div class="tpl-actions">'
-        + '<button class="btn-secondary btn-sm" onclick="aiDraft(' + id + ')"><i class="ti ti-sparkles"></i> Draft with AI</button>'
-        + '<button class="btn-secondary btn-sm" onclick="copyTpl(' + id + ')"><i class="ti ti-copy"></i> Copy</button>'
         + '<button class="btn-primary btn-sm" onclick="sendNowInline(' + id + ')"><i class="ti ti-send"></i> Send now</button>'
+        + '<button class="btn-secondary btn-sm" onclick="copyTpl(' + id + ')"><i class="ti ti-copy"></i> Copy</button>'
+        + '<button class="btn-secondary btn-sm" onclick="aiDraft(' + id + ')"><i class="ti ti-sparkles"></i> Draft with AI</button>'
         + '</div>'
         + '<div style="border-top:0.5px solid var(--border-light);padding-top:12px;margin-top:12px">'
-        + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">…or schedule it</div>'
+        + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Schedule</div>'
         + schedBlock
         + '</div></div>';
     }
@@ -1456,12 +1489,19 @@ function openDetail(id) {
 
 var draftText = {}; // per-entry draft (keyed by uuid) — survives re-renders
 function switchTpl(id, key) {
-  activeTpl[id] = key;
   var p = pipeline[id];
+  if (!key) { activeTpl[id] = null; return; } // "Select a template…" = no-op
+  activeTpl[id] = key;
   var text = templates[key](p);
   draftText[p.uuid] = text;
   var ta = document.getElementById('tpl-body-' + id);
   if (ta) ta.value = text;
+}
+function stageIntent(p){
+  if (p.s==='lead') return 'outreach';
+  if (p.s==='pitched') return 'followup';
+  if (p.s==='booked'||p.s==='played') return 'checkin';
+  return 'pitch';
 }
 function copyTpl(id) {
   var txt = document.getElementById('tpl-body-' + id).value;
@@ -1481,7 +1521,7 @@ function aiDraft(id) {
     fetch(WORKER_URL + '/ai/draft', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
-      body: JSON.stringify({ entry_id: p.uuid, intent: activeTpl[id] || 'outreach' })
+      body: JSON.stringify({ entry_id: p.uuid, intent: activeTpl[id] || stageIntent(p) })
     }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
       .then(function(x){
         if (!x.ok) { showToast(x.j.error || 'AI draft failed', true); return; }
@@ -1513,8 +1553,10 @@ function saveSchedEdit(id){
   });
 }
 function pickSendChip(id, val) {
-  sendChipDays[id] = (val==='now'||val==='custom') ? val : Number(val);
-  openDetail(id); // re-render: chip selection, custom input visibility, button label
+  var v = (val==='now'||val==='custom') ? val : Number(val);
+  if (sendChipDays[id] === v) delete sendChipDays[id]; // tap again = deselect
+  else sendChipDays[id] = v;
+  openDetail(id); // re-render: selection + custom input (draft is preserved)
 }
 function fmtWhen(ts){
   var d = new Date(ts);
@@ -1523,7 +1565,8 @@ function fmtWhen(ts){
 function autoSendOn(){ return !!profile.allow_auto_send; }
 function scheduleSend(id) {
   var p = pipeline[id];
-  var sel = sendChipDays[id] === undefined ? 1 : sendChipDays[id];
+  var sel = sendChipDays[id];
+  if (sel === undefined) { showToast('Pick when it should send first', true); return; }
   if (!p.email) { showToast('This contact has no email', true); return; }
   var body = document.getElementById('tpl-body-' + id).value.trim();
   if (!body) { showToast('Draft is empty', true); return; }
@@ -1537,7 +1580,7 @@ function scheduleSend(id) {
   } else { at = new Date(); at.setDate(at.getDate() + sel); at.setHours(9, 0, 0, 0); }
   sb.from('scheduled_messages').insert({
     artist_id: ME, pipeline_entry_id: p.uuid, to_email: p.email,
-    subject: defaultSubject(), body: body, send_at: at.toISOString()
+    subject: defaultSubject(), body: body, send_at: at.toISOString(), human: now
   }).select().single().then(function(r){
     if (r.error) { showToast('Could not schedule: ' + r.error.message, true); return; }
     p.sched = r.data;
@@ -1674,6 +1717,8 @@ function renderCalendar(){
   var dimPrev = new Date(y, m, 0).getDate();
   var today = new Date(); var todayIso = isoDay(today.getFullYear(), today.getMonth(), today.getDate());
   var gigs = gigByDay();
+  calGigs = gigs;
+  var rules = pendingDow || dowRules;
   var cells = '';
   for (var i = 0; i < 42; i++) {
     var dnum, cy = y, cm = m, other = false;
@@ -1682,9 +1727,9 @@ function renderCalendar(){
     else dnum = i - firstIdx + 1;
     var norm = new Date(cy, cm, dnum);
     var iso = isoDay(norm.getFullYear(), norm.getMonth(), norm.getDate());
-    var state = availMap[iso] || (dowRules[norm.getDay()] ? 'busy' : '');
+    var state = availMap[iso] || (rules[norm.getDay()] ? 'busy' : '');
     var cls = 'cal-day' + (other ? ' other' : '') + (iso === todayIso ? ' today' : '') + (state ? ' ' + state : '');
-    cells += '<div class="' + cls + '" onclick="cycleAvail(\'' + iso + '\')">' + dnum + (gigs[iso] ? '<span class="cal-gig-dot"></span>' : '') + '</div>';
+    cells += '<div class="' + cls + '" onclick="dayTap(\'' + iso + '\')">' + dnum + (gigs[iso] ? '<span class="cal-gig-dot"></span>' : '') + '</div>';
     if (i >= firstIdx + dim - 1 && (i + 1) % 7 === 0) break; // stop at the last full week
   }
   var days = document.getElementById('cal-days'); if (days) days.innerHTML = cells;
@@ -1692,22 +1737,37 @@ function renderCalendar(){
   renderUpcoming(gigs);
   renderMiniCal();
 }
+// Weekly blocks stage locally, then "Confirm" locks them in — no accidental
+// block-every-Sunday from a stray tap.
+var pendingDow = null;
 function renderDowChips(){
   var el = document.getElementById('dow-chips'); if (!el) return;
   var names = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var view = pendingDow || dowRules;
+  var dirty = pendingDow && JSON.stringify(Object.keys(pendingDow).sort()) !== JSON.stringify(Object.keys(dowRules).sort());
   el.innerHTML = names.map(function(n, d){
-    return '<div class="fu-chip' + (dowRules[d] ? ' selected' : '') + '" onclick="toggleDowRule(' + d + ')">' + n + '</div>';
-  }).join('');
+    return '<div class="fu-chip' + (view[d] ? ' selected' : '') + '" onclick="stageDowRule(' + d + ')">' + n + '</div>';
+  }).join('')
+  + (dirty ? '<div style="width:100%;margin-top:10px;display:flex;gap:8px"><button class="btn-primary btn-sm" onclick="confirmDowRules()"><i class="ti ti-check"></i> Confirm weekly blocks</button><button class="btn-secondary btn-sm" onclick="pendingDow=null;renderCalendar()">Discard</button></div>' : '');
 }
-function toggleDowRule(d){
-  if (dowRules[d]) {
-    delete dowRules[d];
-    sb.from('availability_rules').delete().eq('artist_id', ME).eq('dow', d).then(function(r){ if (r.error) showToast('Could not clear: ' + r.error.message, true); });
-  } else {
-    dowRules[d] = 'busy';
-    sb.from('availability_rules').upsert({ artist_id: ME, dow: d, status: 'busy' }).then(function(r){ if (r.error) showToast('Could not save: ' + r.error.message, true); });
-  }
+function stageDowRule(d){
+  if (!pendingDow) pendingDow = JSON.parse(JSON.stringify(dowRules));
+  if (pendingDow[d]) delete pendingDow[d]; else pendingDow[d] = 'busy';
   renderCalendar();
+}
+function confirmDowRules(){
+  var adds = Object.keys(pendingDow).filter(function(d){ return !dowRules[d]; });
+  var dels = Object.keys(dowRules).filter(function(d){ return !pendingDow[d]; });
+  var ops = [];
+  adds.forEach(function(d){ ops.push(sb.from('availability_rules').upsert({ artist_id: ME, dow: Number(d), status: 'busy' })); });
+  dels.forEach(function(d){ ops.push(sb.from('availability_rules').delete().eq('artist_id', ME).eq('dow', Number(d))); });
+  Promise.all(ops).then(function(rs){
+    var err = rs.find(function(r){ return r.error; });
+    if (err) { showToast('Could not save blocks: ' + err.error.message, true); return; }
+    dowRules = pendingDow; pendingDow = null;
+    renderCalendar();
+    showToast('Weekly blocks locked in');
+  });
 }
 // Schedule at a glance: upcoming gigs & holds (multi-gig days stack naturally).
 function renderUpcoming(gigs){
@@ -1745,6 +1805,12 @@ function loadAvail(){
     (r.data||[]).forEach(function(x){ dowRules[x.dow] = x.status; });
     renderCalendar();
   });
+}
+var calGigs = {};
+// A day with a gig opens the gig; an open day cycles availability.
+function dayTap(iso){
+  if (calGigs[iso] && calGigs[iso].length) { openDetail(calGigs[iso][0].id); return; }
+  cycleAvail(iso);
 }
 function cycleAvail(iso){
   var cur = availMap[iso];
@@ -1903,9 +1969,13 @@ function saveSection(s) {
     profile.draw = document.getElementById('fi-draw').value.trim();
     profile.crowd = document.getElementById('fi-crowd').value.trim();
     profile.formats = document.getElementById('fi-formats').value.trim();
+    profile.rate_soft = document.getElementById('fi-rate-soft').value.trim();
+    profile.rate_hard = document.getElementById('fi-rate-hard').value.trim();
     document.getElementById('fv-draw').textContent = profile.draw;
     document.getElementById('fv-crowd').textContent = profile.crowd;
     document.getElementById('fv-formats').textContent = profile.formats;
+    document.getElementById('fv-rate-soft').textContent = profile.rate_soft || 'Not set';
+    document.getElementById('fv-rate-hard').textContent = profile.rate_hard || 'Not set';
   }
   cancelSection(s);
   saveProfile();
@@ -2142,6 +2212,7 @@ function loadProfile(){
     profile.name=a.display_name||''; profile.genre=a.genre||''; profile.oneliner=a.oneliner||'';
     profile.phone=a.phone||''; profile.web=a.website||''; profile.epk=a.epk||''; profile.spotify=a.spotify||'';
     profile.draw=a.draw_claim||''; profile.crowd=a.typical_crowd||''; profile.formats=a.set_formats||''; profile.notable=a.notable||'';
+    profile.rate_soft=a.rate_soft||''; profile.rate_hard=a.rate_hard||'';
     markets = a.markets || [];
     notables = (profile.notable||'').split(',').map(function(s){ return s.trim(); }).filter(Boolean);
     setGoogleConnectedUI(!!a.gmail_connected);
@@ -2156,6 +2227,8 @@ function fillProfileDom(){
   setText('fv-web',profile.web); setText('fv-epk',profile.epk);
   var sp=document.getElementById('fv-spotify'); if(sp){ sp.textContent=profile.spotify||'Not set'; sp.className='field-value'+(profile.spotify?'':' empty'); }
   setText('fv-draw',profile.draw); setText('fv-crowd',profile.crowd); setText('fv-formats',profile.formats);
+  setText('fv-rate-soft', profile.rate_soft || 'Not set'); setText('fv-rate-hard', profile.rate_hard || 'Not set');
+  setVal('fi-rate-soft', profile.rate_soft); setVal('fi-rate-hard', profile.rate_hard);
   setVal('fi-name',profile.name); setVal('fi-genre',profile.genre); setVal('fi-oneliner',profile.oneliner); setVal('fi-phone',profile.phone);
   setVal('fi-web',profile.web); setVal('fi-epk',profile.epk); setVal('fi-spotify',profile.spotify);
   setVal('fi-draw',profile.draw); setVal('fi-crowd',profile.crowd); setVal('fi-formats',profile.formats);
@@ -2169,6 +2242,7 @@ function saveProfile(){
     display_name:profile.name, genre:profile.genre, oneliner:profile.oneliner, phone:profile.phone,
     website:profile.web, epk:profile.epk, spotify:profile.spotify,
     draw_claim:profile.draw, typical_crowd:profile.crowd, set_formats:profile.formats,
+    rate_soft:profile.rate_soft||null, rate_hard:profile.rate_hard||null,
     notable:notables.join(', '), markets:markets
   }).eq('id',ME).then(function(r){ if(r.error) console.error('saveProfile', r.error); });
 }
@@ -2189,7 +2263,7 @@ function loadVenues(){
 
 function loadPipeline(){
   sb.from('pipeline_entries')
-    .select('id,status,followup_date,last_activity_at,created_at,gig_date, venue:venues(name,city,state,venue_type,pay_range,ticket_type), contact:contacts(name,title,email,phone)')
+    .select('id,status,prev_status,venue_id,followup_date,last_activity_at,created_at,gig_date, venue:venues(name,city,state,venue_type,pay_range,ticket_type), contact:contacts(name,title,email,phone)')
     .order('last_activity_at',{ascending:false}).then(function(r){
       if(r.error){ console.error('loadPipeline', r.error); return; }
       var rows=r.data||[];
@@ -2197,7 +2271,7 @@ function loadPipeline(){
         var v=e.venue||{}, c=e.contact||{};
         return {id:i, uuid:e.id, venue:v.name||'(unknown venue)', city:v.city||'', state:v.state||'',
                 contact:c.name||'(no contact)', title:c.title||'', email:c.email||'', phone:c.phone||'',
-                vtype:v.venue_type||'', pay:v.pay_range||'—', t:v.ticket_type||'soft', s:e.status||'lead', gig_date:e.gig_date||null, days:daysAgo(e.last_activity_at), activity:[]};
+                vtype:v.venue_type||'', pay:v.pay_range||'—', t:v.ticket_type||'soft', s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, gig_date:e.gig_date||null, days:daysAgo(e.last_activity_at), activity:[]};
       });
       updateHomeStats();
       if(currentScreen==='pipeline') renderPipeline();
@@ -2257,15 +2331,26 @@ function updateHomeStats(){
 
 // ── Status changes ──────────────────────────────────────
 function setStatus(id, s){
-  var p = pipeline[id]; if(!p || p.s===s) return;
+  var p = pipeline[id]; if(!p) return;
+  var terminal = (s==='passed' || s==='dead');
+  var patch = { last_activity_at: new Date().toISOString() };
+  if (p.s === s) {
+    if (!terminal) return;
+    // Tapping the lit toggle reopens the deal where it left off.
+    s = p.prev || 'talks';
+    patch.prev_status = null; p.prev = null;
+  } else if (terminal && p.s!=='passed' && p.s!=='dead') {
+    patch.prev_status = p.s; p.prev = p.s; // remember for the un-tap
+  }
+  patch.status = s;
   p.s = s; p.days = 0;
   p.activity.unshift({kind:'status_change', dot:dotFor('status_change'), text:'Moved to ' + statusLabel[s], time:'Just now'});
   openDetail(id);
   updateHomeStats();
-  sb.from('pipeline_entries').update({status:s, last_activity_at:new Date().toISOString()}).eq('id',p.uuid).then(function(r){
-    if(r.error) alert('Could not save status: ' + r.error.message);
+  sb.from('pipeline_entries').update(patch).eq('id',p.uuid).then(function(r){
+    if(r.error) showToast('Could not save status: ' + r.error.message, true);
   });
-  sb.from('activities').insert({pipeline_entry_id:p.uuid, kind:'status_change', body:'Moved to ' + statusLabel[s], source:'manual'});
+  sb.from('activities').insert({pipeline_entry_id:p.uuid, kind:'status_change', body:'Moved to ' + statusLabel[s], source:'manual'}).then(function(){});
 }
 
 // ── Add venue wizard persistence ────────────────────────
@@ -2361,6 +2446,9 @@ function openVenueDetail(id){
     + '<div class="detail-meta">' + esc([v.vtype, [v.city, v.state].filter(function(x){return x;}).join(', '), (v.pay && v.pay!=='—' ? v.pay : '')].filter(function(x){return x;}).join(' · ')) + '</div>'
     + '<span class="badge badge-' + v.type + '" style="margin-top:6px">' + (v.type==='hard'?'Hard ticket':'Soft ticket') + '</span></div>'
     + '<button class="edit-btn" onclick="openVenueEdit(\'' + v.id + '\')"><i class="ti ti-pencil"></i> Edit</button></div>'
+    + (pipeline.some(function(pp){ return pp.venueId===v.id; })
+      ? '<button class="btn-secondary" style="width:100%;margin-bottom:14px;opacity:0.55;cursor:default" disabled><i class="ti ti-check"></i> Added to pipeline</button>'
+      : '<button class="btn-primary" style="width:100%;margin-bottom:14px" onclick="addVenueToPipeline(\'' + v.id + '\')"><i class="ti ti-plus"></i> Add to pipeline</button>')
     + '<div class="card card-flush" style="margin-bottom:20px">'
     + row('Booking contact', v.contact && v.contact!=='—' ? v.contact : '')
     + row('Pay', v.pay && v.pay!=='—' ? v.pay : '')
@@ -2372,6 +2460,19 @@ function openVenueDetail(id){
     + mapBlock;
   go('venue');
 }
+// Discover → pipeline, one tap. Uses the venue's first contact when there is one.
+function addVenueToPipeline(venueId){
+  sb.from('contacts').select('id').eq('venue_id', venueId).limit(1).then(function(cr){
+    var contactId = (cr.data && cr.data[0] && cr.data[0].id) || null;
+    sb.from('pipeline_entries').insert({ artist_id: ME, venue_id: venueId, contact_id: contactId, status: 'lead' }).then(function(r){
+      if (r.error) { showToast('Could not add: ' + r.error.message, true); return; }
+      showToast('Added to your pipeline');
+      loadPipeline();
+      setTimeout(function(){ if (currentScreen==='venue') openVenueDetail(venueId); }, 350); // refresh the button state
+    });
+  });
+}
+
 function openVenueEdit(id){
   var v = venues.filter(function(x){ return x.id===id; })[0];
   if(!v) return;

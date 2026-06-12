@@ -136,13 +136,27 @@ function header(msg, name) {
 }
 function b64url(s) { return Buffer.from(s).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
 function mimeWord(s) { return /[^\x20-\x7E]/.test(s) ? "=?UTF-8?B?" + Buffer.from(s).toString("base64") + "?=" : s; }
-async function gmailSend(token, to, subject, body) {
-  const raw = b64url(`To: ${to}\r\nSubject: ${mimeWord(subject)}\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset="UTF-8"\r\n\r\n${body}`);
+async function gmailSend(token, to, subject, body, thread) {
+  let headers = `To: ${to}\r\nSubject: ${mimeWord(subject)}\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset="UTF-8"\r\n`;
+  if (thread && thread.msgId) headers += `In-Reply-To: ${thread.msgId}\r\nReferences: ${thread.msgId}\r\n`;
+  const payload = { raw: b64url(headers + "\r\n" + body) };
+  if (thread && thread.threadId) payload.threadId = thread.threadId;
   const r = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-    method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify({ raw }),
+    method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(payload),
   });
   if (!r.ok) throw new Error(`send ${r.status}: ${(await r.text()).slice(0, 150)}`);
   return (await r.json()).id;
+}
+// We always reply IN THREAD: find the latest exchange with this contact and
+// continue it (threadId + In-Reply-To + "Re:" subject). New thread only if none.
+async function findThread(token, email) {
+  const msgs = await gmailSearch(token, `(from:${email} OR to:${email})`);
+  if (!msgs.length) return null;
+  const full = await gmailGet(token, msgs[0].id);
+  if (!full) return null;
+  let subject = header(full, "Subject") || "";
+  if (subject && !/^re:/i.test(subject)) subject = "Re: " + subject;
+  return { threadId: full.threadId, msgId: header(full, "Message-ID") || null, subject };
 }
 
 // Shared: given a pipeline entry + a Gmail message, log it and advance the stage.
@@ -344,20 +358,20 @@ async function syncCalendar(artistId, token) {
         console.log("calendar: booked -> played", e.id);
         continue;
       }
+      // Agent policy: the worker CREATES events but never edits existing ones.
+      // (Date changes after the first sync are the artist's to make in Calendar.)
+      if (e.google_event_id) continue;
       const ev = {
         summary: (e.status === "hold" ? "HOLD: " : "Gig: ") + ((e.venue && e.venue.name) || "venue") + " (Gig Collective)",
         start: { dateTime: start.toISOString() },
         end: { dateTime: new Date(start.getTime() + 3 * 3600000).toISOString() },
         status: e.status === "hold" ? "tentative" : "confirmed",
       };
-      const url = e.google_event_id
-        ? `https://www.googleapis.com/calendar/v3/calendars/primary/events/${e.google_event_id}`
-        : `https://www.googleapis.com/calendar/v3/calendars/primary/events`;
-      const er = await fetch(url, { method: e.google_event_id ? "PATCH" : "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(ev) });
+      const er = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events`, { method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(ev) });
       if (er.ok) {
         const j = await er.json();
-        if (!e.google_event_id && j.id) await sPatch(`pipeline_entries?id=eq.${e.id}`, { google_event_id: j.id });
-        console.log("calendar:", e.status, "event", e.google_event_id ? "updated" : "created", e.id);
+        if (j.id) await sPatch(`pipeline_entries?id=eq.${e.id}`, { google_event_id: j.id });
+        console.log("calendar:", e.status, "event created", e.id);
       } else console.error("calendar event failed", e.id, er.status, (await er.text()).slice(0, 120));
     }
   } catch (err) { console.error("syncCalendar", artistId, err.message); }
@@ -370,19 +384,23 @@ async function processScheduled() {
   const due = await sGet(`scheduled_messages?status=eq.scheduled&send_at=lte.${encodeURIComponent(new Date().toISOString())}&select=*`);
   for (const m of due) {
     try {
-      const replies = await sGet(`activities?pipeline_entry_id=eq.${m.pipeline_entry_id}&kind=eq.email_in&created_at=gte.${encodeURIComponent(m.created_at)}&select=id&limit=1`);
-      if (replies.length) {
-        await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "canceled", cancel_reason: "They replied first" });
-        await logActivity({ pipeline_entry_id: m.pipeline_entry_id, kind: "system", body: "Scheduled follow-up canceled — they replied first", source: "email_sync" });
-        console.log("scheduled: canceled (reply arrived)", m.id);
-        continue;
-      }
-      const arts = await sGet(`artists?id=eq.${m.artist_id}&select=allow_auto_send`);
-      if (!arts.length || !arts[0].allow_auto_send) {
-        await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "ready" });
-        notify(m.artist_id, "Send awaiting your review", m.subject, "/app#entry/" + m.pipeline_entry_id).catch(() => {});
-        console.log("scheduled: ready for review (auto-send off)", m.id);
-        continue;
+      // Human-initiated ("Send now") skips BOTH gates: the artist is the
+      // authority, and they're often deliberately replying to a fresh message.
+      if (!m.human) {
+        const replies = await sGet(`activities?pipeline_entry_id=eq.${m.pipeline_entry_id}&kind=eq.email_in&created_at=gte.${encodeURIComponent(m.created_at)}&select=id&limit=1`);
+        if (replies.length) {
+          await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "canceled", cancel_reason: "They replied first" });
+          await logActivity({ pipeline_entry_id: m.pipeline_entry_id, kind: "system", body: "Scheduled follow-up canceled — they replied first", source: "email_sync" });
+          console.log("scheduled: canceled (reply arrived)", m.id);
+          continue;
+        }
+        const arts = await sGet(`artists?id=eq.${m.artist_id}&select=allow_auto_send`);
+        if (!arts.length || !arts[0].allow_auto_send) {
+          await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "ready" });
+          notify(m.artist_id, "Send awaiting your review", m.subject, "/app#entry/" + m.pipeline_entry_id).catch(() => {});
+          console.log("scheduled: ready for review (auto-send off)", m.id);
+          continue;
+        }
       }
       const conns = await sGet(`google_connections?artist_id=eq.${m.artist_id}&select=refresh_token`);
       if (!conns.length) {
@@ -390,7 +408,8 @@ async function processScheduled() {
         continue;
       }
       const token = await refreshAccessToken(conns[0].refresh_token);
-      const gid = await gmailSend(token, m.to_email, m.subject, m.body);
+      const thread = await findThread(token, m.to_email).catch(() => null);
+      const gid = await gmailSend(token, m.to_email, (thread && thread.subject) || m.subject, m.body, thread);
       await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "sent", sent_at: new Date().toISOString() });
       await logActivity({ pipeline_entry_id: m.pipeline_entry_id, kind: "email_out", body: "Sent: " + m.subject, source: "email_sync", email_message_id: gid });
       const entries = await sGet(`pipeline_entries?id=eq.${m.pipeline_entry_id}&select=status`);
@@ -463,8 +482,11 @@ async function handleAiDraft(req, res, bodyStr) {
     const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,venue:venues(name,city,state,venue_type,ticket_type,pay_range,clientele,notes),contact:contacts(name,title)`);
     if (!entries.length || entries[0].artist_id !== uid) { res.writeHead(404, hdr); res.end(JSON.stringify({ error: "Entry not found" })); return; }
     const e = entries[0], v = e.venue || {}, c = e.contact || {};
-    const arts = await sGet(`artists?id=eq.${uid}&select=display_name,genre,oneliner,website,epk,spotify,draw_claim,typical_crowd,set_formats,notable,markets,phone,tone_profile`);
+    const arts = await sGet(`artists?id=eq.${uid}&select=display_name,genre,oneliner,website,epk,spotify,draw_claim,typical_crowd,set_formats,notable,markets,phone,tone_profile,rate_soft,rate_hard`);
     const a = arts[0] || {};
+    const rateLine = (a.rate_soft || a.rate_hard)
+      ? `RATES (the artist's own numbers — quote these EXACTLY when rate comes up; NEVER invent, discount, or underbid): soft ticket ${a.rate_soft || "not set"} · hard ticket ${a.rate_hard || "not set"}\n`
+      : `RATES: not set — do NOT name any number; if they ask about rate, defer ("happy to talk numbers").\n`;
     const acts = await sGet(`activities?pipeline_entry_id=eq.${entryId}&kind=in.(email_in,email_out,note)&order=created_at.desc&limit=8&select=kind,body`);
     const lastInbound = (acts.find((x) => x.kind === "email_in") || {}).body || "";
     const convo = acts.slice().reverse().map((x) => (x.kind === "email_in" ? "THEM: " : x.kind === "email_out" ? "ME: " : "MY NOTE: ") + x.body).join("\n");
@@ -486,6 +508,7 @@ async function handleAiDraft(req, res, bodyStr) {
       (convo ? `CONVERSATION SO FAR:\n${convo}\n` : "") +
       `VENUE: ${v.name || ""} (${v.venue_type || ""}, ${v.ticket_type || "soft"} ticket) in ${v.city || ""}, ${v.state || ""}. ${v.clientele ? "Clientele: " + v.clientele + "." : ""} ${v.notes ? "My notes on this venue: " + v.notes : ""}\n` +
       `CONTACT: ${c.name || "the booker"}${c.title ? " (" + c.title + ")" : ""}\n` +
+      rateLine +
       (firstTouch
         ? `ARTIST (use what's relevant — this is a first touch): ${a.display_name || ""} — ${a.genre || ""}. ${a.oneliner || ""} Draw: ${a.draw_claim || "n/a"}. Crowd: ${a.typical_crowd || "n/a"}. Formats: ${a.set_formats || "n/a"}. Notable rooms: ${a.notable || "n/a"}. Site: ${a.website || ""} ${a.epk ? "EPK: " + a.epk : ""} ${a.spotify ? "Spotify: " + a.spotify : ""} Phone: ${a.phone || ""}\n`
         : `ARTIST (background only — do NOT pitch credentials mid-conversation): ${a.display_name || ""}, ${a.genre || ""}. Phone: ${a.phone || ""}\n`) +
