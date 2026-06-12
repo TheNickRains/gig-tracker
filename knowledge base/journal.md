@@ -27,6 +27,16 @@ tokens expire ~7 days idle (Settings flips to "Connect" — just reconnect); Gem
 caps (upgrade the key's project to billed before the roster leans on AI drafting); push notifications
 are per-device opt-in.
 
+## 2026-06-12 — ARCHITECTURE NORTH STAR: People × Rooms × Deals (migrate on trigger, not taste)
+Nick spotted the model truth: the business is PEOPLE (buyers/GMs, who span rooms) × ROOMS (venue facts)
+× DEALS (person+room+terms; soft/hard lives HERE as of migration 025). Session evolved the schema ~85%
+of the way empirically (contact roles/socials/multi-per-venue/switchable; deal-level ticket type;
+reply→live-deal matching). DECISION: intake stays venue-first (the 90% card-from-a-room case; even
+person-first intake ends at a room — no deal without one). The contacts→people promotion (first-class
+person, venue_contacts join) fires on a CONCRETE TRIGGER: the first actively-worked multi-room buyer —
+not before. "Premature schema elegance is how 90%-working systems die at 90%." Built today from the
+insight: Discover gained text search across rooms AND people (name/contact/city/added-by).
+
 ## 2026-06-12 — Talent buyers: today's playbook + the future person-model
 In-house buyer = just a contact ROLE ("Talent buyer"). External multi-room buyer (promoter booking
 several venues): TODAY add them as a contact on each room they book (deals correctly live per venue);

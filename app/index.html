@@ -769,10 +769,11 @@
 
   <!-- DISCOVER -->
   <div class="screen" id="screen-discover">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
       <div class="page-title" style="margin-bottom:0">Discover venues</div>
       <button class="view-btn" onclick="go('add')" title="Add venue" style="background:var(--amber-800);color:#fff"><i class="ti ti-plus"></i></button>
     </div>
+    <input class="pipe-search" id="disc-search" type="search" placeholder="Search rooms or people…" oninput="discQuery=this.value;renderDiscover()">
     <div class="filter-row">
       <select class="form-select" id="state-filter" onchange="filterCities()">
         <option value="">All states</option>
@@ -1218,11 +1219,18 @@ function filterCities() {
   }
   renderDiscover();
 }
+var discQuery = '';
 function renderDiscover() {
   var state = document.getElementById('state-filter').value;
   var city = document.getElementById('city-filter').value;
   var type = document.getElementById('type-filter').value;
-  var f = venues.filter(function(v){ return (!state||v.state===state)&&(!city||v.city===city)&&(!type||v.type===type); });
+  var q = (discQuery || '').toLowerCase();
+  var f = venues.filter(function(v){
+    if ((state&&v.state!==state)||(city&&v.city!==city)||(type&&v.type!==type)) return false;
+    if (!q) return true;
+    // rooms AND people: name, contact, city, who added it
+    return (v.name + ' ' + v.contact + ' ' + v.city + ' ' + v.state + ' ' + (v.createdByName||'')).toLowerCase().indexOf(q) >= 0;
+  });
   var g = document.getElementById('venue-grid');
   if (!f.length) { g.innerHTML = '<p style="color:var(--text-secondary);font-size:14px;grid-column:1/-1">No venues match this filter.</p>'; return; }
   var inPipe = {}; pipeline.forEach(function(p){ if (p.venueId) inPipe[p.venueId] = true; });
