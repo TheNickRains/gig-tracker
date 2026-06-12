@@ -1622,6 +1622,7 @@ function contactSection(p, id){
       + '<div class="contact-actions">'
       + (p.email ? '<a class="btn-icon" title="Email" href="mailto:' + esc(p.email) + '"><i class="ti ti-mail"></i></a>' : '')
       + (p.phone ? '<a class="btn-icon" title="Call" href="tel:' + esc(p.phone).replace(/[^+0-9]/g,'') + '"><i class="ti ti-phone"></i></a>' : '')
+      + (p.phone ? '<a class="btn-icon" title="Text" href="sms:' + esc(p.phone).replace(/[^+0-9]/g,'') + '"><i class="ti ti-message"></i></a>' : '')
       + (p.linkedin ? '<a class="btn-icon" title="LinkedIn" target="_blank" rel="noopener" href="' + esc(linkUrl(p.linkedin, 'linkedin')) + '"><i class="ti ti-brand-linkedin"></i></a>' : '')
       + (p.instagram ? '<a class="btn-icon" title="Instagram" target="_blank" rel="noopener" href="' + esc(linkUrl(p.instagram, 'instagram')) + '"><i class="ti ti-brand-instagram"></i></a>' : '')
       + '<button class="btn-icon" title="Edit contact" onclick="startContactEdit(' + id + ',\'' + (p.personId||'') + '\')"><i class="ti ti-pencil"></i></button>'
@@ -1865,14 +1866,18 @@ function openDetail(id) {
         + '</select>'
         + '<textarea class="tpl-body" id="tpl-body-' + id + '" spellcheck="false" placeholder="' + esc(ph) + '" oninput="draftText[\'' + p.uuid + '\']=this.value">' + esc(draftVal) + '</textarea>'
         + '<div class="tpl-actions">'
-        + '<button class="btn-primary btn-sm" onclick="sendNowInline(' + id + ')"><i class="ti ti-send"></i> Send now</button>'
+        + (p.email
+          ? '<button class="btn-primary btn-sm" onclick="sendNowInline(' + id + ')"><i class="ti ti-send"></i> Send now</button>'
+          : (p.phone ? '<button class="btn-primary btn-sm" onclick="textDraft(' + id + ')"><i class="ti ti-message"></i> Text it</button>' : ''))
         + '<button class="btn-secondary btn-sm" onclick="copyTpl(' + id + ')"><i class="ti ti-copy"></i> Copy</button>'
         + '<button class="btn-secondary btn-sm" onclick="aiDraft(' + id + ')"><i class="ti ti-sparkles"></i> Draft with AI</button>'
         + '</div>'
-        + '<div style="border-top:0.5px solid var(--border-light);padding-top:12px;margin-top:12px">'
-        + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Schedule</div>'
-        + schedBlock
-        + '</div></div>';
+        + (p.email
+          ? '<div style="border-top:0.5px solid var(--border-light);padding-top:12px;margin-top:12px">'
+            + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Schedule</div>'
+            + schedBlock + '</div>'
+          : '<div style="border-top:0.5px solid var(--border-light);padding-top:12px;margin-top:12px;font-size:11.5px;color:var(--text-tertiary)"><i class="ti ti-message" style="margin-right:4px"></i>Phone-only contact — Text it opens Messages with the draft; log the exchange below so the pipeline (and the AI) stay in the loop.</div>')
+        + '</div>';
     }
   }
 
@@ -1895,7 +1900,10 @@ function openDetail(id) {
     + '</div>'
     + '</div><div>'
     + tplSection
-    + '<div class="section-label">Conversation</div>'
+    + '<div class="section-label" style="display:flex;align-items:center;justify-content:space-between">Conversation'
+    + '<span style="display:flex;gap:10px"><button class="vc-btn" onclick="quickLog(' + id + ',\'out\')"><i class="ti ti-arrow-up-right"></i> You said…</button>'
+    + '<button class="vc-btn" onclick="quickLog(' + id + ',\'in\')"><i class="ti ti-arrow-down-left"></i> They said…</button></span></div>'
+    + (quickLogMode[p.uuid] ? '<input class="note-input" style="margin:0 0 10px;width:100%" autofocus placeholder="' + (quickLogMode[p.uuid]==='out' ? 'What you sent/said (text, call, in person)… Enter to log' : 'What ' + esc(first) + ' said… Enter to log') + '" onkeydown="saveQuickLog(event,' + id + ')">' : '')
     + '<div class="card card-flush" style="margin-bottom:20px">' + actHtml + '</div>'
     + '</div></div>';
 
@@ -1951,6 +1959,42 @@ function emailTpl(id) {
   var p = pipeline[id];
   var body = document.getElementById('tpl-body-' + id).value;
   window.open('mailto:' + p.email + '?subject=' + encodeURIComponent(defaultSubject()) + '&body=' + encodeURIComponent(body));
+}
+
+// ── Off-grid channels: text the draft, log exchanges by hand — same engine ──
+function textDraft(id){
+  var p = pipeline[id];
+  var body = (draftText[p.uuid] !== undefined ? draftText[p.uuid] : (document.getElementById('tpl-body-' + id) || {value:''}).value).trim();
+  var digits = (p.phone || '').replace(/[^+0-9]/g, '');
+  if (!digits) { showToast('No phone on this contact', true); return; }
+  location.href = 'sms:' + digits + '?&body=' + encodeURIComponent(body);
+  // Pre-arm the log so one Enter captures what went out.
+  quickLogMode[p.uuid] = 'out';
+  setTimeout(function(){ openDetail(id); }, 400);
+}
+var quickLogMode = {};
+function quickLog(id, dir){
+  var p = pipeline[id];
+  quickLogMode[p.uuid] = quickLogMode[p.uuid] === dir ? null : dir;
+  openDetail(id);
+}
+function saveQuickLog(e, id){
+  var p = pipeline[id];
+  if (e.key === 'Escape') { quickLogMode[p.uuid] = null; openDetail(id); return; }
+  if (e.key !== 'Enter' || !e.target.value.trim()) return;
+  var dir = quickLogMode[p.uuid];
+  var body = e.target.value.trim();
+  quickLogMode[p.uuid] = null;
+  var kind = dir === 'out' ? 'email_out' : 'email_in'; // same engine: bubbles, AI context, needs-you
+  sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: kind, body: body, source: 'manual' }).then(function(r){
+    if (r.error) { showToast('Could not log: ' + r.error.message, true); return; }
+    // Mirror the worker's stage rules for hand-logged exchanges.
+    var patch = { last_activity_at: new Date().toISOString() };
+    if (dir === 'out' && (p.s === 'lead')) { patch.status = 'pitched'; p.s = 'pitched'; }
+    if (dir === 'in' && ['lead','pitched','passed'].indexOf(p.s) >= 0) { patch.status = 'talks'; p.s = 'talks'; }
+    sb.from('pipeline_entries').update(patch).eq('id', p.uuid).then(function(){ loadPipeline(); });
+    showToast(dir === 'out' ? 'Logged — pipeline knows' : 'Logged their reply');
+  });
 }
 
 // ── Slice B: schedule the draft ──
