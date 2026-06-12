@@ -331,12 +331,12 @@ function extractPlainText(payload) {
   }
   return "";
 }
-async function refreshToneProfile(artistId, token) {
+async function refreshToneProfile(artistId, token, force) {
   if (!GEMINI_KEY) return;
   const arts = await sGet(`artists?id=eq.${artistId}&select=tone_updated_at`);
   if (!arts.length) return;
   const last = arts[0].tone_updated_at ? new Date(arts[0].tone_updated_at).getTime() : 0;
-  if (Date.now() - last < 24 * 3600000) return; // refresh daily
+  if (!force && Date.now() - last < 24 * 3600000) return; // daily — unless a fresh diff forces it
   const msgs = await gmailSearch(token, "in:sent newer_than:90d");
   const samples = [];
   for (const m of msgs.slice(0, 12)) {
@@ -512,6 +512,8 @@ async function processScheduled() {
       await sPatch(`pipeline_entries?id=eq.${m.pipeline_entry_id}`, patch);
       notify(m.artist_id, "Sent ✓ " + m.to_email.split("@")[0], m.subject, "/app#entry/" + m.pipeline_entry_id).catch(() => {});
       console.log("scheduled: SENT", m.id, "->", m.to_email);
+      // Incremental learning: this send carries a generation->sent diff — retrain now.
+      if (m.ai_draft) refreshToneProfile(m.artist_id, token, true).then(() => console.log("tone: incremental retrain after diff-send")).catch(() => {});
     } catch (e) {
       console.error("scheduled error", m.id, e.message);
       await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "failed", cancel_reason: (e.message || "error").slice(0, 180) });

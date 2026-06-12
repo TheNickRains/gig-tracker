@@ -599,6 +599,7 @@
   }
   .tpl-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; justify-content: center; }
   .tpl-actions .btn-sm { justify-content: center; padding: 11px 10px; display: inline-flex; align-items: center; gap: 6px; }
+  .tpl-actions .btn-sm:last-child:nth-child(odd) { grid-column: 1 / -1; }
 
   /* Follow-up scheduler */
   .followup-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
@@ -1681,15 +1682,47 @@ function ppRoomSearch(pid, q){
   }).join('') : '')
   + '<div class="ws-row" onclick="createAndLinkRoom(\'' + pid + '\',document.getElementById(\'pp-room-q\').value)"><div class="ws-name" style="color:var(--amber-800)"><i class="ti ti-plus"></i> Create \u201c' + esc(q) + '\u201d and link it</div><div class="ws-addr">New venue, attached to this booker — details later via Edit</div></div>';
 }
+var cnr = {}; // create-and-link mini-intake state
 function createAndLinkRoom(pid, name){
   name = (name || '').trim();
   if (name.length < 2) { showToast('Type the venue name first', true); return; }
-  sb.from('venues').insert({ name: name, created_by_name: profile.name || null, ticket_type: 'hard' }).select().single().then(function(r){
+  cnr = { pid: pid, name: name, city: '', state: '', address: '' };
+  var out = document.getElementById('pp-room-results'); if (!out) return;
+  var typeOpts = function(t){ return (t==='hard' ? hardTypes : softTypes).map(function(x){ return '<option>' + x + '</option>'; }).join(''); };
+  out.innerHTML = '<div class="card" style="margin-top:6px">'
+    + '<div class="form-field"><label class="form-label">Venue name</label><input class="form-input" id="cnr-name" value="' + esc(name) + '"></div>'
+    + '<div id="cnr-loc" style="font-size:11.5px;color:var(--text-tertiary);margin:-4px 0 10px">Searching Maps for the address…</div>'
+    + '<div class="form-row-2">'
+    + '<div class="form-field"><label class="form-label">Ticket (mostly)</label><select class="form-select" id="cnr-ticket" onchange="document.getElementById(\'cnr-type\').innerHTML=(this.value===\'hard\'?' + "hardTypes" + ':' + "softTypes" + ').map(function(x){return \'<option>\'+x+\'</option>\';}).join(\'\')"><option value="hard">Hard</option><option value="soft">Soft</option></select></div>'
+    + '<div class="form-field"><label class="form-label">Venue type</label><select class="form-select" id="cnr-type">' + typeOpts('hard') + '</select></div>'
+    + '</div>'
+    + '<button class="btn-primary btn-sm" style="width:100%" onclick="cnrCreate()"><i class="ti ti-plus"></i> Create &amp; link</button>'
+    + '</div>';
+  // Places fill (best match wins; silent if unconfigured)
+  sb.auth.getSession().then(function(ss){
+    var tok = ss.data && ss.data.session && ss.data.session.access_token; if (!tok) return;
+    fetch(WORKER_URL + '/places/search', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + tok }, body: JSON.stringify({ q: name }) })
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        var loc = document.getElementById('cnr-loc'); if (!loc) return;
+        var x = (j.results || [])[0];
+        if (!x) { loc.textContent = 'No Maps match — location can be added later.'; return; }
+        cnr.city = x.city || ''; cnr.state = x.state || ''; cnr.address = x.address || '';
+        var ni = document.getElementById('cnr-name'); if (ni && x.name) ni.value = x.name;
+        loc.innerHTML = '<i class="ti ti-map-pin" style="color:var(--booked-text)"></i> ' + esc(x.address || (x.city + ', ' + x.state));
+      }).catch(function(){});
+  });
+}
+function cnrCreate(){
+  var nameNow = (document.getElementById('cnr-name') || {value: cnr.name}).value.trim();
+  var ticket = (document.getElementById('cnr-ticket') || {value:'hard'}).value;
+  var vtype = (document.getElementById('cnr-type') || {value:null}).value;
+  sb.from('venues').insert({ name: nameNow, city: cnr.city || null, state: cnr.state || null, address: cnr.address || null, ticket_type: ticket, venue_type: vtype, created_by_name: profile.name || null }).select().single().then(function(r){
     if (r.error) { showToast('Could not create: ' + r.error.message, true); return; }
-    sb.from('venue_people').upsert({ venue_id: r.data.id, person_id: pid }).then(function(){
-      showToast('Created & linked — fill details from Discover when ready');
+    sb.from('venue_people').upsert({ venue_id: r.data.id, person_id: cnr.pid }).then(function(){
+      showToast('Created & linked ✓');
       loadVenues();
-      openPersonView(pid);
+      openPersonView(cnr.pid);
     });
   });
 }
@@ -1942,7 +1975,11 @@ function openDetail(id) {
     + '<div class="fu-chip' + (p.t==='soft'?' selected':'') + '" style="font-size:10.5px;padding:3px 9px;border-radius:5px" onclick="setDealTicket(' + id + ',\'soft\')">Soft</div>'
     + '<div class="fu-chip' + (p.t==='hard'?' selected':'') + '" style="font-size:10.5px;padding:3px 9px;border-radius:5px" onclick="setDealTicket(' + id + ',\'hard\')">Hard</div>'
     + '</div>'
-    + '<span style="font-size:9.5px;color:var(--text-tertiary)">deal type' + (!p.tOverride ? ' · venue default' : '') + '</span></div>';
+    + '<span style="font-size:9.5px;color:var(--text-tertiary)">deal type' + (!p.tOverride ? ' · venue default' : '') + '</span>'
+    + '<span style="display:flex;gap:8px;margin-top:2px">'
+    + '<button class="vc-btn" onclick="toggleMoveRoom(' + id + ')" title="Move this deal to another room"><i class="ti ti-arrows-exchange"></i> room</button>'
+    + '<button class="vc-btn" id="deal-del-' + id + '" onclick="deleteDealArmed(' + id + ')" title="Delete this deal (venue stays)"><i class="ti ti-trash"></i></button>'
+    + '</span></div>';
   var statusActions = '<div class="closeout">'
     + '<button class="closeout-btn passed' + (p.s==='passed'?' on':'') + '" onclick="setStatus(' + id + ',\'passed\')"><i class="ti ti-archive"></i> ' + (p.s==='passed'?'Passed — tap to reopen':'Mark passed') + '</button>'
     + '<button class="closeout-btn deadend' + (p.s==='dead'?' on':'') + '" onclick="setStatus(' + id + ',\'dead\')"><i class="ti ti-circle-x"></i> ' + (p.s==='dead'?'Dead end — tap to reopen':'Dead end') + '</button></div>';
@@ -2004,6 +2041,7 @@ function openDetail(id) {
     + (stageIdx>=0 ? '<div class="stage-track" style="margin-bottom:20px">' + stageDots + '</div>' : '')
     + wonBanner
     + statusActions
+    + (moveRoomOpen[p.uuid] ? '<div class="card" style="margin-bottom:12px"><div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Move this deal — conversation, notes, and stage come along:</div><input class="pipe-search" id="mv-room-q" placeholder="Search your venues…" autocomplete="off" oninput="dealRoomSearch(' + id + ',this.value)" style="margin:0"><div id="mv-room-results"></div></div>' : '')
     + attnCard
     + gigDateBlock
     + contactSection(p, id)
@@ -3139,6 +3177,63 @@ function setDealTicket(id, t){
   sb.from('pipeline_entries').update({ ticket_type: t }).eq('id', p.uuid).then(function(r){
     if (r.error) { showToast('Could not save: ' + r.error.message, true); return; }
     showToast(t === 'hard' ? 'Hard ticket — Hold stage available, hard rate quoted' : 'Soft ticket — soft rate quoted');
+  });
+}
+// Move a deal to a different room (the org-deal -> real-room case): the
+// conversation, notes, stage, and person all travel with it.
+var moveRoomOpen = {};
+function toggleMoveRoom(id){
+  var p = pipeline[id];
+  moveRoomOpen[p.uuid] = !moveRoomOpen[p.uuid];
+  openDetail(id);
+  var inp = document.getElementById('mv-room-q'); if (inp) inp.focus();
+}
+function dealRoomSearch(id, q){
+  var out = document.getElementById('mv-room-results'); if (!out) return;
+  q = (q || '').toLowerCase();
+  if (q.length < 2) { out.innerHTML = ''; return; }
+  var p = pipeline[id];
+  var hits = venues.filter(function(v){ return v.id !== p.venueId && (v.name + ' ' + v.city).toLowerCase().indexOf(q) >= 0; }).slice(0, 5);
+  out.innerHTML = hits.map(function(v){
+    return '<div class="ws-row" onclick="moveDealVenue(' + id + ',\'' + v.id + '\',\'' + esc(v.name) + '\')"><div class="ws-name">' + esc(v.name) + '</div><div class="ws-addr">' + esc(v.city || '') + '</div></div>';
+  }).join('') || '<div class="ws-row" style="cursor:default;color:var(--text-secondary);font-size:12px">No match.</div>';
+}
+function moveDealVenue(id, venueId, venueName){
+  var p = pipeline[id];
+  moveRoomOpen[p.uuid] = false;
+  sb.from('pipeline_entries').update({ venue_id: venueId }).eq('id', p.uuid).then(function(r){
+    if (r.error) { showToast('Could not move: ' + r.error.message, true); return; }
+    if (p.personId) sb.from('venue_people').upsert({ venue_id: venueId, person_id: p.personId }).then(function(){});
+    sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: 'system', body: 'Deal moved to ' + venueName, source: 'manual' }).then(function(){});
+    showToast('Moved to ' + venueName);
+    loadPipeline();
+  });
+}
+// Delete a deal — armed double-tap; the venue and its intel stay.
+var dealDelTimer = null;
+function deleteDealArmed(id){
+  var p = pipeline[id];
+  var btn = document.getElementById('deal-del-' + id); if (!btn) return;
+  if (!btn.classList.contains('armed')) {
+    btn.classList.add('armed');
+    btn.style.color = 'var(--dead-text)';
+    btn.innerHTML = '<i class="ti ti-alert-triangle"></i> deal only — tap again';
+    clearTimeout(dealDelTimer);
+    dealDelTimer = setTimeout(function(){ if (btn.isConnected) { btn.classList.remove('armed'); btn.style.color = ''; btn.innerHTML = '<i class="ti ti-trash"></i>'; } }, 3500);
+    return;
+  }
+  clearTimeout(dealDelTimer);
+  // defensive child cleanup, then the entry (venue untouched)
+  Promise.all([
+    sb.from('scheduled_messages').delete().eq('pipeline_entry_id', p.uuid),
+    sb.from('activities').delete().eq('pipeline_entry_id', p.uuid)
+  ]).then(function(){
+    sb.from('pipeline_entries').delete().eq('id', p.uuid).then(function(r){
+      if (r.error) { showToast('Could not delete: ' + r.error.message, true); return; }
+      showToast('Deal deleted — venue stays in Discover');
+      loadPipeline();
+      go('pipeline');
+    });
   });
 }
 function setStatus(id, s){
