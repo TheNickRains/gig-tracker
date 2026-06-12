@@ -27,6 +27,17 @@ tokens expire ~7 days idle (Settings flips to "Connect" — just reconnect); Gem
 caps (upgrade the key's project to billed before the roster leans on AI drafting); push notifications
 are per-device opt-in.
 
+## 2026-06-12 — RETHEME II: PAPER & SAGE (the keeper). Violet rejected in 9 minutes
+Nick on the violet: "no fucking violet is gross. it needs to feel like PAPER" + IDE screenshots (Solar
+Light theme: cream paper surfaces, sage-green accent, ink text). Applied directly from the reference:
+neutrals = warm paper (#fffdf7/#f5f2e9/#efebdf on a #ddd8c7 desk), ink text (#2a2722), accent =
+sage/moss (--amber-* names now hold #EAF1E2/#7FA86F/#3D5F35/#2C4626), stage pastels re-tuned to
+paper-muted family (manila pitched, faded-ink-blue talks, sage booked, eucalyptus played, brick dead,
+heather hold), dark mode = warm charcoal "paper at night" (#232220 spine — zero violet), glass pill
+dark text pale sage #BCD6A8, dots/toasts/banners harmonized. Violet purged (grep 0). LESSON for future
+sessions: Nick's design north star is his IDE's Solar-Light paper aesthetic — cream, ink, sage; when
+theming, match THAT reference, not abstract palette theory.
+
 ## 2026-06-12 — RETHEME: dusty violet pastels (designer-spec'd); brown dethroned
 Nick: "colors seem horrendous… everything based around this brown… gross. I love pastels." Designer
 consult delivered the direction: **"dusty violet pastels with a cool-lavender neutral spine"** — neutrals

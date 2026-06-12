@@ -19,52 +19,52 @@
   /* ── Reset & base ── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg-primary: #fafaf9;
-    --bg-secondary: #f2f0f8;
-    --bg-tertiary: #e8e4f2;
-    --text-primary: #1a1917;
-    --text-secondary: #5c596e;
-    --text-tertiary: #7a7790;
-    --border-light: rgba(60,48,100,0.07);
-    --border-mid: rgba(60,48,100,0.14);
+    --bg-primary: #fffdf7;
+    --bg-secondary: #f5f2e9;
+    --bg-tertiary: #efebdf;
+    --text-primary: #2a2722;
+    --text-secondary: #6b675c;
+    --text-tertiary: #8f8a7c;
+    --border-light: rgba(62,55,38,0.08);
+    --border-mid: rgba(62,55,38,0.15);
     --radius-sm: 6px;
     --radius-md: 8px;
     --radius-lg: 12px;
     --radius-xl: 16px;
-    /* Accent — dusty violet family (names kept for compatibility) */
-    --amber-50: #F0EBFF;
-    --amber-100: #D8CCFF;
-    --amber-400: #9B7FD4;
-    --amber-600: #6E48B8;
-    --amber-800: #4A2D7A;
-    --amber-900: #2E1A55;
+    /* Accent — paper & sage (names kept for compatibility) */
+    --amber-50: #EAF1E2;
+    --amber-100: #CFE3C4;
+    --amber-400: #7FA86F;
+    --amber-600: #4E7A42;
+    --amber-800: #3D5F35;
+    --amber-900: #2C4626;
     /* Status */
-    --won-bg: #E3F5EC; --won-text: #1A5C36;
-    --followup-bg: #FDE8F2; --followup-text: #7A1B4A;
-    --waiting-bg: #E3EEFF; --waiting-text: #1B4A8A;
-    --outreach-bg: #E9EBF8; --outreach-text: #2B3A7A;
-    --dead-bg: #FCE8E8; --dead-text: #8B2020;
+    --won-bg: #E4EFDD; --won-text: #3D6B2F;
+    --followup-bg: #F7E9D7; --followup-text: #8A5A1F;
+    --waiting-bg: #E2ECF4; --waiting-text: #2E5C7E;
+    --outreach-bg: #EDEAE0; --outreach-text: #5C5749;
+    --dead-bg: #F6E3DE; --dead-text: #93402E;
     /* Staging spine */
-    --bg-page: #c8c2d8; /* outside-island surface */
-    --lead-bg: #E9EBF8; --lead-text: #2B3A7A;
-    --pitched-bg: #FDE8F2; --pitched-text: #7A1B4A;
-    --talks-bg: #E3EEFF; --talks-text: #1B4A8A;
-    --hold-bg: #EDE9F8; --hold-text: #4A2D7A;
-    --booked-bg: #E3F5EC; --booked-text: #1A5C36;
-    --played-bg: #E0F5F0; --played-text: #1A5A48;
-    --passed-bg: #F0ECEB; --passed-text: #6B4B45;
+    --bg-page: #ddd8c7; /* the desk the paper sits on */
+    --lead-bg: #EDEAE0; --lead-text: #5C5749;
+    --pitched-bg: #F7E9D7; --pitched-text: #8A5A1F;
+    --talks-bg: #E2ECF4; --talks-text: #2E5C7E;
+    --hold-bg: #EAE7F0; --hold-text: #5A5278;
+    --booked-bg: #E4EFDD; --booked-text: #3D6B2F;
+    --played-bg: #DFEFE8; --played-text: #2F6B55;
+    --passed-bg: #EFE9E1; --passed-text: #7A6A55;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg-primary: #1c1a25;
-      --bg-secondary: #26233a;
-      --bg-tertiary: #120f1e;
-      --text-primary: #f0ede8;
-      --text-secondary: #9b98b0;
-      --text-tertiary: #6b6880;
-      --border-light: rgba(180,170,220,0.07);
-      --border-mid: rgba(180,170,220,0.14);
-      --bg-page: #0a0810;
+      --bg-primary: #232220;
+      --bg-secondary: #2c2a26;
+      --bg-tertiary: #1a1917;
+      --text-primary: #f0ede6;
+      --text-secondary: #a39d8e;
+      --text-tertiary: #6f6a5f;
+      --border-light: rgba(225,215,185,0.07);
+      --border-mid: rgba(225,215,185,0.14);
+      --bg-page: #11100e;
     }
   }
   body {
@@ -396,7 +396,7 @@
   .vchip.danger:hover { border-color: var(--dead-text); color: var(--dead-text); }
   .vchip.armed { background: var(--dead-bg); border-color: var(--dead-text); color: var(--dead-text); font-weight: 600; }
   .vp-new { position: absolute; top: 11px; left: 11px; width: 9px; height: 9px; border-radius: 50%; background: var(--talks-text); border: 2px solid var(--bg-primary); }
-  .pulse-card { background: var(--talks-bg); border-left: 3px solid var(--talks-text); border-radius: 12px; padding: 11px 12px; font-size: 13px; line-height: 1.5; color: #2b2a26; margin-bottom: 10px; }
+  .pulse-card { background: var(--talks-bg); border-left: 3px solid var(--talks-text); border-radius: 12px; padding: 11px 12px; font-size: 13px; line-height: 1.5; color: #2a2722; margin-bottom: 10px; }
   .pulse-card .pc-label { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--talks-text); margin-bottom: 4px; }
   .vc-actions { display: flex; gap: 10px; margin-top: 6px; }
   .vc-btn { display: inline-flex; align-items: center; gap: 3px; background: none; border: none; font-family: inherit; font-size: 11px; color: var(--text-tertiary); cursor: pointer; padding: 2px 0; }
@@ -434,7 +434,7 @@
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.30), inset 0 -1px 0 rgba(0,0,0,0.06), 0 2px 10px rgba(0,0,0,0.16);
   }
   @media (prefers-color-scheme: dark) {
-    .bnav-item.active { color: #C4A8FF; background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.03)); border-color: rgba(255,255,255,0.18); }
+    .bnav-item.active { color: #BCD6A8; background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.03)); border-color: rgba(255,255,255,0.18); }
   }
   .bnav-item { border: 0.5px solid transparent; transition: background 0.18s, color 0.18s; }
   .bnav-home { width: 52px; height: 52px; border-radius: 50%; background: var(--amber-800); color: #fff; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; transform: translateY(-16px); box-shadow: 0 6px 18px rgba(0,0,0,0.3); flex-shrink: 0; }
@@ -475,7 +475,7 @@
   .convo { display: flex; flex-direction: column; gap: 9px; padding: 12px; }
   /* Bubble backgrounds are light pastels in BOTH themes — ink must stay dark
      (dark mode's near-white text was invisible on them). */
-  .msg { max-width: 88%; padding: 9px 11px; border-radius: 12px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; color: #2b2a26; }
+  .msg { max-width: 88%; padding: 9px 11px; border-radius: 12px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; color: #2a2722; }
   .msg.them { align-self: flex-start; background: var(--talks-bg); border-left: 3px solid var(--talks-text); border-top-left-radius: 4px; }
   .msg.you { align-self: flex-end; background: var(--pitched-bg); border-right: 3px solid var(--pitched-text); border-top-right-radius: 4px; }
   .msg .m-sum { font-weight: 600; margin-bottom: 3px; }
@@ -549,7 +549,7 @@
     padding: 5px 12px; border-radius: 8px; font-size: 12px; cursor: pointer;
     border: 0.5px solid var(--border-mid); background: var(--bg-secondary); color: var(--text-secondary);
   }
-  .fu-chip.selected { background: var(--won-bg); color: var(--won-text); border-color: #5FAD8A; }
+  .fu-chip.selected { background: var(--won-bg); color: var(--won-text); border-color: #7FA86F; }
   .fu-chip:hover { border-color: var(--border-mid); }
 
   /* Activity log */
@@ -585,9 +585,9 @@
   .note-input:focus { outline: none; border-color: var(--amber-400); background: var(--bg-primary); }
 
   /* Won banner */
-  .won-banner { background: var(--won-bg); border: 0.5px solid #5FAD8A; border-radius: var(--radius-lg); padding: 14px 16px; display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .won-banner { background: var(--won-bg); border: 0.5px solid #7FA86F; border-radius: var(--radius-lg); padding: 14px 16px; display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
   .won-banner i { font-size: 22px; color: var(--won-text); }
-  .won-banner-title { font-size: 14px; font-weight: 500; color: #1A5C36; }
+  .won-banner-title { font-size: 14px; font-weight: 500; color: #3D5F35; }
   .won-banner-sub { font-size: 12px; color: var(--won-text); margin-top: 2px; }
 
   /* ── ADD VENUE WIZARD ── */
@@ -679,7 +679,7 @@
   .switch input:checked + span::before { transform: translateX(16px); }
 
   /* ── Toast ── */
-  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1A5C36; color: #E3F5EC; padding: 9px 20px; border-radius: 20px; font-size: 13px; display: none; z-index: 999; white-space: nowrap; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #3D5F35; color: #E9F1E2; padding: 9px 20px; border-radius: 20px; font-size: 13px; display: none; z-index: 999; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -2219,7 +2219,7 @@ function addNote(e, id) {
   if (e.key==='Enter' && e.target.value.trim()) {
     var text = e.target.value.trim();
     var p = pipeline[id];
-    p.activity.unshift({kind:'note', dot:'#4A2D7A', text: text, time:'Just now'});
+    p.activity.unshift({kind:'note', dot:'#3D5F35', text: text, time:'Just now'});
     p.days = 0;
     openDetail(id);
     sb.from('activities').insert({pipeline_entry_id:p.uuid, kind:'note', body:text, source:'manual'}).then(function(r){
@@ -2410,8 +2410,8 @@ function updateCompleteness() {
 function showToast(msg, isError) {
   var t = document.getElementById('toast');
   t.innerHTML = '<i class="ti ' + (isError ? 'ti-alert-triangle' : 'ti-check') + '" style="margin-right:6px"></i>' + (msg || 'Copied to clipboard');
-  t.style.background = isError ? '#8B2020' : '#1A5C36';
-  t.style.color = isError ? '#FCE8E8' : '#E3F5EC';
+  t.style.background = isError ? '#93402E' : '#3D5F35';
+  t.style.color = isError ? '#F6E3DE' : '#E9F1E2';
   t.style.display = 'block';
   clearTimeout(t._timer);
   t._timer = setTimeout(function(){ t.style.display='none'; }, isError ? 4200 : 2400);
@@ -2432,7 +2432,7 @@ function initials(s){ return (s||'?').trim().split(/\s+/).map(function(n){return
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 function daysAgo(ts){ if(!ts) return 0; return Math.max(0, Math.floor((Date.now()-new Date(ts).getTime())/86400000)); }
 function relTime(ts){ var d=daysAgo(ts); if(d===0) return 'Today'; if(d===1) return 'Yesterday'; if(d<14) return d+' days ago'; if(d<60) return Math.round(d/7)+' weeks ago'; return Math.round(d/30)+' months ago'; }
-var dotByKind = {note:'#4A2D7A', email_in:'#1B4A8A', email_out:'#7A1B4A', call:'#1B4A8A', status_change:'#5c596e', system:'#7a7790'};
+var dotByKind = {note:'#3D5F35', email_in:'#2E5C7E', email_out:'#8A5A1F', call:'#2E5C7E', status_change:'#6b675c', system:'#8f8a7c'};
 function dotFor(k){ return dotByKind[k] || '#5F5E5A'; }
 function setText(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; }
 function setVal(id,v){ var e=document.getElementById(id); if(e) e.value=v||''; }
