@@ -27,6 +27,17 @@ tokens expire ~7 days idle (Settings flips to "Connect" — just reconnect); Gem
 caps (upgrade the key's project to billed before the roster leans on AI drafting); push notifications
 are per-device opt-in.
 
+## 2026-06-12 — Morning-outreach incident: two intent bugs fixed, sends fired
+Nick scheduled outreach past midnight expecting "tomorrow 9am" = the coming morning; code computed
++1 day = Saturday, AND the auto-send gate parked fired sends in 'ready'. FIXES: (1) the 9am chip now
+schedules the NEXT 9am (before 9 → today; after → tomorrow) with a dynamic label "9am today/tomorrow";
+(2) review gate REMOVED from processScheduled — every scheduled message is human intention and fires,
+period; `allow_auto_send` is reserved for future AGENT-initiated mail (auto-replies). Intelligent
+disconnect unchanged. Recovery: SQL resurrect (ready→scheduled, send_at=now) + worker restart boot-tick
+→ five pitches fired (Luckenbach, Mañana, Wahoo's, Rock & Brews, MHG). Also: frosted mobile header made
+genuinely translucent; mobile gutter gap 16px so the card floats clear of the OS bar; weekly-block day
+chips one-row with clamp scaling.
+
 ## 2026-06-12 — Off-grid channels + SLICE G concept: the Booking Line
 Phone-only contacts (Julie/Victory Lap) are first-class via HAND-FED logs into the same engine:
 "You said…/They said…" quick-logs write email_out/in activities (bubbles, stage rules mirrored
