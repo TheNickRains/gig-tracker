@@ -198,6 +198,25 @@ async function findThread(token, email) {
   return { threadId: full.threadId, msgId: header(full, "Message-ID") || null, subject };
 }
 
+// Unmatched inbound -> triage row on the war room (skip robots + self).
+async function recordUnmatched(artistId, selfEmail, full) {
+  const from = header(full, "From") || "";
+  const fromEmail = ((from.match(/[\w.+-]+@[\w.-]+/) || [""])[0]).toLowerCase();
+  if (!fromEmail) return;
+  if (fromEmail === (selfEmail || "").toLowerCase()) return;
+  if (/mailer-daemon|postmaster|no-?reply|notifications?@|calendar-notification|@google\.com$|@docs\./.test(fromEmail)) return;
+  const text = cleanSnippet(extractPlainText(full.payload)) || cleanSnippet(full.snippet) || "";
+  const row = {
+    artist_id: artistId, gmail_id: full.id, thread_id: full.threadId || null,
+    from_email: fromEmail,
+    from_name: (from.replace(/<[^>]*>/, "").replace(/"/g, "").trim() || fromEmail),
+    subject: (header(full, "Subject") || "(no subject)").slice(0, 200),
+    body: text.slice(0, 1200),
+  };
+  const r = await fetch(`${SUPA}/rest/v1/unmatched_mail`, { method: "POST", headers: { ...sHeaders, Prefer: "return=minimal" }, body: JSON.stringify(row) });
+  if (r.ok) console.log("unmatched parked:", fromEmail, row.subject.slice(0, 40));
+}
+
 // Shared: given a pipeline entry + a Gmail message, log it and advance the stage.
 async function applyMessage(entry, full, contactEmail, artistId) {
   const from = (header(full, "From") || "").toLowerCase();
@@ -299,8 +318,9 @@ async function handlePush(emailAddress, notifHistoryId) {
       let entry = null, cemail = null;
       for (const em in map) { if (blob.includes(em)) { entry = map[em]; cemail = em; break; } }
       var fromAddr = ((header(full, "From") || "").match(/[\w.+-]+@[\w.-]+/) || ["?"])[0];
-      console.log("push msg from", fromAddr, entry ? ("-> matched entry " + entry.id + " (status " + entry.status + ")") : ("-> NO MATCH; pipeline contacts=[" + Object.keys(map).join(", ") + "]"));
+      console.log("push msg from", fromAddr, entry ? ("-> matched entry " + entry.id) : "-> unmatched, parking");
       if (entry) await applyMessage(entry, full, cemail, artistId);
+      else if (!(blob.includes((emailAddress || "").toLowerCase()) && fromAddr.toLowerCase() === (emailAddress || "").toLowerCase())) await recordUnmatched(artistId, emailAddress, full).catch(() => {});
     }
     console.log("push: processed", ids.length, "new msg(s) for", emailAddress);
   }
@@ -332,6 +352,21 @@ async function sweepBounces(artistId, token, map) {
 async function pollArtist(artistId, token) {
   const map = await venueContactMap(artistId);
   try { await sweepBounces(artistId, token, map); } catch (e) { console.error("bounce sweep", e.message); }
+  // backfill: recent unmatched inbox mail (push may have skipped before this shipped)
+  try {
+    const selfRows = await sGet(`artists?id=eq.${artistId}&select=email`);
+    const selfEmail = (selfRows[0] && selfRows[0].email) || "";
+    const inbox = await gmailSearch(token, "in:inbox newer_than:2d");
+    for (const m of inbox.slice(0, 20)) {
+      const full = await gmailGet(token, m.id);
+      if (!full) continue;
+      const fromAddr = (((header(full, "From") || "").match(/[\w.+-]+@[\w.-]+/) || [""])[0]).toLowerCase();
+      if (!fromAddr || map[fromAddr]) continue;
+      const seen = await sGet(`activities?email_message_id=eq.${full.id}&select=id&limit=1`);
+      if (seen.length) continue;
+      await recordUnmatched(artistId, selfEmail, full).catch(() => {});
+    }
+  } catch (e) { console.error("unmatched backfill", e.message); }
   for (const [email, entry] of Object.entries(map)) {
     const msgs = await gmailSearch(token, `(from:${email} OR to:${email}) newer_than:3d`);
     for (const m of msgs) {

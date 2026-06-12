@@ -807,6 +807,7 @@
     </div>
     <div class="home-col" id="hc-left">
     <div id="war-funnel"></div>
+    <div id="war-unmatched"></div>
     <div id="war-sends"></div>
     <div class="section-label">Collective activity</div>
     <div id="war-feed"></div>
@@ -1533,6 +1534,75 @@ function backfillWins(){
   var rows = pipeline.filter(function(p){ return (p.s==='booked'||p.s==='played') && p.venueId; })
     .map(function(p){ return { venue_id: p.venueId, artist_id: ME, author_name: profile.name || 'A member', avatar_url: profile.avatar_url || null, status: p.s }; });
   if (rows.length) sb.from('venue_wins').upsert(rows).then(function(r){ if (!r.error) { feedCache = null; renderFeed(); } });
+}
+// ── Unrecognized inbox mail: triage on the war room ──
+var unmatched = [];
+var umPick = null; // unmatched row id whose deal-picker is open
+function loadUnmatched(){
+  sb.from('unmatched_mail').select('*').eq('status','new').order('created_at',{ascending:false}).limit(10).then(function(r){
+    if (r.error) return;
+    unmatched = r.data || [];
+    renderUnmatched();
+  });
+}
+function renderUnmatched(){
+  var el = document.getElementById('war-unmatched'); if (!el) return;
+  if (!unmatched.length) { el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="section-label">Unrecognized mail <span class="war-count">' + unmatched.length + '</span></div>'
+    + '<div class="card card-flush" style="margin-bottom:20px">' + unmatched.map(function(u){
+      return '<div class="note-item">'
+        + '<div style="font-size:12px;font-weight:600">' + esc(u.from_name || u.from_email) + ' <span style="font-weight:400;color:var(--text-tertiary)">· ' + relTime(u.created_at) + '</span></div>'
+        + '<div style="font-size:12.5px;margin:2px 0 4px">' + esc(u.subject || '') + '</div>'
+        + '<div class="war-sub">' + esc((u.body || '').slice(0, 120)) + '</div>'
+        + '<div style="display:flex;gap:8px;margin-top:7px">'
+        + '<button class="vchip primary" onclick="umPick = umPick===\'' + u.id + '\' ? null : \'' + u.id + '\'; renderUnmatched()"><i class="ti ti-link"></i> Add to deal</button>'
+        + '<button class="vchip" onclick="dismissUnmatched(\'' + u.id + '\')">Dismiss</button>'
+        + '</div>'
+        + (umPick === u.id
+          ? '<input class="pipe-search" style="margin:8px 0 0" placeholder="Search your deals…" autocomplete="off" oninput="umDealSearch(\'' + u.id + '\',this.value)"><div id="um-results-' + u.id + '"></div>'
+          : '')
+        + '</div>';
+    }).join('') + '</div>';
+}
+function umDealSearch(uid, q){
+  var out = document.getElementById('um-results-' + uid); if (!out) return;
+  q = (q||'').toLowerCase();
+  if (q.length < 2) { out.innerHTML = ''; return; }
+  var hits = pipeline.filter(function(p){ return (p.venue + ' ' + p.contact).toLowerCase().indexOf(q) >= 0; }).slice(0, 5);
+  out.innerHTML = hits.map(function(p){
+    return '<div class="ws-row" onclick="linkUnmatched(\'' + uid + '\',\'' + p.uuid + '\')"><div class="ws-name">' + esc(p.venue) + '</div><div class="ws-addr">' + statusLabel[p.s] + ' · ' + esc(p.contact) + '</div></div>';
+  }).join('') || '<div class="ws-row" style="cursor:default;color:var(--text-secondary);font-size:12px">No match.</div>';
+}
+// Ingest the mail AND teach the matcher: person created/linked from the sender,
+// so every future email from them lands on the deal automatically.
+function linkUnmatched(uid, entryUuid){
+  var u = unmatched.filter(function(x){ return x.id === uid; })[0]; if (!u) return;
+  var p = pipeline.filter(function(x){ return x.uuid === entryUuid; })[0]; if (!p) return;
+  umPick = null;
+  sb.from('activities').insert({ pipeline_entry_id: entryUuid, kind: 'email_in', body: u.body || u.subject || '(email)', source: 'email_sync', email_message_id: u.gmail_id }).then(function(ar){
+    if (ar.error && ar.error.message.indexOf('duplicate') < 0) { showToast('Could not attach: ' + ar.error.message, true); return; }
+    var row = { name: u.from_name || null, email: u.from_email, created_by: ME };
+    var finish = function(personId){
+      var ops = [sb.from('unmatched_mail').update({ status: 'linked' }).eq('id', uid)];
+      if (personId && p.venueId) ops.push(sb.from('venue_people').upsert({ venue_id: p.venueId, person_id: personId }));
+      var patch = { last_activity_at: new Date().toISOString() };
+      if (personId && !p.personId) patch.person_id = personId;
+      if (['lead','pitched','passed'].indexOf(p.s) >= 0) patch.status = 'talks';
+      ops.push(sb.from('pipeline_entries').update(patch).eq('id', entryUuid));
+      Promise.all(ops).then(function(){
+        showToast('Attached — future mail from ' + (u.from_name || u.from_email) + ' auto-matches now');
+        loadUnmatched(); loadPipeline();
+      });
+    };
+    sb.from('people').select('id').ilike('email', u.from_email).limit(1).then(function(pr){
+      var existing = pr.data && pr.data[0];
+      if (existing) { finish(existing.id); return; }
+      sb.from('people').insert(row).select().single().then(function(ir){ finish(ir.data ? ir.data.id : null); });
+    });
+  });
+}
+function dismissUnmatched(uid){
+  sb.from('unmatched_mail').update({ status: 'dismissed' }).eq('id', uid).then(function(){ loadUnmatched(); });
 }
 var warPrevCount = 0;
 // The war room: Home leads with what needs you, then the scheduled queue.
@@ -3029,7 +3099,7 @@ function showApp(session){
 }
 
 // ── Load ────────────────────────────────────────────────
-function loadAll(){ loadProfile(); loadVenues(); loadPipeline(); loadAvail(); subscribeRealtime(); }
+function loadAll(){ loadProfile(); loadVenues(); loadPipeline(); loadAvail(); loadUnmatched(); subscribeRealtime(); }
 
 // Live updates over websockets: when the worker writes a reply/stage change,
 // Supabase Realtime pushes it here and we refresh — no manual reload. RLS means
@@ -3044,6 +3114,7 @@ function subscribeRealtime(){
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pipeline_entries' }, function(){ loadPipeline(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'scheduled_messages' }, function(){ loadPipeline(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'availability' }, function(){ if (currentScreen==='calendar') loadAvail(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'unmatched_mail' }, function(){ loadUnmatched(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'venue_comments' }, function(){
       feedCache = null; renderFeed();
       if (currentScreen==='venue' && currentVenueId) loadVenueComments(currentVenueId);
