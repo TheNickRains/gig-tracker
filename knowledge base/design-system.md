@@ -43,3 +43,23 @@ Tabler icons webfont — outline only. CDN: `https://cdn.jsdelivr.net/npm/@table
 - 0.5px borders throughout (not 1px)
 
 ---
+## Color doctrine (2026-06-12 — "colors are psychology")
+**Chrome is ink-on-paper; color is reserved for meaning.** The interface itself is warm paper +
+ink — calm, tactile, zero-anxiety (Nick explicitly rejected alarm-red badges and "cold and sleek").
+Authority lives in the ink primary (#2E2A24: signatures, decisions, the home throne). Every hue in
+the data layer has ONE psychological job:
+
+| Hue | Meaning | Where |
+|---|---|---|
+| Faded ink blue | dialogue, trust — "they're talking to you" | In talks, inbound bubbles/dots, reply attention |
+| Manila amber | pending attention, the yellow light | Pitched, follow-up due, send-awaiting-review, Needs-you count |
+| Sage green | confirmed money, go | Booked, won banner, wins wall |
+| Eucalyptus teal | completed past, reflection | Played |
+| Muted heather | liminal, held-precious | Hold (tentative dates) |
+| Warm stone | unactivated potential / respectfully closed | Lead, Passed |
+| Brick red | terminal & destructive ONLY — scarcity keeps its power | Dead end, delete arming, errors |
+
+Rules: red never decorates; attention is amber, never red (urgency without alarm); success feedback
+stays ink (competence, not celebration-spam); chrome accents stay monochrome so data colors are the
+only voices speaking. Stage pastel fills + dark ink (#2a2722) in BOTH themes — they're data signals,
+read at a glance in dim rooms.
