@@ -1093,6 +1093,7 @@ function go(screen) {
   setActiveTab(screen);
   document.getElementById('avatar-btn').classList.remove('active');
   currentScreen = screen;
+  window.scrollTo(0, 0); // every screen starts at the tip-top — back arrow always visible
   if (screen === 'home') renderHome();
   if (screen === 'discover') { renderDiscover(); setTimeout(function(){ lsSet('gc_disc_seen', String(Date.now())); }, 4000); }
   if (screen === 'pipeline') {
@@ -1198,6 +1199,7 @@ function goProfile() {
   setActiveTab('profile');
   document.getElementById('avatar-btn').classList.add('active');
   currentScreen = 'profile';
+  window.scrollTo(0, 0);
   renderMarkets(); renderNotables(); updateProfilePreview(); updateCompleteness();
   syncHash('profile');
 }
