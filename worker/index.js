@@ -308,8 +308,30 @@ async function handlePush(emailAddress, notifHistoryId) {
 }
 
 // POLL path (fallback): scan each connection's pipeline contacts for recent mail.
+async function sweepBounces(artistId, token, map) {
+  const msgs = await gmailSearch(token, "from:(mailer-daemon OR postmaster) newer_than:3d");
+  for (const m of msgs) {
+    const full = await gmailGet(token, m.id);
+    if (!full) continue;
+    const failed = (header(full, "X-Failed-Recipients") || "").toLowerCase();
+    const text = (extractPlainText(full.payload) || full.snippet || "").toLowerCase();
+    for (const [email, entry] of Object.entries(map)) {
+      if (failed.includes(email) || text.includes(email)) {
+        const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "system", body: "⚠️ Email bounced — " + email + " doesn’t exist. Fix the contact’s address and re-send.", source: "email_sync", email_message_id: full.id });
+        if (isNew) {
+          await sPatch(`pipeline_entries?id=eq.${entry.id}`, { last_activity_at: new Date().toISOString() });
+          notify(artistId, "Email bounced ⚠️", email + " doesn’t exist — fix the address", "/app#entry/" + entry.id).catch(() => {});
+          console.log("bounce flagged", entry.id, email);
+        }
+        break;
+      }
+    }
+  }
+}
+
 async function pollArtist(artistId, token) {
   const map = await venueContactMap(artistId);
+  try { await sweepBounces(artistId, token, map); } catch (e) { console.error("bounce sweep", e.message); }
   for (const [email, entry] of Object.entries(map)) {
     const msgs = await gmailSearch(token, `(from:${email} OR to:${email}) newer_than:3d`);
     for (const m of msgs) {

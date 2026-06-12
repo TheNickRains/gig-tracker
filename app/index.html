@@ -1346,6 +1346,7 @@ function renderPipeline() {
   function dLabel(d){ return d===0 ? 'today' : (d===1 ? 'yesterday' : d + 'd ago'); }
   function metaFor(p){
     if (followupDue(p)) return '<div style="font-size:11px;font-weight:500;color:var(--pitched-text)">Follow up</div><div class="pipe-date">' + (p.days-7) + 'd overdue</div>';
+    if (p.bounced) return '<div style="font-size:11px;font-weight:500;color:var(--dead-text)">Bounced ⚠️</div><div class="pipe-date">fix address</div>';
     if (needsReply(p)) return '<div style="font-size:11px;font-weight:500;color:var(--talks-text)">Reply waiting</div><div class="pipe-date">' + dLabel(p.days) + '</div>';
     if (p.sched && p.sched.status==='ready') return '<div style="font-size:11px;font-weight:500;color:var(--pitched-text)">Ready to send</div><div class="pipe-date">awaiting you</div>';
     if (p.sched && p.sched.status==='scheduled') return '<div style="font-size:11px;font-weight:500;color:var(--text-secondary)"><i class="ti ti-clock-hour-4" style="font-size:11px"></i> Scheduled</div><div class="pipe-date">' + new Date(p.sched.send_at).toLocaleDateString(undefined,{weekday:'short'}) + ' ' + new Date(p.sched.send_at).toLocaleTimeString(undefined,{hour:'numeric'}) + '</div>';
@@ -1539,7 +1540,8 @@ function renderHome(){
   var el = document.getElementById('war-needs'); if (!el) return;
   var items = [];
   pipeline.forEach(function(p){
-    if (p.sched && p.sched.status==='ready') items.push({p:p, tier:0, ic:'ti-bell-ringing', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Send awaiting your review', sub:'Auto-send is off — review & fire'});
+    if (p.bounced) items.push({p:p, tier:0, ic:'ti-mail-x', c:'var(--dead-text)', bg:'var(--dead-bg)', t:'Email bounced — fix the address', sub:'The pitch never arrived; edit the contact and re-send'});
+    else if (p.sched && p.sched.status==='ready') items.push({p:p, tier:0, ic:'ti-bell-ringing', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Send awaiting your review', sub:'Auto-send is off — review & fire'});
     else if (needsReply(p)) items.push({p:p, tier:1, ic:'ti-mail', c:'var(--talks-text)', bg:'var(--talks-bg)', t:'You\u2019ve got mail — ' + ((p.contact||'').split(' ')[0]||'they') + ' replied', sub:lastInboundPreview(p)});
     else if (followupDue(p)) items.push({p:p, tier:2, ic:'ti-clock-exclamation', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Follow-up due · ' + p.days + 'd quiet', sub:'Nudge them or schedule it'});
   });
@@ -1584,6 +1586,7 @@ function renderHome(){
 }
 // Urgency model: who needs attention right now?
 function priorityScore(p) {
+  if (p.bounced) return 125;                                // the pitch never arrived
   if (p.sched && p.sched.status === 'ready') return 120;   // send awaiting review
   if (needsReply(p))                  return 100 + p.days; // their word is the last word
   if (followupDue(p))                 return 80 + p.days;  // pitched, gone quiet
@@ -1875,7 +1878,11 @@ function openDetail(id) {
 
   // What needs you, at the TOP of the hierarchy — obvious, with the action.
   var attnCard = '';
-  if (p.sched && p.sched.status === 'ready') {
+  if (p.bounced) {
+    attnCard = '<div class="attn-card" style="border-color:var(--dead-text)"><i class="ti ti-mail-x" style="color:var(--dead-text)"></i>'
+      + '<div class="grow"><strong>Their email bounced — it never arrived</strong><div class="sub">' + esc(p.email || 'address') + ' doesn\u2019t exist. Fix it, then re-send.</div></div>'
+      + '<button class="btn-primary btn-sm" onclick="startContactEdit(' + id + ',\'' + (p.personId||'') + '\')">Fix address</button></div>';
+  } else if (p.sched && p.sched.status === 'ready') {
     attnCard = '<div class="attn-card" style="border-color:var(--pitched-text)"><i class="ti ti-bell-ringing" style="color:var(--pitched-text)"></i>'
       + '<div class="grow"><strong>Send awaiting your review</strong><div class="sub">Auto-send is off — review the draft below, then fire</div></div>'
       + '<button class="btn-primary btn-sm" onclick="jumpToDraft(' + id + ')">Review</button></div>';
@@ -3137,10 +3144,18 @@ function loadActivities(ids){
       if (a.kind==='email_in'  && (!lastIn[a.pipeline_entry_id]  || t > lastIn[a.pipeline_entry_id]))  lastIn[a.pipeline_entry_id]  = t;
       if (a.kind==='email_out' && (!lastOut[a.pipeline_entry_id] || t > lastOut[a.pipeline_entry_id])) lastOut[a.pipeline_entry_id] = t;
     });
+    var lastBounce={};
+    (r.data||[]).forEach(function(a){
+      if (a.kind==='system' && (a.body||'').indexOf('⚠️ Email bounced') === 0) {
+        var t = new Date(a.created_at).getTime();
+        if (!lastBounce[a.pipeline_entry_id] || t > lastBounce[a.pipeline_entry_id]) lastBounce[a.pipeline_entry_id] = t;
+      }
+    });
     pipeline.forEach(function(p){
       p.activity = byEntry[p.uuid]||[];
       p.lastInboundTs = lastIn[p.uuid] || 0;
       p.lastOutboundTs = lastOut[p.uuid] || 0;
+      p.bounced = (lastBounce[p.uuid] || 0) > p.lastOutboundTs; // re-sending clears it
     });
     renderHome();
     if (currentScreen==='pipeline') renderPipeline();
