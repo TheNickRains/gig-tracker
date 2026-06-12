@@ -1468,7 +1468,7 @@ function renderFunnel(){
   var sent7 = pipeline.filter(function(p){ return p.lastOutboundTs > wk; }).length;
   var replies7 = pipeline.filter(function(p){ return p.lastInboundTs > wk; }).length;
   var bookedAll = pipeline.filter(function(p){ return p.s==='booked' || p.s==='played'; }).length;
-  if (!total) { el.innerHTML = ''; return; }
+  if (!total) { el.innerHTML = '<div class="section-label">Pipeline health</div><div class="card placeholder" style="margin-bottom:20px"><div class="ph-caption">Your funnel and momentum appear here once deals exist — ⊕ a venue to start.</div></div>'; return; }
   var bar = spine.filter(function(st){ return counts[st]; }).map(function(st){
     return '<div class="funnel-seg" style="flex:' + counts[st] + ';background:var(--' + st + '-text)" title="' + statusLabel[st] + ': ' + counts[st] + '" onclick="pipeFilter=\'' + st + '\';go(\'pipeline\');pipeFilter=\'' + st + '\';renderPipeline()"></div>';
   }).join('');
@@ -1985,7 +1985,6 @@ function openDetail(id) {
     + '</div>'
     + '<span style="font-size:9.5px;color:var(--text-tertiary)">deal type' + (!p.tOverride ? ' · venue default' : '') + '</span>'
     + '<span style="display:flex;gap:8px;margin-top:2px">'
-    + '<button class="vc-btn" onclick="toggleMoveRoom(' + id + ')" title="Move this deal to another room"><i class="ti ti-arrows-exchange"></i> room</button>'
     + '<button class="vc-btn" id="deal-del-' + id + '" onclick="deleteDealArmed(' + id + ')" title="Delete this deal (venue stays)"><i class="ti ti-trash"></i></button>'
     + '</span></div>';
   var statusActions = '<div class="closeout">'
@@ -2052,11 +2051,12 @@ function openDetail(id) {
     + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 12px">'
     + '<span style="font-size:10.5px;color:var(--text-tertiary)">rooms in play:</span>'
     + '<span class="vchip done" style="cursor:default">' + esc(p.venue) + '</span>'
-    + (p.dealVenues || []).map(function(dv){ return '<span class="vchip" style="cursor:default">' + esc(dv.name) + ' <i class="ti ti-x" style="cursor:pointer" onclick="removeDealVenue(' + id + ',\'' + dv.id + '\')"></i></span>'; }).join('')
+    + (p.dealVenues || []).map(function(dv){ return '<span class="vchip" style="cursor:default">' + esc(dv.name)
+        + ' <i class="ti ti-star" title="Make primary — the deal moves here, history intact" style="cursor:pointer" onclick="promoteDealVenue(' + id + ',\'' + dv.id + '\',\'' + esc(dv.name) + '\')"></i>'
+        + ' <i class="ti ti-x" title="Drop from the set" style="cursor:pointer" onclick="removeDealVenue(' + id + ',\'' + dv.id + '\')"></i></span>'; }).join('')
     + '<button class="vchip" onclick="toggleAddRoom(' + id + ')" title="Add a room to this opportunity"><i class="ti ti-plus"></i></button>'
     + '</div>'
     + (addRoomOpen[p.uuid] ? '<div class="card" style="margin-bottom:12px"><div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Add a room to this opportunity (the AI pitches the set; lock one later):</div><input class="pipe-search" id="ar-room-q" placeholder="Search your venues…" autocomplete="off" oninput="addRoomSearch(' + id + ',this.value)" style="margin:0"><div id="ar-room-results"></div></div>' : '')
-    + (moveRoomOpen[p.uuid] ? '<div class="card" style="margin-bottom:12px"><div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Move this deal — conversation, notes, and stage come along:</div><input class="pipe-search" id="mv-room-q" placeholder="Search your venues…" autocomplete="off" oninput="dealRoomSearch(' + id + ',this.value)" style="margin:0"><div id="mv-room-results"></div></div>' : '')
     + attnCard
     + gigDateBlock
     + contactSection(p, id)
@@ -3241,34 +3241,23 @@ function fetchDealVenues(p){
   });
 }
 
-// Move a deal to a different room (the org-deal -> real-room case): the
-// conversation, notes, stage, and person all travel with it.
-var moveRoomOpen = {};
-function toggleMoveRoom(id){
+// Promote a room from the set: it becomes the deal's home; the old primary
+// stays in play. Conversation, notes, stage all carry.
+function promoteDealVenue(id, venueId, venueName){
   var p = pipeline[id];
-  moveRoomOpen[p.uuid] = !moveRoomOpen[p.uuid];
-  openDetail(id);
-  var inp = document.getElementById('mv-room-q'); if (inp) inp.focus();
-}
-function dealRoomSearch(id, q){
-  var out = document.getElementById('mv-room-results'); if (!out) return;
-  q = (q || '').toLowerCase();
-  if (q.length < 2) { out.innerHTML = ''; return; }
-  var p = pipeline[id];
-  var hits = venues.filter(function(v){ return v.id !== p.venueId && (v.name + ' ' + v.city).toLowerCase().indexOf(q) >= 0; }).slice(0, 5);
-  out.innerHTML = hits.map(function(v){
-    return '<div class="ws-row" onclick="moveDealVenue(' + id + ',\'' + v.id + '\',\'' + esc(v.name) + '\')"><div class="ws-name">' + esc(v.name) + '</div><div class="ws-addr">' + esc(v.city || '') + '</div></div>';
-  }).join('') || '<div class="ws-row" style="cursor:default;color:var(--text-secondary);font-size:12px">No match.</div>';
-}
-function moveDealVenue(id, venueId, venueName){
-  var p = pipeline[id];
-  moveRoomOpen[p.uuid] = false;
+  var oldPrimary = p.venueId;
   sb.from('pipeline_entries').update({ venue_id: venueId }).eq('id', p.uuid).then(function(r){
-    if (r.error) { showToast('Could not move: ' + r.error.message, true); return; }
-    if (p.personId) sb.from('venue_people').upsert({ venue_id: venueId, person_id: p.personId }).then(function(){});
-    sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: 'system', body: 'Deal moved to ' + venueName, source: 'manual' }).then(function(){});
-    showToast('Moved to ' + venueName);
-    loadPipeline();
+    if (r.error) { showToast('Could not promote: ' + r.error.message, true); return; }
+    Promise.all([
+      sb.from('deal_venues').delete().eq('entry_id', p.uuid).eq('venue_id', venueId),
+      oldPrimary ? sb.from('deal_venues').insert({ entry_id: p.uuid, venue_id: oldPrimary }) : Promise.resolve({}),
+      p.personId ? sb.from('venue_people').upsert({ venue_id: venueId, person_id: p.personId }) : Promise.resolve({})
+    ]).then(function(){
+      sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: 'system', body: 'Primary room → ' + venueName, source: 'manual' }).then(function(){});
+      showToast('Deal now lives at ' + venueName);
+      loadPipeline();
+      fetchDealVenues(p);
+    });
   });
 }
 // Delete a deal — armed double-tap; the venue and its intel stay.
