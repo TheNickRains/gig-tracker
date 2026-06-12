@@ -1070,6 +1070,24 @@ var statusOrder = {talks:0,hold:1,pitched:2,lead:3,booked:4,played:5,passed:6,de
 var happyPath = ['lead','pitched','talks','hold','booked','played'];
 function stagesFor(p){ return p.t==='hard' ? happyPath : happyPath.filter(function(s){ return s!=='hold'; }); }
 function followupDue(p){ return p.s==='pitched' && p.days>=7; }
+// Venue-type glyphs — rows scan by SHAPE, not just words.
+function venueIcon(vt){
+  var t = (vt || '').toLowerCase();
+  if (t.indexOf('bar') >= 0 || t.indexOf('pub') >= 0) return 'ti-beer';
+  if (t.indexOf('coffee') >= 0) return 'ti-coffee';
+  if (t.indexOf('restaurant') >= 0) return 'ti-tools-kitchen-2';
+  if (t.indexOf('hotel') >= 0) return 'ti-bed';
+  if (t.indexOf('winery') >= 0 || t.indexOf('brewery') >= 0) return 'ti-barrel';
+  if (t.indexOf('casino') >= 0) return 'ti-dice';
+  if (t.indexOf('festival') >= 0) return 'ti-tent';
+  if (t.indexOf('listening') >= 0) return 'ti-music';
+  if (t.indexOf('theater') >= 0 || t.indexOf('performing') >= 0) return 'ti-masks-theater';
+  if (t.indexOf('concert') >= 0) return 'ti-microphone-2';
+  if (t.indexOf('club') >= 0) return 'ti-vinyl';
+  if (t.indexOf('promoter') >= 0 || t.indexOf('agency') >= 0) return 'ti-briefcase';
+  if (t.indexOf('corporate') >= 0 || t.indexOf('private') >= 0) return 'ti-building';
+  return 'ti-building-store';
+}
 
 var softTypes = ['Bar / Pub','Coffee shop','Restaurant','Hotel bar','Winery / Brewery','Casino floor','Festival stage','Promoter / agency','Corporate / private','Other'];
 var hardTypes = ['Listening room','Theater','Concert hall','Performing arts center','Music club (ticketed)','Promoter / agency','Other'];
@@ -1250,7 +1268,7 @@ function renderDiscover() {
   var inPipe = {}; pipeline.forEach(function(p){ if (p.venueId) inPipe[p.venueId] = true; });
   g.innerHTML = f.map(function(v){
     return '<div class="venue-card" onclick="openVenueDetail(\'' + v.id + '\')">'
-    + '<div class="venue-name">' + esc(v.name) + '</div>'
+    + '<div class="venue-name"><i class="ti ' + venueIcon(v.vtype) + '" style="margin-right:6px;color:var(--text-tertiary)"></i>' + esc(v.name) + '</div>'
     + '<div class="venue-loc">' + esc(v.city) + ', ' + esc(v.state) + '</div>'
     + '<span class="badge badge-' + v.type + '">' + esc(v.vtype) + '</span>'
     + (inPipe[v.id] ? '<i class="ti ti-circle-check-filled vp-check" title="In your pipeline"></i>' : '')
@@ -1304,7 +1322,7 @@ function renderPipeline() {
   if (!rows.length) { list.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">Nothing matches.</p>'; return; }
   function rowHtml(p){
     return '<div class="pipe-item" onclick="openDetail(' + p.id + ')">'
-    + '<div class="pipe-icon"><i class="ti ti-building-store"></i></div>'
+    + '<div class="pipe-icon"><i class="ti ' + venueIcon(p.vtype) + '"></i></div>'
     + '<div class="pipe-info"><div class="pipe-venue">' + esc(p.venue) + ' <span class="badge badge-' + p.s + '" style="font-size:10px;padding:2px 7px">' + statusLabel[p.s] + '</span></div><div class="pipe-contact">' + esc(p.contact) + ' · ' + esc(p.city) + (p.state ? ', ' + esc(p.state) : '') + '</div></div>'
     + '<div class="pipe-meta">' + metaFor(p) + '</div>'
     + '</div>';
@@ -1330,7 +1348,7 @@ function renderPipeline() {
   if (pipeView === 'grid') {
     list.innerHTML = rows.map(function(p){
       return '<div class="pipe-card" onclick="openDetail(' + p.id + ')">'
-        + '<div class="pc-venue">' + esc(p.venue) + '</div>'
+        + '<div class="pc-venue"><i class="ti ' + venueIcon(p.vtype) + '" style="margin-right:5px;color:var(--text-tertiary)"></i>' + esc(p.venue) + '</div>'
         + '<div class="pc-sub">' + esc(p.contact) + ' · ' + esc(p.city) + '</div>'
         + '<div class="pc-meta"><span class="badge badge-' + p.s + '" style="font-size:10px;padding:2px 7px">' + statusLabel[p.s] + '</span><span class="pipe-date">' + dLabel(p.days) + '</span></div>'
         + '</div>';
@@ -1580,7 +1598,7 @@ function openPersonView(pid){
       + '<div class="section-label">Your deals with them</div>'
       + (deals.length
         ? '<div class="card card-flush" style="margin-bottom:20px">' + deals.map(function(pp){
-            return '<div class="war-row" onclick="openDetail(' + pp.id + ')"><div class="war-ic" style="background:var(--' + pp.s + '-bg);color:var(--' + pp.s + '-text)"><i class="ti ti-building-store"></i></div>'
+            return '<div class="war-row" onclick="openDetail(' + pp.id + ')"><div class="war-ic" style="background:var(--' + pp.s + '-bg);color:var(--' + pp.s + '-text)"><i class="ti ' + venueIcon(pp.vtype) + '"></i></div>'
               + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(pp.venue) + '</div><div class="war-sub">' + statusLabel[pp.s] + (pp.gig_date ? ' · ' + new Date(pp.gig_date).toLocaleDateString(undefined,{month:'short',day:'numeric'}) : '') + '</div></div>'
               + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
           }).join('') + '</div>'
@@ -1861,7 +1879,7 @@ function openDetail(id) {
   document.getElementById('detail-container').innerHTML =
     '<button class="back-btn" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>'
     + '<div class="detail-cols"><div>'
-    + '<div class="detail-header"><div class="detail-icon"><i class="ti ti-building-store"></i></div>'
+    + '<div class="detail-header"><div class="detail-icon"><i class="ti ' + venueIcon(p.vtype) + '"></i></div>'
     + '<div><div class="detail-venue">' + p.venue + '</div><div class="detail-meta">' + p.vtype + ' · ' + p.city + ', ' + p.state + ' · ' + p.pay + '</div>'
     + '<span class="badge badge-' + p.s + '" style="margin-top:6px">' + statusLabel[p.s] + '</span></div></div>'
     + (stageIdx>=0 ? '<div class="stage-track" style="margin-bottom:20px">' + stageDots + '</div>' : '')
@@ -3001,7 +3019,7 @@ function openVenueDetail(id){
     + '<button class="vchip" onclick="openVenueEdit(\'' + v.id + '\')"><i class="ti ti-pencil"></i> Edit</button>'
     + '<button class="vchip danger" id="vdel-chip" onclick="deleteVenueArmed(\'' + v.id + '\')"><i class="ti ti-trash"></i> Delete</button>'
     + '</div></div>'
-    + '<div class="detail-header"><div class="detail-icon"><i class="ti ti-building-store"></i></div>'
+    + '<div class="detail-header"><div class="detail-icon"><i class="ti ' + venueIcon(v.vtype) + '"></i></div>'
     + '<div style="flex:1"><div class="detail-venue">' + esc(v.name) + '</div>'
     + '<div class="detail-meta">' + esc([v.vtype, [v.city, v.state].filter(function(x){return x;}).join(', '), (v.pay && v.pay!=='—' ? v.pay : '')].filter(function(x){return x;}).join(' · ')) + '</div>'
     + '<span class="badge badge-' + v.type + '" style="margin-top:6px">' + (v.type==='hard'?'Hard ticket':'Soft ticket') + '</span></div>'
