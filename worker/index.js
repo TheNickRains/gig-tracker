@@ -20,6 +20,7 @@ const GCS = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
 const GMAIL_TOPIC = (process.env.GMAIL_TOPIC || "").trim();
 const PUSH_TOKEN = (process.env.PUSH_TOKEN || "").trim();
 const GEMINI_KEY = (process.env.GEMINI_API_KEY || "").trim();
+const PLACES_KEY = (process.env.PLACES_API_KEY || "").trim();
 const GEMINI_MODEL = (process.env.GEMINI_MODEL || "gemini-2.5-flash").trim();
 const INTERVAL = (Number(process.env.POLL_MINUTES) || 10) * 60000;
 const PORT = process.env.PORT || 8080;
@@ -655,6 +656,46 @@ http.createServer((req, res) => {
         pulseCache.set(vid, { summary: (summary || "").slice(0, 400), count: comments.length, ts: Date.now() });
         res.writeHead(200, hdr); res.end(JSON.stringify({ summary: (summary || "").slice(0, 400) }));
       } catch (err) { res.writeHead(500, hdr); res.end(JSON.stringify({ summary: null })); }
+    });
+    return;
+  }
+  if (req.method === "POST" && u.pathname === "/places/search") {
+    // Venue lookup: one search fills name/address/city/state (+phone/site).
+    let body = "";
+    req.on("data", (dd) => (body += dd));
+    req.on("end", async () => {
+      const hdr = corsHeaders(req);
+      try {
+        if (!PLACES_KEY) { res.writeHead(503, hdr); res.end(JSON.stringify({ error: "Place search isn’t configured yet (PLACES_API_KEY missing)" })); return; }
+        const uid = await verifyUser(req);
+        if (!uid) { res.writeHead(401, hdr); res.end(JSON.stringify({ error: "Not signed in" })); return; }
+        const q = String(JSON.parse(body || "{}").q || "").slice(0, 120);
+        if (q.length < 3) { res.writeHead(200, hdr); res.end(JSON.stringify({ results: [] })); return; }
+        const r = await fetch("https://places.googleapis.com/v1/places:searchText", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": PLACES_KEY,
+            "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.addressComponents,places.nationalPhoneNumber,places.websiteUri",
+          },
+          body: JSON.stringify({ textQuery: q, maxResultCount: 5 }),
+        });
+        if (!r.ok) { const t = (await r.text()).slice(0, 200); console.error("places", r.status, t); res.writeHead(502, hdr); res.end(JSON.stringify({ error: "Place search failed (" + r.status + ")" })); return; }
+        const j = await r.json();
+        const results = (j.places || []).map((pl) => {
+          const comps = pl.addressComponents || [];
+          const get = (type, short) => { const cmpo = comps.find((cc) => (cc.types || []).includes(type)); return cmpo ? (short ? cmpo.shortText : cmpo.longText) : ""; };
+          return {
+            name: (pl.displayName && pl.displayName.text) || "",
+            address: pl.formattedAddress || "",
+            city: get("locality") || get("postal_town") || get("sublocality") || "",
+            state: get("administrative_area_level_1", true) || "",
+            phone: pl.nationalPhoneNumber || "",
+            website: pl.websiteUri || "",
+          };
+        });
+        res.writeHead(200, hdr); res.end(JSON.stringify({ results }));
+      } catch (err) { res.writeHead(500, hdr); res.end(JSON.stringify({ error: err.message.slice(0, 120) })); }
     });
     return;
   }
