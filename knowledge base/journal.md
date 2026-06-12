@@ -17,6 +17,16 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-12 — Build phase closes; DOGFOOD phase begins
+Nick: "the app is fantastic as it is now, lets put it through the ringer with my stack of cards and
+contacts." **Tour planner (F) SHELVED by choice until he plans the New England tour** — the gig_pay/
+gig_costs foundations stay in place for it. From here: real venue intake from the physical card stack,
+real outreach, real replies. Treat incoming feedback as field reports, not feature requests — fix
+friction fast, resist new surface area. Watch-fors during dogfooding: Google Testing-mode refresh
+tokens expire ~7 days idle (Settings flips to "Connect" — just reconnect); Gemini FREE tier has daily
+caps (upgrade the key's project to billed before the roster leans on AI drafting); push notifications
+are per-device opt-in.
+
 ## 2026-06-12 — E polish: live social, wins backfill, glance toggle; calendar mystery closed
 **#7 FINAL:** Nick's own screenshot shows the event ON booking@'s Google Calendar — the gap was Spark
 (client) not showing/syncing that calendar. The mystery "booking page (30 mins)" was NOT us (we only
