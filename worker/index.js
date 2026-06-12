@@ -805,6 +805,7 @@ http.createServer((req, res) => {
         if (conns.length) {
           const token = await refreshAccessToken(conns[0].refresh_token);
           await syncCalendar(uid, token);
+          await pollArtist(uid, token); // full sweep: replies, bounces, unmatched backfill
         }
       } catch (e) { console.error("poke", e.message); }
     })();

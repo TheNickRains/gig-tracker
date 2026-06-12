@@ -3099,7 +3099,7 @@ function showApp(session){
 }
 
 // ── Load ────────────────────────────────────────────────
-function loadAll(){ loadProfile(); loadVenues(); loadPipeline(); loadAvail(); loadUnmatched(); subscribeRealtime(); }
+function loadAll(){ loadProfile(); loadVenues(); loadPipeline(); loadAvail(); loadUnmatched(); subscribeRealtime(); pokeWorker(); }
 
 // Live updates over websockets: when the worker writes a reply/stage change,
 // Supabase Realtime pushes it here and we refresh — no manual reload. RLS means
