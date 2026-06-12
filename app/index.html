@@ -508,8 +508,9 @@
   .cc-ch.on { opacity: 1; filter: none; background: var(--bg-primary); box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
   .composer { display: flex; gap: 6px; align-items: center; padding: 10px 12px 12px; }
   .composer .note-input { margin: 0; width: auto; flex: 1; }
-  textarea.note-input { resize: none; line-height: 1.45; font-family: inherit; min-height: 40px; }
-  .send-btn { width: 34px; height: 34px; border-radius: 10px; border: none; background: var(--amber-800); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  /* starts button-height, grows with content */
+  textarea.note-input { resize: none; line-height: 1.45; font-family: inherit; field-sizing: content; min-height: 36px; max-height: 140px; height: auto; padding-top: 8px; padding-bottom: 8px; }
+  .send-btn { width: 36px; height: 36px; border-radius: 10px; border: none; background: var(--amber-800); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .send-btn i { font-size: 16px; }
   .note-ic:hover { color: var(--amber-800); }
   /* Calendar */
@@ -1949,7 +1950,7 @@ function openDetail(id) {
     + contactSection(p, id)
     + '<div class="section-label">Notes</div>'
     + '<div class="card card-flush" style="margin-bottom:12px">' + notesHtml
-    + '<div class="composer" style="align-items:flex-end"><textarea class="note-input" id="note-in-' + id + '" rows="2" placeholder="Add a note…" onkeydown="addNote(event,' + id + ')"></textarea>'
+    + '<div class="composer" style="align-items:flex-end"><textarea class="note-input" id="note-in-' + id + '" rows="1" placeholder="Add a note…" onkeydown="addNote(event,' + id + ')"></textarea>'
     + '<button class="send-btn" onclick="addNote({key:\'Enter\',metaKey:true,target:document.getElementById(\'note-in-' + id + '\')},' + id + ')" title="Save note"><i class="ti ti-arrow-up"></i></button></div>'
     + '</div>'
     + '</div><div>'
