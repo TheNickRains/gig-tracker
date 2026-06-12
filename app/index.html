@@ -91,9 +91,6 @@
       box-shadow: 0 -2px 18px rgba(0,0,0,0.12);
     }
     .nav { top: calc(env(safe-area-inset-top, 0px) + 8px); border-radius: 22px 22px 0 0; z-index: 70; }
-    /* The corner notches outside the nav's radius paint --bg-page, so the
-       rounded card + gutter survive scrolling instead of fusing to the top. */
-    .nav::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 22px; background: var(--bg-page); z-index: -1; }
     /* Keep the top gutter clean while scrolling — content can't slide through it. */
     body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: calc(env(safe-area-inset-top, 0px) + 8px); background: var(--bg-page); z-index: 80; pointer-events: none; }
   }
@@ -119,7 +116,7 @@
     #screen-home.active { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 340px; gap: 0 32px; align-items: start; grid-auto-flow: dense; }
     #screen-home.active > div:first-child { grid-column: 1 / -1; }
     #screen-home.active #war-needs { grid-column: 1; grid-row: 2 / span 8; }
-    #screen-home.active .stat-grid, #screen-home.active .war-actions, #screen-home.active #war-sends,
+    #screen-home.active .stat-grid, #screen-home.active #war-funnel, #screen-home.active .war-actions, #screen-home.active #war-sends,
     #screen-home.active > .section-label, #screen-home.active > .card.placeholder { grid-column: 2; }
     #screen-home.active #war-cal { display: block; grid-column: 3; grid-row: 2; }
     #screen-home.active #war-up { display: block; grid-column: 3; grid-row: 3 / span 6; }
@@ -378,7 +375,8 @@
   .closeout-btn.deadend:hover { background: var(--dead-bg); border-color: var(--dead-text); color: var(--dead-text); }
   .pipe-search { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid transparent; border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13.5px; font-family: inherit; margin-bottom: 8px; }
   .pipe-search:focus { outline: none; border-color: var(--amber-400); background: var(--bg-primary); }
-  @media (max-width: 599px) { .vp-chip { display: none; } } /* mobile cards stay quiet */
+  .venue-card { position: relative; }
+  .vp-check { position: absolute; top: 9px; right: 9px; font-size: 16px; color: var(--booked-text); }
   .pipe-filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 10px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .pipe-filters::-webkit-scrollbar { display: none; }
   .pf-chip { flex-shrink: 0; font-size: 12px; padding: 5px 11px; border-radius: 999px; border: 1px solid transparent; color: var(--text-secondary); cursor: pointer; background: var(--bg-secondary); font-family: inherit; opacity: 0.85; }
@@ -409,6 +407,15 @@
   .war-ic { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 17px; }
   .war-t { font-size: 13.5px; font-weight: 500; }
   .war-sub { font-size: 12px; color: var(--text-secondary); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .funnel-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; margin: 4px 0 10px; background: var(--bg-secondary); }
+  .funnel-seg { height: 100%; min-width: 6px; cursor: pointer; }
+  .funnel-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 11.5px; }
+  .funnel-legend span { cursor: pointer; display: inline-flex; align-items: center; gap: 5px; color: var(--text-secondary); }
+  .funnel-legend .fl-dot { width: 8px; height: 8px; border-radius: 3px; display: inline-block; }
+  .momentum { display: flex; gap: 0; margin-top: 12px; border-top: 0.5px solid var(--border-light); padding-top: 10px; }
+  .momentum div { flex: 1; text-align: center; }
+  .momentum .mv { font-size: 17px; font-weight: 600; }
+  .momentum .ml { font-size: 10.5px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 1px; }
   .war-actions { display: flex; gap: 8px; margin: 0 0 20px; }
   .war-actions button { flex: 1; }
   /* Detail attention card */
@@ -426,7 +433,9 @@
   .cal-gig-dot { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); width: 5px; height: 5px; border-radius: 50%; background: var(--amber-800); }
   /* Conversation: 2-way message bubbles — them left/blue rail, you right/amber rail */
   .convo { display: flex; flex-direction: column; gap: 9px; padding: 12px; }
-  .msg { max-width: 88%; padding: 9px 11px; border-radius: 12px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; color: var(--text-primary); }
+  /* Bubble backgrounds are light pastels in BOTH themes — ink must stay dark
+     (dark mode's near-white text was invisible on them). */
+  .msg { max-width: 88%; padding: 9px 11px; border-radius: 12px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; color: #2b2a26; }
   .msg.them { align-self: flex-start; background: var(--talks-bg); border-left: 3px solid var(--talks-text); border-top-left-radius: 4px; }
   .msg.you { align-self: flex-end; background: var(--pitched-bg); border-right: 3px solid var(--pitched-text); border-top-right-radius: 4px; }
   .msg .m-sum { font-weight: 600; margin-bottom: 3px; }
@@ -686,6 +695,7 @@
       <div class="stat-card"><div class="stat-label">Booked</div><div class="stat-val" id="stat-booked">0</div><div class="stat-sub">confirmed gigs</div></div>
       <div class="stat-card placeholder"><div class="stat-label">Collective wins</div><div class="stat-val">—</div><div class="stat-sub">coming soon</div></div>
     </div>
+    <div id="war-funnel"></div>
     <div class="war-actions">
       <button class="btn-primary" onclick="go('add')"><i class="ti ti-plus"></i> Add venue</button>
       <button class="btn-secondary" onclick="go('discover')"><i class="ti ti-compass"></i> Discover</button>
@@ -1075,6 +1085,13 @@ function applyRoute(){
 }
 function retryPendingRoute(){ if (pendingRoute) { pendingRoute = false; applyRoute(); } }
 window.addEventListener('hashchange', applyRoute);
+// Mobile keyboards shove fixed elements around — hide the island nav while typing.
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', function(){
+    var kb = (window.innerHeight - window.visualViewport.height) > 140;
+    var b = document.querySelector('.bnav'); if (b) b.style.display = kb ? 'none' : '';
+  });
+}
 
 function goProfile() {
   document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
@@ -1109,7 +1126,7 @@ function renderDiscover() {
     + '<div class="venue-name">' + esc(v.name) + '</div>'
     + '<div class="venue-loc">' + esc(v.city) + ', ' + esc(v.state) + '</div>'
     + '<span class="badge badge-' + v.type + '">' + esc(v.vtype) + '</span>'
-    + (inPipe[v.id] ? ' <span class="badge vp-chip" style="background:var(--bg-secondary);color:var(--text-tertiary)">In pipeline ✓</span>' : '')
+    + (inPipe[v.id] ? '<i class="ti ti-circle-check-filled vp-check" title="In your pipeline"></i>' : '')
     + '<div class="venue-tag"><i class="ti ti-currency-dollar"></i>' + esc(v.pay) + '</div>'
     + '<div class="venue-tag"><i class="ti ti-user"></i>' + esc(v.contact) + '</div>'
     + '</div>';
@@ -1218,6 +1235,32 @@ function lastInboundPreview(p){
   }
   return '';
 }
+// The cockpit: pipeline funnel (click a stage to fly there) + weekly momentum.
+function renderFunnel(){
+  var el = document.getElementById('war-funnel'); if (!el) return;
+  var spine = ['lead','pitched','talks','hold','booked','played'];
+  var counts = {}; var total = 0;
+  pipeline.forEach(function(p){ if (spine.indexOf(p.s) >= 0) { counts[p.s] = (counts[p.s]||0) + 1; total++; } });
+  var wk = Date.now() - 7 * 86400000;
+  var sent7 = pipeline.filter(function(p){ return p.lastOutboundTs > wk; }).length;
+  var replies7 = pipeline.filter(function(p){ return p.lastInboundTs > wk; }).length;
+  var bookedAll = pipeline.filter(function(p){ return p.s==='booked' || p.s==='played'; }).length;
+  if (!total) { el.innerHTML = ''; return; }
+  var bar = spine.filter(function(st){ return counts[st]; }).map(function(st){
+    return '<div class="funnel-seg" style="flex:' + counts[st] + ';background:var(--' + st + '-text)" title="' + statusLabel[st] + ': ' + counts[st] + '" onclick="pipeFilter=\'' + st + '\';go(\'pipeline\');pipeFilter=\'' + st + '\';renderPipeline()"></div>';
+  }).join('');
+  var legend = spine.filter(function(st){ return counts[st]; }).map(function(st){
+    return '<span onclick="pipeFilter=\'' + st + '\';go(\'pipeline\');pipeFilter=\'' + st + '\';renderPipeline()"><span class="fl-dot" style="background:var(--' + st + '-text)"></span>' + statusLabel[st] + ' ' + counts[st] + '</span>';
+  }).join('');
+  el.innerHTML = '<div class="section-label">Pipeline health</div><div class="card" style="margin-bottom:20px">'
+    + '<div class="funnel-bar">' + bar + '</div>'
+    + '<div class="funnel-legend">' + legend + '</div>'
+    + '<div class="momentum">'
+    + '<div><div class="mv">' + sent7 + '</div><div class="ml">sent · 7d</div></div>'
+    + '<div><div class="mv">' + replies7 + '</div><div class="ml">replies · 7d</div></div>'
+    + '<div><div class="mv">' + bookedAll + '</div><div class="ml">booked</div></div>'
+    + '</div></div>';
+}
 // Desktop war-room rail: this month at a glance (bookings + availability).
 function renderMiniCal(){
   var el = document.getElementById('war-cal'); if (!el) return;
@@ -1258,7 +1301,7 @@ function renderHome(){
   var items = [];
   pipeline.forEach(function(p){
     if (p.sched && p.sched.status==='ready') items.push({p:p, tier:0, ic:'ti-bell-ringing', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Send awaiting your review', sub:'Auto-send is off — review & fire'});
-    else if (needsReply(p)) items.push({p:p, tier:1, ic:'ti-mail', c:'var(--talks-text)', bg:'var(--talks-bg)', t:((p.contact||'').split(' ')[0]||'They') + ' replied — your move', sub:lastInboundPreview(p)});
+    else if (needsReply(p)) items.push({p:p, tier:1, ic:'ti-mail', c:'var(--talks-text)', bg:'var(--talks-bg)', t:'You\u2019ve got mail — ' + ((p.contact||'').split(' ')[0]||'they') + ' replied', sub:lastInboundPreview(p)});
     else if (followupDue(p)) items.push({p:p, tier:2, ic:'ti-clock-exclamation', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Follow-up due · ' + p.days + 'd quiet', sub:'Nudge them or schedule it'});
   });
   // Scale: hardest-to-ignore first (ready > replies > follow-ups, oldest first),
@@ -1285,6 +1328,7 @@ function renderHome(){
   }
   el.innerHTML = html;
   renderMiniCal();
+  renderFunnel();
   var sends = pipeline.filter(function(p){ return p.sched && p.sched.status==='scheduled'; });
   var se = document.getElementById('war-sends');
   if (se) se.innerHTML = sends.length
@@ -1345,7 +1389,7 @@ function openDetail(id) {
       + '<button class="btn-primary btn-sm" onclick="jumpToDraft(' + id + ')">Review</button></div>';
   } else if (needsReply(p)) {
     attnCard = '<div class="attn-card" style="border-color:var(--talks-text)"><i class="ti ti-mail" style="color:var(--talks-text)"></i>'
-      + '<div class="grow"><strong>' + esc(first) + ' replied — your move</strong>'
+      + '<div class="grow"><strong>You\u2019ve got mail — ' + esc(first) + ' replied</strong>'
       + (lastInboundPreview(p) ? '<div class="sub">' + esc(lastInboundPreview(p)) + '</div>' : '') + '</div>'
       + '<button class="btn-primary btn-sm" onclick="jumpToDraft(' + id + ')">Respond</button></div>';
   }
@@ -1361,15 +1405,15 @@ function openDetail(id) {
       + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px"><i class="ti ti-calendar-event" style="color:var(--amber-800);margin-right:5px"></i>Gig date' + (p.s==='hold' ? ' · tentative hold' : '') + ' — confirm with the check; edits & clears mirror to Google Calendar</div>'
       + '<div style="display:flex;gap:8px;align-items:center">'
       + '<input type="date" class="pipe-search" style="margin:0;flex:1" id="gig-date-' + id + '" value="' + gdDate + '">'
-      + '<select class="pipe-sort" id="gig-time-' + id + '">' + timeOptions(gdTime) + '</select>'
+      + '<input type="time" class="pipe-search" style="margin:0;width:120px" id="gig-time-' + id + '" value="' + (gdTime || '20:00') + '" step="900">'
       + '<button class="btn-primary btn-sm" onclick="saveGigDate(' + id + ')" title="Save gig date"><i class="ti ti-check"></i></button>'
       + '</div></div>';
   }
   var convo = p.activity.filter(function(a){ return a.kind!=='note'; });
   var notes = p.activity.filter(function(a){ return a.kind==='note'; });
   // Two-way thread: their bubbles left (blue rail), yours right (amber rail).
-  // Chronological top→bottom like any messenger; system events sit centered.
-  var actHtml = '<div class="convo">' + (convo.slice().reverse().map(function(a){
+  // Newest on top — it's an activity column, not just a chat transcript.
+  var actHtml = '<div class="convo">' + (convo.map(function(a){
     if (a.kind==='email_in' || a.kind==='email_out') {
       var inbound = a.kind==='email_in';
       var text = inbound ? a.text : a.text.replace(/^Sent:\s*/,'');
@@ -1418,7 +1462,7 @@ function openDetail(id) {
       + '<button class="custom-sched-btn' + (sel==='custom'?' on':'') + '" onclick="pickSendChip(' + id + ',\'custom\')"><i class="ti ti-calendar-time"></i> Choose a date &amp; time…</button>'
       + (sel==='custom'
         ? '<div style="display:flex;gap:8px;margin-top:8px"><input type="date" class="pipe-search" id="custom-date-' + id + '" style="margin:0;flex:1">'
-          + '<select class="pipe-sort" id="custom-time-' + id + '">' + timeOptions() + '</select></div>'
+          + '<input type="time" class="pipe-search" id="custom-time-' + id + '" value="09:00" step="900" style="margin:0;width:120px"></div>'
         : '')
       + '<div style="display:flex;gap:8px;margin-top:10px;align-items:center">'
       + '<button class="btn-secondary btn-sm" onclick="scheduleSend(' + id + ')"><i class="ti ti-clock-hour-4"></i> Schedule send</button>'
@@ -1456,7 +1500,7 @@ function openDetail(id) {
       // Blank canvas by default — your words, AI's words, or a loaded template.
       // draftText[uuid] survives every re-render; nothing overwrites it silently.
       var draftVal = draftText[p.uuid] !== undefined ? draftText[p.uuid] : '';
-      var ph = 'Write your message here, or select a template from the dropdown above.\n\n✨ Draft with AI drafts a message in your voice — try it out!';
+      var ph = 'Write your message here, or select a template from the dropdown above.\n\n✨ Draft with AI writes it in your voice — try it out!';
       tplSection = '<div class="section-label" style="margin-top:4px">Draft outreach</div>'
         + '<div class="card" style="margin-bottom:12px">'
         + '<select class="pipe-sort" style="margin-bottom:10px" onchange="switchTpl(' + id + ',this.value)" title="Load a template">'
@@ -1611,17 +1655,6 @@ function scheduleSend(id) {
   });
 }
 function sendNowInline(id){ sendChipDays[id] = 'now'; scheduleSend(id); delete sendChipDays[id]; }
-function timeOptions(selected){
-  var out = '', sel = selected || '09:00';
-  for (var h = 7; h <= 23; h++) {
-    ['00','30'].forEach(function(mm){
-      var v = String(h).padStart(2,'0') + ':' + mm;
-      var label = ((h % 12) || 12) + ':' + mm + (h < 12 ? ' AM' : ' PM');
-      out += '<option value="' + v + '"' + (v===sel ? ' selected' : '') + '>' + label + '</option>';
-    });
-  }
-  return out;
-}
 // "Send now" shouldn't wait for the worker's next cycle — poke it.
 function pokeWorker(){
   sb.auth.getSession().then(function(s){
@@ -1663,6 +1696,10 @@ function saveGigDate(id){
   var p = pipeline[id];
   var di = document.getElementById('gig-date-' + id), ti = document.getElementById('gig-time-' + id);
   var val = (di && di.value) ? new Date(di.value + 'T' + ((ti && ti.value) || '20:00')).toISOString() : null;
+  if (val && p.gig_date && new Date(val).getTime() === new Date(p.gig_date).getTime()) {
+    showToast('Already on your calendar for ' + fmtWhen(val)); return;
+  }
+  if (!val && !p.gig_date) { showToast('No gig date set yet', true); return; }
   sb.from('pipeline_entries').update({ gig_date: val, gig_date_dirty: true }).eq('id', p.uuid).then(function(r){
     if (r.error) { showToast('Could not save date: ' + r.error.message, true); return; }
     p.gig_date = val;

@@ -17,6 +17,22 @@ phone, website, EPK, markets, draw claim). If profile fields are incomplete,
 templates degrade. The profile screen shows a completeness bar and field-level
 warnings for this reason.
 
+## 2026-06-12 — Cockpit v1, bubble ink fix, You've Got Mail, vision: Collective + Tour (Slice E/F)
+**Bubble bug:** pastel bubble bgs have no dark-mode variants, so dark-mode's near-white text was
+invisible — bubbles now use fixed dark ink (#2b2a26). Conversation order back to NEWEST-FIRST (it's an
+activity column). **Gutter:** reverted the .nav::before corner paint (broke light-mode top); micro-notch
+on scroll accepted for now. **Cockpit v1 (Home):** "Pipeline health" module — proportional stage-funnel
+bar + clickable legend (jumps to filtered Pipeline) + weekly momentum (sent/replies 7d, booked); desktop
+3-col cockpit. **Time UX:** custom 34-option selects replaced by native type=time step 900 (mobile wheel
++ desktop segmented). **Events confirmed working** (logs: created + artist-edit PATCH); app now guards
+"already on your calendar for X"; worker stops re-importing its own "(Gig Collective)" events as busy.
+Copy: "You've got mail — {name} replied" everywhere (cards, war room, push). Discover cards: corner
+check icon instead of chip. Mobile keyboard: island nav hides while typing (visualViewport).
+**VISION captured from Nick:** roster = invited killer working artists (trust network) → Collective
+slice = venue comments w/ AI summary, new-from-collective dots, shared feed, warm intros into new
+markets. THE END GAME: **Tour planner** — route gigs across markets, distance & fuel cost estimates
+(artist's mpg), routing map, fill-the-gaps date proposals. That's Slice F after Collective (E).
+
 ## 2026-06-12 — Context fix (real bodies), date/time pickers, gutter polish, human event edits
 **THE context fix:** outbound activities stored only "Sent: subject" → conversation bubbles looked
 empty/subject-only AND the AI repeated itself (it never saw its own sent words). Now: push/poll

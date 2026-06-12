@@ -180,7 +180,7 @@ async function applyMessage(entry, full, contactEmail, artistId) {
       // Never auto-moves hold/booked/played (conversation continues, deal state doesn't regress) or dead (terminal).
       if (["lead", "pitched", "passed", "outreach", "waiting", "followup"].includes(entry.status)) patch.status = "talks";
       await sPatch(`pipeline_entries?id=eq.${entry.id}`, patch);
-      if (artistId) notify(artistId, contactEmail.split("@")[0] + " replied — your move", body, "/app#entry/" + entry.id).catch(() => {});
+      if (artistId) notify(artistId, "You've got mail — " + contactEmail.split("@")[0] + " replied", body, "/app#entry/" + entry.id).catch(() => {});
       await aiEnrich(entry, isNew.id, body);
     }
   } else {
@@ -338,12 +338,13 @@ async function syncCalendar(artistId, token) {
     const now = new Date();
     const max = new Date(now.getTime() + 60 * 86400000);
     // -- import busy days --
-    const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&timeMin=${encodeURIComponent(now.toISOString())}&timeMax=${encodeURIComponent(max.toISOString())}&maxResults=250&fields=items(start,end,status,transparency)`, { headers: { Authorization: "Bearer " + token } });
+    const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&timeMin=${encodeURIComponent(now.toISOString())}&timeMax=${encodeURIComponent(max.toISOString())}&maxResults=250&fields=items(start,end,status,transparency,summary)`, { headers: { Authorization: "Bearer " + token } });
     if (r.ok) {
       const items = (await r.json()).items || [];
       const busyDays = new Set();
       items.forEach((ev) => {
         if (ev.status === "cancelled" || ev.transparency === "transparent") return;
+        if ((ev.summary || "").includes("(Gig Collective)")) return; // our own export — not an external busy
         const d = (ev.start && (ev.start.date || (ev.start.dateTime || "").slice(0, 10))) || null;
         if (d) busyDays.add(d);
       });
