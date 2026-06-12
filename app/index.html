@@ -806,6 +806,7 @@
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px">
       <div class="page-title" style="margin-bottom:0">Pipeline</div>
       <div style="display:flex;align-items:center;gap:8px">
+        <button class="view-btn" id="sort-dir" onclick="pipeSortDir=pipeSortDir==='desc'?'asc':'desc';renderPipeline()" title="Flip order"><i class="ti ti-sort-descending"></i></button>
         <select class="pipe-sort" id="pipe-sort" onchange="pipeSort=this.value;renderPipeline()" title="Sort">
           <option value="recent">Recent</option>
           <option value="priority">Priority</option>
@@ -1300,9 +1301,7 @@ function renderPipeline() {
       + (p.activity||[]).map(function(a){ return a.text; }).join(' ');
     return blob.toLowerCase().indexOf(q) >= 0;
   });
-  if (pipeSort === 'priority') rows.sort(function(a,b){ return priorityScore(b) - priorityScore(a); });
-  else if (pipeSort === 'name') rows.sort(function(a,b){ return a.venue.localeCompare(b.venue); });
-  else rows.sort(function(a,b){ return a.days - b.days; });
+  orderRows(rows);
   function dLabel(d){ return d===0 ? 'today' : (d===1 ? 'yesterday' : d + 'd ago'); }
   function metaFor(p){
     if (followupDue(p)) return '<div style="font-size:11px;font-weight:500;color:var(--pitched-text)">Follow up</div><div class="pipe-date">' + (p.days-7) + 'd overdue</div>';
@@ -1318,7 +1317,7 @@ function renderPipeline() {
   var gb = document.getElementById('group-btn');
   if (gb) gb.classList.toggle('on', pipeGroup);
   // grid stays clickable in group mode — tapping it exits grouping into grid
-  var sortSel = document.getElementById('pipe-sort'); if (sortSel) { sortSel.value = pipeSort; sortSel.style.display = pipeGroup ? 'none' : ''; }
+  var sortSel = document.getElementById('pipe-sort'); if (sortSel) sortSel.value = pipeSort;
   if (!rows.length) { list.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;padding:10px 12px">Nothing matches.</p>'; return; }
   function rowHtml(p){
     return '<div class="pipe-item" onclick="openDetail(' + p.id + ')">'
@@ -1335,7 +1334,7 @@ function renderPipeline() {
     Object.keys(groups).forEach(function(k){ if (gOrder.indexOf(k) < 0) gOrder.push(k); });
     list.innerHTML = gOrder.map(function(st){
       var g = groups[st]; if (!g || !g.length) return '';
-      g.sort(function(a,b){ return priorityScore(b) - priorityScore(a); });
+      orderRows(g);
       var collapsed = !q && isGroupCollapsed(st); // active search auto-expands (render-only)
       return '<div class="group-hdr' + (collapsed ? ' collapsed' : '') + '" onclick="toggleGroupCollapse(\'' + st + '\')">'
         + '<span class="group-hdr-label" style="color:var(--' + st + '-text, var(--text-secondary))">' + statusLabel[st] + '</span>'
@@ -1358,6 +1357,15 @@ function renderPipeline() {
   list.innerHTML = rows.map(rowHtml).join('');
 }
 var pipeSort = 'recent';
+var pipeSortDir = 'desc';
+function orderRows(rows){
+  if (pipeSort === 'priority') rows.sort(function(a,b){ return priorityScore(b) - priorityScore(a); });
+  else if (pipeSort === 'name') rows.sort(function(a,b){ return a.venue.localeCompare(b.venue); });
+  else rows.sort(function(a,b){ return a.days - b.days; });
+  if (pipeSortDir === 'asc') rows.reverse();
+  var db = document.querySelector('#sort-dir i');
+  if (db) db.className = 'ti ' + (pipeSortDir === 'desc' ? 'ti-sort-descending' : 'ti-sort-ascending');
+}
 function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
 function lsSet(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
 var pipeView = lsGet('gc_pipe_view') || 'list';
