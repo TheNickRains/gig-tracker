@@ -45,7 +45,7 @@ See `ux.md` — maintained dynamically as the prototype evolves.
 ---
 
 ## Roster
-Nick Rains, Sammy J, Aaron Cook, Derick Leduke, Cody Voyer, Logan Nafratil, Luc Roach
+Nick Rains plus a small invite-only roster of working musicians (beta testers — names omitted).
 
 ---
 

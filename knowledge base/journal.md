@@ -113,8 +113,8 @@ greeting (mobile order: welcome → health → needs-you; desktop: cockpit banne
 buttons got intentional focus rings (no default blue); group-by button icon fixed (ti-rows didn't
 exist → blank mystery button).
 
-## 2026-06-12 — Derick's field reports: onboarding flow + real contact management
-First external user (Derick) immediately hit: (1) Profile unreachable without knowing the avatar is a
+## 2026-06-12 — Beta tester field reports: onboarding flow + real contact management
+The first external tester immediately hit: (1) Profile unreachable without knowing the avatar is a
 button → avatar now falls back to a person ICON when no name/photo (never invisible), and Settings
 gained an explicit "Artist profile" row. (1.1) **First-run onboarding** (migration 022 artists.onboarded,
 existing members backfilled true): full-screen welcome with 3 live-state steps — profile → first venue →

@@ -30,12 +30,12 @@ Greeting + subhead, then the command center:
 
 **Collective activity feed** — card with flush padding. Each entry: member avatar (colored initials), action description, timestamp + market. Most recent first. Members have consistent avatar colors across the app:
 - NR (Nick): amber
-- SJ (Sammy J): green
-- AC (Aaron Cook): gray
-- DL (Derick L): blue
-- CV (Cody Voyer): pink
-- LN (Logan N): teal
-- LR (Luc Roach): purple
+- SJ (Sage Jordan): green
+- AC (Avery Cole): gray
+- DL (Dana Lake): blue
+- CV (Casey Vance): pink
+- LN (Lee Nolan): teal
+- LR (Liam Ross): purple
 
 ---
 

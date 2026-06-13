@@ -12,7 +12,7 @@ Pipeline: adjust email from
 
 activity should read from email and be summaries
 
-Derrick "I don't mind connecting my booking email to that email." (gate to professional emails)
+A beta tester: "I don't mind connecting my booking email to that email." (gate to professional emails)
 
 Log in with booking email and add events to booking calendar (toggle check for conflicts, present them in pipeline)
 
@@ -24,7 +24,7 @@ Integrate Tally & Blast / Weekly Update
 
 optimize for hard ticket - or helping collective shift from shitty bar gigs to orignal sets (hard ticket and festival)
 
-Out of Scope: anything that syncs up to my calendar. (automatically adds to calendar) Not out of scope, conflict check - Derrick says, "I want to see it, I need to orchestrate"
+Out of Scope: anything that syncs up to my calendar. (automatically adds to calendar) Not out of scope, conflict check - a tester says, "I want to see it, I need to orchestrate"
 
 Feature Request: once you have a hard ticket or festival, having that show up on spotify. . . what's the alternative from bandsintown?
 
