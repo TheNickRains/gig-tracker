@@ -2023,7 +2023,7 @@ function openDetail(id) {
         : esc(text);
       var tools = manual
         ? '<span class="m-tools"><button class="note-ic" onclick="event.stopPropagation();startNoteEdit(\'' + a.id + '\',' + id + ')" title="Edit"><i class="ti ti-pencil"></i></button>'
-          + '<button class="note-ic" onclick="event.stopPropagation();deleteNote(\'' + a.id + '\',' + id + ')" title="Delete"><i class="ti ti-trash"></i></button></span>'
+          + '<button class="note-ic" onclick="event.stopPropagation();deleteNote(\'' + a.id + '\',' + id + ',this)" title="Delete"><i class="ti ti-trash"></i></button></span>'
         : '';
       return '<div class="msg ' + (inbound ? 'them' : 'you') + '" title="' + (inbound ? esc(first) : 'You') + ' · ' + a.time + (manual ? ' · logged by hand' : '') + '">' + tools + content + '</div>';
     }
@@ -2035,7 +2035,7 @@ function openDetail(id) {
     }
     var icons = a.id
       ? '<button class="note-ic" onclick="event.stopPropagation();startNoteEdit(\'' + a.id + '\',' + id + ')" title="Edit"><i class="ti ti-pencil"></i></button>'
-        + '<button class="note-ic" onclick="event.stopPropagation();deleteNote(\'' + a.id + '\',' + id + ')" title="Delete"><i class="ti ti-trash"></i></button>'
+        + '<button class="note-ic" onclick="event.stopPropagation();deleteNote(\'' + a.id + '\',' + id + ',this)" title="Delete"><i class="ti ti-trash"></i></button>'
       : '';
     return '<div class="note-item"><div style="display:flex;gap:6px;align-items:flex-start"><div style="flex:1;min-width:0"><div class="act-ctx">' + esc(a.text) + '</div><div class="activity-time">' + a.time + '</div></div>' + icons + '</div></div>';
   }).join('');
@@ -2764,7 +2764,19 @@ function saveNoteEdit(e, actId, id){
     showToast('Note updated');
   });
 }
-function deleteNote(actId, id){
+// Every delete is two taps: first arms ("Sure?"), second commits, 3s disarm.
+function armDelete(btn){
+  if (!btn) return true;
+  if (btn.classList.contains('armed')) return true;
+  btn.classList.add('armed');
+  var old = btn.innerHTML;
+  btn.style.color = 'var(--dead-text)';
+  btn.innerHTML = '<span style="font-size:11px;font-weight:600">Sure?</span>';
+  setTimeout(function(){ if (btn.isConnected && btn.classList.contains('armed')) { btn.classList.remove('armed'); btn.style.color = ''; btn.innerHTML = old; } }, 3000);
+  return false;
+}
+function deleteNote(actId, id, btn){
+  if (!armDelete(btn)) return;
   sb.from('activities').delete().eq('id', actId).then(function(r){
     if (r.error) { showToast('Could not delete: ' + r.error.message, true); return; }
     var p = pipeline[id];
@@ -3628,7 +3640,7 @@ function loadVenueComments(venueId){
           +   '<button class="vc-btn' + (rx.mine==='up' ? ' on' : '') + '" onclick="reactComment(\'' + cm.id + '\',\'up\',\'' + venueId + '\')"><i class="ti ti-thumb-up"></i>' + (rx.up || '') + '</button>'
           +   '<button class="vc-btn' + (rx.mine==='down' ? ' on down' : '') + '" onclick="reactComment(\'' + cm.id + '\',\'down\',\'' + venueId + '\')"><i class="ti ti-thumb-down"></i>' + (rx.down || '') + '</button>'
           +   (depth === 0 ? '<button class="vc-btn" onclick="vcReplyTo=\'' + cm.id + '\';loadVenueComments(\'' + venueId + '\')"><i class="ti ti-corner-down-right"></i>Reply</button>' : '')
-          +   (mine ? '<button class="vc-btn" onclick="deleteVenueComment(\'' + cm.id + '\',\'' + venueId + '\')"><i class="ti ti-trash"></i></button>' : '')
+          +   (mine ? '<button class="vc-btn" onclick="deleteVenueComment(\'' + cm.id + '\',\'' + venueId + '\',this)"><i class="ti ti-trash"></i></button>' : '')
           + '</div>'
           + (vcReplyTo === cm.id ? '<div class="composer" style="padding:8px 0 0"><input class="note-input" id="vc-reply" placeholder="Reply… Esc cancels" autofocus onkeydown="postVenueComment(event,\'' + venueId + '\',\'' + cm.id + '\')">'
             + '<button class="send-btn" onclick="postVenueComment({key:\'Enter\',target:document.getElementById(\'vc-reply\')},\'' + venueId + '\',\'' + cm.id + '\')" title="Reply"><i class="ti ti-arrow-up"></i></button></div>' : '')
@@ -3671,7 +3683,8 @@ function postVenueComment(e, venueId, parentId){
     loadVenueComments(venueId);
   });
 }
-function deleteVenueComment(id, venueId){
+function deleteVenueComment(id, venueId, btn){
+  if (!armDelete(btn)) return;
   sb.from('venue_comments').delete().eq('id', id).then(function(r){
     if (r.error) { showToast('Could not delete: ' + r.error.message, true); return; }
     delete pulseCache[venueId];
