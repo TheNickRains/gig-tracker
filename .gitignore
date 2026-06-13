@@ -13,3 +13,7 @@ npm-debug.log*
 
 # macOS
 .DS_Store
+
+# Scratch / local-only — never commit
+notepad*
+*.local
