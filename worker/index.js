@@ -670,7 +670,7 @@ async function handleAiDraft(req, res, bodyStr) {
     const templateKind = String(parsed.template_kind || "").slice(0, 20);
     const templateText = String(parsed.template_text || "").slice(0, 2000);
     if (!entryId) { res.writeHead(400, hdr); res.end(JSON.stringify({ error: "entry_id required" })); return; }
-    const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,gig_date,ticket_type,person_id,venue:venues!pipeline_entries_venue_id_fkey(name,city,state,venue_type,ticket_type,pay_range,clientele,notes,booking_form_url),person:people(name,title,org),contact:contacts(name,title)`);
+    const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,gig_date,gig_pay,gig_costs,ticket_type,person_id,venue:venues!pipeline_entries_venue_id_fkey(name,city,state,venue_type,ticket_type,pay_range,clientele,notes,booking_form_url),person:people(name,title,org),contact:contacts(name,title)`);
     if (!entries.length || entries[0].artist_id !== uid) { res.writeHead(404, hdr); res.end(JSON.stringify({ error: "Entry not found" })); return; }
     const e = entries[0], v = e.venue || {}, c = e.person || e.contact || {};
     let otherRooms = "";
@@ -681,9 +681,18 @@ async function handleAiDraft(req, res, bodyStr) {
     }
     const arts = await sGet(`artists?id=eq.${uid}&select=display_name,genre,oneliner,website,epk,spotify,draw_claim,typical_crowd,set_formats,notable,markets,phone,tone_profile,rate_soft,rate_hard,home_market`);
     const a = arts[0] || {};
-    const rateLine = (a.rate_soft || a.rate_hard)
-      ? `RATES (the artist's own numbers — quote these EXACTLY when rate comes up; NEVER invent, discount, or underbid): soft ticket ${a.rate_soft || "not set"} · hard ticket ${a.rate_hard || "not set"}\n`
-      : `RATES: not set — do NOT name any number; if they ask about rate, defer ("happy to talk numbers").\n`;
+    const dealPay = (e.gig_pay || "").trim();
+    const dealCosts = (e.gig_costs || "").trim();
+    const ticket = e.ticket_type || v.ticket_type || "soft";
+    // Rate precedence (never misquote): the deal's own pay the artist set for
+    // THIS show wins outright; otherwise a number the artist wrote in MY NOTE on
+    // this deal wins; otherwise the standing rate matching the ticket type.
+    // Quote verbatim — never round, re-derive, discount, or underbid.
+    const rateLine = dealPay
+      ? `RATE FOR THIS DEAL (authoritative — the artist set this exact number for this show; quote it VERBATIM, do not round, multiply, discount, or swap in a generic rate): ${dealPay}${dealCosts ? ` · costs/notes: ${dealCosts}` : ""}.${(a.rate_soft || a.rate_hard) ? ` (Standing rates are reference only and must NOT override the deal rate above: soft ${a.rate_soft || "—"} · hard ${a.rate_hard || "—"}.)` : ""}\n`
+      : (a.rate_soft || a.rate_hard)
+        ? `RATES — the artist's standing numbers. Quote the one matching THIS deal's ${ticket} ticket EXACTLY (NEVER invent, round, discount, or underbid): soft ticket ${a.rate_soft || "not set"} · hard ticket ${a.rate_hard || "not set"}. IMPORTANT: if MY NOTE on this deal (in the conversation) names a specific number or rate, THAT note rate is authoritative for this deal — quote it instead of the standing rate.\n`
+        : `RATES: not set — do NOT name any number; if they ask about rate, defer ("happy to talk numbers").\n`;
     const acts = await sGet(`activities?pipeline_entry_id=eq.${entryId}&kind=in.(email_in,email_out,note)&order=created_at.desc&limit=8&select=kind,body`);
     const lastInbound = (acts.find((x) => x.kind === "email_in") || {}).body || "";
     const convo = acts.slice().reverse().map((x) => (x.kind === "email_in" ? "THEM: " : x.kind === "email_out" ? "ME: " : "MY NOTE: ") + x.body).join("\n");

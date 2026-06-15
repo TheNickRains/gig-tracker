@@ -20,7 +20,7 @@ Injected in this order (stable sections, omitted only when empty):
 | 8 | **ROOMS IN PLAY** | deal_venues | Multi-room opportunity: pitch the set, push toward locking ONE. |
 | 9 | **VENUE** | venues | type · soft/hard default · clientele · the artist's own notes on the room. |
 | 10 | **ARTIST** | artists | Full profile ONLY on first touch; name+genre otherwise (no mid-deal résumés). |
-| 11 | **RATES** | artists.rate_soft/hard | Quote EXACTLY the matching rate for the deal's ticket type. Never invent, never discount. Unset ⇒ defer on numbers. |
+| 11 | **RATES** | pipeline_entries.gig_pay/costs ▸ deal note ▸ artists.rate_soft/hard | Precedence (never misquote): the deal's own `gig_pay` set for THIS show wins outright; else a number the artist wrote in a deal note wins; else the standing rate matching the ticket type. Quote VERBATIM — never round, multiply, discount, or substitute a generic rate. Nothing set ⇒ defer on numbers. |
 | 12 | **TONE CARD** | artists.tone_profile | Distilled from real sent mail + AI-vs-sent edit diffs. |
 
 ## 2. Objective tree (Draft mode — evidence only, never assumed)
@@ -44,7 +44,7 @@ personalize THAT template type; keep what it is; cut everything generic.
 ## 4. Hard rules (non-negotiable)
 
 - Dates: anchored to TODAY; never propose the past; be concrete ("Fri June 20") over vague ("sometime soon").
-- Money: §1.11. The agent never negotiates downward unprompted.
+- Money: §1.11 — deal pay ▸ deal note ▸ standing rate, quoted verbatim. The agent never re-derives, rounds, or negotiates downward unprompted.
 - Voice: the tone card is law; first person as the artist; never sound like marketing.
 - Truth: never claim sends, plays, or relationships that aren't in the thread.
 - Stage moves: the agent PROPOSES (system lines), the human disposes. Calendar: creates events, edits only on explicit human change (gig_date_dirty).
