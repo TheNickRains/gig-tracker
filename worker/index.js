@@ -216,7 +216,16 @@ async function recordUnmatched(artistId, selfEmail, full) {
   };
   if (full.internalDate) row.created_at = new Date(Number(full.internalDate)).toISOString();
   const r = await fetch(`${SUPA}/rest/v1/unmatched_mail`, { method: "POST", headers: { ...sHeaders, Prefer: "return=minimal" }, body: JSON.stringify(row) });
-  if (r.ok) console.log("unmatched parked:", fromEmail, row.subject.slice(0, 40));
+  if (r.ok) {
+    console.log("unmatched parked:", fromEmail, row.subject.slice(0, 40));
+    // Speed to lead: push for a brand-new lead too — but only genuinely fresh
+    // arrivals, never the 2-day poll backfill (which would storm old mail). A
+    // unique gmail_id means r.ok ⇒ this row is new, so we won't double-notify.
+    const ageMs = full.internalDate ? Date.now() - Number(full.internalDate) : Infinity;
+    if (ageMs < 15 * 60 * 1000) {
+      notify(artistId, "New lead — " + row.from_name + " emailed", row.subject, "/app").catch(() => {});
+    }
+  }
 }
 
 // Quiet backfill: pull the FULL Gmail history with a deal's contact into the

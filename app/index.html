@@ -1433,7 +1433,9 @@ function toggleGroupCollapse(st){ lsSet('gc_pipe_collapsed_' + st, isGroupCollap
 // clears it automatically (the worker logs your email_out).
 function needsReply(p){
   if (p.s==='dead' || p.s==='passed') return false;
-  return !!p.lastInboundTs && p.lastInboundTs > (p.lastOutboundTs || 0);
+  // A reply needs you until you answer (outbound) OR dismiss it ("no reply
+  // needed"). A NEWER inbound after either re-surfaces it — speed to lead.
+  return !!p.lastInboundTs && p.lastInboundTs > Math.max(p.lastOutboundTs || 0, p.replyDismissTs || 0);
 }
 function lastInboundPreview(p){
   for (var i=0;i<(p.activity||[]).length;i++){
@@ -1639,6 +1641,13 @@ function dismissBounce(entryUuid){
     loadPipeline();
   });
 }
+function dismissReply(entryUuid){
+  sb.from('activities').insert({ pipeline_entry_id: entryUuid, kind: 'system', source: 'manual', body: '✓ Reply dismissed' }).then(function(r){
+    if (r.error) { showToast('Could not dismiss: ' + r.error.message, true); return; }
+    showToast('Dismissed — it’ll come back if they write again');
+    loadPipeline();
+  });
+}
 function dismissUnmatched(uid){
   sb.from('unmatched_mail').update({ status: 'dismissed' }).eq('id', uid).then(function(){ loadUnmatched(); });
 }
@@ -1648,9 +1657,9 @@ function renderHome(){
   var el = document.getElementById('war-needs'); if (!el) return;
   var items = [];
   pipeline.forEach(function(p){
-    if (p.bounced) items.push({p:p, tier:0, ic:'ti-mail-x', c:'var(--dead-text)', bg:'var(--dead-bg)', t:'Email bounced — fix the address', sub:'The pitch never arrived; edit the contact and re-send', dismiss:true});
+    if (p.bounced) items.push({p:p, tier:0, ic:'ti-mail-x', c:'var(--dead-text)', bg:'var(--dead-bg)', t:'Email bounced — fix the address', sub:'The pitch never arrived; edit the contact and re-send', dismiss:'dismissBounce', dismissTitle:'I’ve handled this another way'});
     else if (p.sched && p.sched.status==='ready') items.push({p:p, tier:0, ic:'ti-bell-ringing', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Send awaiting your review', sub:'Auto-send is off — review & fire'});
-    else if (needsReply(p)) items.push({p:p, tier:1, ic:'ti-mail', c:'var(--talks-text)', bg:'var(--talks-bg)', t:'You\u2019ve got mail — ' + ((p.contact||'').split(' ')[0]||'they') + ' replied', sub:lastInboundPreview(p)});
+    else if (needsReply(p)) items.push({p:p, tier:1, ic:'ti-mail', c:'var(--talks-text)', bg:'var(--talks-bg)', t:'You\u2019ve got mail — ' + ((p.contact||'').split(' ')[0]||'they') + ' replied', sub:lastInboundPreview(p), dismiss:'dismissReply', dismissTitle:'No reply needed'});
     else if (followupDue(p)) items.push({p:p, tier:2, ic:'ti-clock-exclamation', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Follow-up due · ' + p.days + 'd quiet', sub:'Nudge them or schedule it'});
   });
   // Scale: hardest-to-ignore first (ready > replies > follow-ups, oldest first),
@@ -1672,7 +1681,7 @@ function renderHome(){
         + '<div class="war-ic" style="background:' + it.bg + ';color:' + it.c + '"><i class="ti ' + it.ic + '"></i></div>'
         + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(it.p.venue) + ' — ' + it.t + '</div>'
         + (it.sub ? '<div class="war-sub">' + esc(it.sub) + '</div>' : '') + '</div>'
-        + (it.dismiss ? '<button class="war-x" onclick="event.stopPropagation();dismissBounce(\'' + it.p.uuid + '\')" title="I\u2019ve handled this another way">Dismiss</button>' : '')
+        + (it.dismiss ? '<button class="war-x" onclick="event.stopPropagation();' + it.dismiss + '(\'' + it.p.uuid + '\')" title="' + esc(it.dismissTitle||'Dismiss') + '">Dismiss</button>' : '')
         + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
     }).join('')
     + (overflow > 0 ? '<div class="war-row" onclick="pipeSort=\'priority\';go(\'pipeline\')"><div class="war-ic" style="background:var(--bg-secondary);color:var(--text-secondary)"><i class="ti ti-list"></i></div><div style="flex:1"><div class="war-t">+' + overflow + ' more — open Pipeline by priority</div></div><i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>' : '')
@@ -2001,7 +2010,9 @@ function openDetail(id) {
     attnCard = '<div class="attn-card" style="border-color:var(--talks-text)"><i class="ti ti-mail" style="color:var(--talks-text)"></i>'
       + '<div class="grow"><strong>You\u2019ve got mail — ' + esc(first) + ' replied</strong>'
       + (lastInboundPreview(p) ? '<div class="sub">' + esc(lastInboundPreview(p)) + '</div>' : '') + '</div>'
-      + '<button class="btn-primary btn-sm" onclick="jumpToDraft(' + id + ')">Respond</button></div>';
+      + '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">'
+      + '<button class="btn-primary btn-sm" onclick="jumpToDraft(' + id + ')">Respond</button>'
+      + '<button class="war-x" onclick="dismissReply(\'' + p.uuid + '\')" title="No reply needed">Dismiss</button></div></div>';
   }
 
   // Hold/Booked/Played carry a gig date — the worker mirrors it to Google
@@ -3287,7 +3298,7 @@ function loadActivities(ids){
       if (a.kind==='email_in'  && (!lastIn[a.pipeline_entry_id]  || t > lastIn[a.pipeline_entry_id]))  lastIn[a.pipeline_entry_id]  = t;
       if (a.kind==='email_out' && (!lastOut[a.pipeline_entry_id] || t > lastOut[a.pipeline_entry_id])) lastOut[a.pipeline_entry_id] = t;
     });
-    var lastBounce={}, lastDismiss={};
+    var lastBounce={}, lastDismiss={}, lastReplyDismiss={};
     (r.data||[]).forEach(function(a){
       if (a.kind!=='system') return;
       var t = new Date(a.created_at).getTime();
@@ -3295,12 +3306,15 @@ function loadActivities(ids){
         if (!lastBounce[a.pipeline_entry_id] || t > lastBounce[a.pipeline_entry_id]) lastBounce[a.pipeline_entry_id] = t;
       } else if ((a.body||'').indexOf('✓ Bounce dismissed') === 0) {
         if (!lastDismiss[a.pipeline_entry_id] || t > lastDismiss[a.pipeline_entry_id]) lastDismiss[a.pipeline_entry_id] = t;
+      } else if ((a.body||'').indexOf('✓ Reply dismissed') === 0) {
+        if (!lastReplyDismiss[a.pipeline_entry_id] || t > lastReplyDismiss[a.pipeline_entry_id]) lastReplyDismiss[a.pipeline_entry_id] = t;
       }
     });
     pipeline.forEach(function(p){
       p.activity = byEntry[p.uuid]||[];
       p.lastInboundTs = lastIn[p.uuid] || 0;
       p.lastOutboundTs = lastOut[p.uuid] || 0;
+      p.replyDismissTs = lastReplyDismiss[p.uuid] || 0; // "no reply needed" — cleared if a newer inbound lands
       p.bounced = (lastBounce[p.uuid] || 0) > Math.max(p.lastOutboundTs, lastDismiss[p.uuid] || 0); // re-send OR dismiss clears it; a fresh bounce re-surfaces
     });
     renderHome();
