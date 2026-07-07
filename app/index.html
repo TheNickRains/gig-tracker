@@ -1117,10 +1117,13 @@ var statusOrder = {talks:0,hold:1,pitched:2,lead:3,booked:4,played:5,passed:6,de
 var happyPath = ['lead','pitched','talks','hold','booked','played'];
 function stagesFor(p){ return p.t==='hard' ? happyPath : happyPath.filter(function(s){ return s!=='hold'; }); }
 // 7d of quiet. A snooze restarts the clock from the snooze, not the last activity —
-// so a snoozed nag comes back after another 7 quiet days, not never.
+// so a snoozed nag comes back after another 7 quiet days, not never. A permanent
+// dismiss kills the nag outright; a FRESH outbound after it re-arms (you re-engaged).
 function followupDue(p){
+  if (p.s !== 'pitched') return false;
+  if (p.fuKillTs && p.fuKillTs > (p.lastOutboundTs || 0)) return false;
   var quiet = p.fuSnoozeTs ? Math.min(p.days, Math.floor((Date.now() - p.fuSnoozeTs) / 86400000)) : p.days;
-  return p.s==='pitched' && quiet >= 7;
+  return quiet >= 7;
 }
 // Venue-type glyphs — rows scan by SHAPE, not just words.
 function venueIcon(vt){
@@ -1662,6 +1665,37 @@ function snoozeFollowup(entryUuid){
     loadPipeline();
   });
 }
+// …or permanently dismissable: nags stay off for this deal until a NEW
+// outbound goes out (re-engaging re-arms the follow-up machine).
+function dismissFollowup(entryUuid){
+  sb.from('activities').insert({ pipeline_entry_id: entryUuid, kind: 'system', source: 'manual', body: '✓ Follow-up dismissed' }).then(function(r){
+    if (r.error) { showToast('Could not dismiss: ' + r.error.message, true); return; }
+    showToast('Dismissed — no more follow-up nags here unless you email them again');
+    loadPipeline();
+  });
+}
+// ── Bulk dismiss: select-mode on the Needs You list ──
+var warSelect = false, warSel = {}, warItems = [];
+function toggleWarSelect(){ warSelect = !warSelect; warSel = {}; renderHome(); }
+function toggleWarSel(uuid){ if (warSel[uuid]) delete warSel[uuid]; else warSel[uuid] = true; renderHome(); }
+function warSelAll(){
+  var d = warItems.filter(function(it){ return it.marker; });
+  var all = d.length && d.every(function(it){ return warSel[it.p.uuid]; });
+  warSel = {};
+  if (!all) d.forEach(function(it){ warSel[it.p.uuid] = true; });
+  renderHome();
+}
+function bulkDismissWar(){
+  var rows = warItems.filter(function(it){ return it.marker && warSel[it.p.uuid]; })
+    .map(function(it){ return { pipeline_entry_id: it.p.uuid, kind: 'system', source: 'manual', body: it.marker }; });
+  if (!rows.length) return;
+  sb.from('activities').insert(rows).then(function(r){
+    if (r.error) { showToast('Could not dismiss: ' + r.error.message, true); return; }
+    showToast('Dismissed ' + rows.length + ' notification' + (rows.length === 1 ? '' : 's'));
+    warSelect = false; warSel = {};
+    loadPipeline();
+  });
+}
 function dismissUnmatched(uid){
   sb.from('unmatched_mail').update({ status: 'dismissed' }).eq('id', uid).then(function(){ loadUnmatched(); });
 }
@@ -1671,32 +1705,56 @@ function renderHome(){
   var el = document.getElementById('war-needs'); if (!el) return;
   var items = [];
   pipeline.forEach(function(p){
-    if (p.bounced) items.push({p:p, tier:0, ic:'ti-mail-x', c:'var(--dead-text)', bg:'var(--dead-bg)', t:'Email bounced — fix the address', sub:'The pitch never arrived; edit the contact and re-send', dismiss:'dismissBounce', dismissTitle:'I’ve handled this another way'});
+    if (p.bounced) items.push({p:p, tier:0, ic:'ti-mail-x', c:'var(--dead-text)', bg:'var(--dead-bg)', t:'Email bounced — fix the address', sub:'The pitch never arrived; edit the contact and re-send', marker:'✓ Bounce dismissed', btns:[{fn:'dismissBounce', label:'Dismiss', title:'I’ve handled this another way'}]});
     else if (p.sched && p.sched.status==='ready') items.push({p:p, tier:0, ic:'ti-bell-ringing', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Send awaiting your review', sub:'Auto-send is off — review & fire'});
-    else if (needsReply(p)) items.push({p:p, tier:1, ic:'ti-mail', c:'var(--talks-text)', bg:'var(--talks-bg)', t:'You\u2019ve got mail — ' + ((p.contact||'').split(' ')[0]||'they') + ' replied', sub:lastInboundPreview(p), dismiss:'dismissReply', dismissTitle:'No reply needed'});
-    else if (followupDue(p)) items.push({p:p, tier:2, ic:'ti-clock-exclamation', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Follow-up due · ' + p.days + 'd quiet', sub:'Nudge them or schedule it', dismiss:'snoozeFollowup', dismissLabel:'Snooze', dismissTitle:'Snooze 7 days — comes back if they stay quiet'});
+    else if (needsReply(p)) items.push({p:p, tier:1, ic:'ti-mail', c:'var(--talks-text)', bg:'var(--talks-bg)', t:'You\u2019ve got mail — ' + ((p.contact||'').split(' ')[0]||'they') + ' replied', sub:lastInboundPreview(p), marker:'✓ Reply dismissed', btns:[{fn:'dismissReply', label:'Dismiss', title:'No reply needed'}]});
+    else if (followupDue(p)) items.push({p:p, tier:2, ic:'ti-clock-exclamation', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Follow-up due · ' + p.days + 'd quiet', sub:'Nudge them or schedule it', marker:'✓ Follow-up dismissed', btns:[{fn:'snoozeFollowup', label:'Snooze', title:'Snooze 7 days — comes back if they stay quiet'},{fn:'dismissFollowup', label:'Dismiss', title:'Stop follow-up nags for this deal — a new send re-arms them'}]});
   });
   // Scale: hardest-to-ignore first (ready > replies > follow-ups, oldest first),
   // capped — the overflow lives in Pipeline sorted by Priority, one tap away.
+  // Select mode UNCAPS the list: bulk dismiss is for clearing the backlog.
   items.sort(function(a,b){ return a.tier - b.tier || b.p.days - a.p.days; });
-  var MAX_WAR = 8, overflow = items.length - MAX_WAR;
-  var shown = items.slice(0, MAX_WAR);
+  warItems = items;
+  if (!items.length) { warSelect = false; warSel = {}; }
+  var MAX_WAR = 8, overflow = warSelect ? 0 : items.length - MAX_WAR;
+  var shown = warSelect ? items : items.slice(0, MAX_WAR);
   var avb = document.getElementById('avatar-btn');
   if (avb) avb.classList.toggle('attn', items.length > 0);
   // The clear-the-room moment deserves a nod.
   if (warPrevCount > 0 && items.length === 0 && currentScreen === 'home') showToast('War room cleared — go play 🎸');
   warPrevCount = items.length;
-  var html = '<div class="section-label">Needs you' + (items.length ? ' <span class="war-count">' + items.length + '</span>' : '') + '</div>';
+  var html = '<div class="section-label" style="display:flex;align-items:center;gap:8px">Needs you' + (items.length ? ' <span class="war-count">' + items.length + '</span>' : '')
+    + (items.length ? '<button class="vc-btn" style="margin-left:auto" onclick="toggleWarSelect()">' + (warSelect ? 'Done' : '<i class="ti ti-checkbox"></i> Select') + '</button>' : '')
+    + '</div>';
+  if (warSelect) {
+    var dismissable = items.filter(function(it){ return it.marker; });
+    var selCount = dismissable.filter(function(it){ return warSel[it.p.uuid]; }).length;
+    var allSel = dismissable.length && selCount === dismissable.length;
+    html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">'
+      + '<button class="vchip" onclick="warSelAll()">' + (allSel ? 'Clear all' : 'Select all') + '</button>'
+      + (selCount
+        ? '<button class="vchip primary" onclick="bulkDismissWar()"><i class="ti ti-x"></i> Dismiss ' + selCount + ' selected</button>'
+        : '<span style="font-size:12px;color:var(--text-tertiary)">Tap rows to select</span>')
+      + '</div>';
+  }
   if (!items.length) {
     html += '<div class="card" style="margin-bottom:20px;font-size:13px;color:var(--text-secondary)"><i class="ti ti-circle-check" style="color:var(--booked-text);margin-right:6px"></i>All clear — nothing waiting on you. Go play.</div>';
   } else {
     html += '<div class="card card-flush" style="margin-bottom:20px">' + shown.map(function(it){
-      return '<div class="war-row" onclick="openDetail(' + it.p.id + ')">'
+      var sel = !!warSel[it.p.uuid];
+      var click = warSelect
+        ? (it.marker ? 'toggleWarSel(\'' + it.p.uuid + '\')' : '')
+        : 'openDetail(' + it.p.id + ')';
+      return '<div class="war-row" onclick="' + click + '"' + (warSelect && !it.marker ? ' style="opacity:.45" title="Can’t dismiss — needs your review"' : '') + '>'
         + '<div class="war-ic" style="background:' + it.bg + ';color:' + it.c + '"><i class="ti ' + it.ic + '"></i></div>'
         + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(it.p.venue) + ' — ' + it.t + '</div>'
         + (it.sub ? '<div class="war-sub">' + esc(it.sub) + '</div>' : '') + '</div>'
-        + (it.dismiss ? '<button class="war-x" onclick="event.stopPropagation();' + it.dismiss + '(\'' + it.p.uuid + '\')" title="' + esc(it.dismissTitle||'Dismiss') + '">' + (it.dismissLabel||'Dismiss') + '</button>' : '')
-        + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
+        + (warSelect
+          ? (it.marker ? '<i class="ti ' + (sel ? 'ti-square-check-filled' : 'ti-square') + '" style="font-size:19px;color:' + (sel ? 'var(--amber-800)' : 'var(--text-tertiary)') + '"></i>' : '')
+          : (it.btns||[]).map(function(b){
+              return '<button class="war-x" onclick="event.stopPropagation();' + b.fn + '(\'' + it.p.uuid + '\')" title="' + esc(b.title) + '">' + b.label + '</button>';
+            }).join('') + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i>')
+        + '</div>';
     }).join('')
     + (overflow > 0 ? '<div class="war-row" onclick="pipeSort=\'priority\';go(\'pipeline\')"><div class="war-ic" style="background:var(--bg-secondary);color:var(--text-secondary)"><i class="ti ti-list"></i></div><div style="flex:1"><div class="war-t">+' + overflow + ' more — open Pipeline by priority</div></div><i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>' : '')
     + '</div>';
@@ -3312,7 +3370,7 @@ function loadActivities(ids){
       if (a.kind==='email_in'  && (!lastIn[a.pipeline_entry_id]  || t > lastIn[a.pipeline_entry_id]))  lastIn[a.pipeline_entry_id]  = t;
       if (a.kind==='email_out' && (!lastOut[a.pipeline_entry_id] || t > lastOut[a.pipeline_entry_id])) lastOut[a.pipeline_entry_id] = t;
     });
-    var lastBounce={}, lastDismiss={}, lastReplyDismiss={}, lastFuSnooze={};
+    var lastBounce={}, lastDismiss={}, lastReplyDismiss={}, lastFuSnooze={}, lastFuKill={};
     (r.data||[]).forEach(function(a){
       if (a.kind!=='system') return;
       var t = new Date(a.created_at).getTime();
@@ -3324,6 +3382,8 @@ function loadActivities(ids){
         if (!lastReplyDismiss[a.pipeline_entry_id] || t > lastReplyDismiss[a.pipeline_entry_id]) lastReplyDismiss[a.pipeline_entry_id] = t;
       } else if ((a.body||'').indexOf('✓ Follow-up snoozed') === 0) {
         if (!lastFuSnooze[a.pipeline_entry_id] || t > lastFuSnooze[a.pipeline_entry_id]) lastFuSnooze[a.pipeline_entry_id] = t;
+      } else if ((a.body||'').indexOf('✓ Follow-up dismissed') === 0) {
+        if (!lastFuKill[a.pipeline_entry_id] || t > lastFuKill[a.pipeline_entry_id]) lastFuKill[a.pipeline_entry_id] = t;
       }
     });
     pipeline.forEach(function(p){
@@ -3332,6 +3392,7 @@ function loadActivities(ids){
       p.lastOutboundTs = lastOut[p.uuid] || 0;
       p.replyDismissTs = lastReplyDismiss[p.uuid] || 0; // "no reply needed" — cleared if a newer inbound lands
       p.fuSnoozeTs = lastFuSnooze[p.uuid] || 0; // follow-up snooze — restarts the 7d quiet clock
+      p.fuKillTs = lastFuKill[p.uuid] || 0; // permanent follow-up dismiss — a newer outbound re-arms
       p.bounced = (lastBounce[p.uuid] || 0) > Math.max(p.lastOutboundTs, lastDismiss[p.uuid] || 0); // re-send OR dismiss clears it; a fresh bounce re-surfaces
     });
     renderHome();
