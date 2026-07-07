@@ -139,6 +139,14 @@ function cleanSnippet(s) {
   if (m > 0) s = s.slice(0, m);
   return s.trim().replace(/[\s>-]+$/, "");
 }
+// A message is "real mail" only when it isn't a draft, spam, or trash. Gmail
+// search AND history include drafts, and every autosave is its OWN message id —
+// without this guard, composing a pitch ingests as 3-4 phantom "sent" copies
+// (each a snapshot of the draft mid-typing) that message-id dedup can't catch.
+function isRealMail(full) {
+  const l = full.labelIds || [];
+  return !l.includes("DRAFT") && !l.includes("SPAM") && !l.includes("TRASH");
+}
 async function gmailHistory(token, startHistoryId) {
   const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/history?startHistoryId=${startHistoryId}&historyTypes=messageAdded&maxResults=100`, { headers: { Authorization: "Bearer " + token } });
   if (!r.ok) { console.error("history failed", r.status, (await r.text()).slice(0, 150)); return []; }
@@ -201,6 +209,7 @@ async function findThread(token, email) {
 
 // Unmatched inbound -> triage row on the war room (skip robots + self).
 async function recordUnmatched(artistId, selfEmail, full) {
+  if (!isRealMail(full)) return;
   const from = header(full, "From") || "";
   const fromEmail = ((from.match(/[\w.+-]+@[\w.-]+/) || [""])[0]).toLowerCase();
   if (!fromEmail) return;
@@ -241,7 +250,7 @@ async function ingestContactHistory(artistId, token, entryId) {
   let added = 0, newest = null;
   for (const m of msgs.slice(0, 25)) {
     const full = await gmailGet(token, m.id);
-    if (!full) continue;
+    if (!full || !isRealMail(full)) continue;
     const from = (header(full, "From") || "").toLowerCase();
     if (/mailer-daemon|postmaster/.test(from)) continue;
     const inbound = from.includes(email.toLowerCase());
@@ -257,12 +266,27 @@ async function ingestContactHistory(artistId, token, entryId) {
   if (newest && (!entry.last_activity_at || newest > entry.last_activity_at)) {
     await sPatch(`pipeline_entries?id=eq.${entry.id}`, { last_activity_at: newest });
   }
-  console.log("history ingest:", email, "added", added, "of", msgs.length);
-  return { added };
+  // Purge phantom rows from past ingests: draft autosaves that were logged as
+  // sent mail. Gmail deletes an autosave's message id when the draft changes or
+  // sends, so a hard 404 (or a lingering DRAFT label) proves the row was never
+  // real mail. Only email_sync rows with a message id are candidates — manual
+  // notes and system markers are untouchable.
+  let removed = 0;
+  const logged = await sGet(`activities?pipeline_entry_id=eq.${entry.id}&source=eq.email_sync&kind=in.(email_in,email_out)&email_message_id=not.is.null&select=id,email_message_id&limit=100`);
+  const liveIds = new Set(msgs.map((m) => m.id));
+  for (const a of logged) {
+    if (liveIds.has(a.email_message_id)) continue;
+    const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${a.email_message_id}?format=minimal`, { headers: { Authorization: "Bearer " + token } });
+    if (r.status === 404) { await sDelete(`activities?id=eq.${a.id}`); removed++; continue; }
+    if (r.ok && !isRealMail(await r.json())) { await sDelete(`activities?id=eq.${a.id}`); removed++; }
+  }
+  console.log("history ingest:", email, "added", added, "of", msgs.length, removed ? `— purged ${removed} phantom draft(s)` : "");
+  return { added, removed };
 }
 
 // Shared: given a pipeline entry + a Gmail message, log it and advance the stage.
 async function applyMessage(entry, full, contactEmail, artistId) {
+  if (!isRealMail(full)) return; // draft autosaves masquerade as sent mail
   const from = (header(full, "From") || "").toLowerCase();
   const subject = header(full, "Subject") || "(no subject)";
   const inbound = from.includes(contactEmail.toLowerCase());

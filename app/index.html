@@ -1634,7 +1634,10 @@ function ingestThread(entryUuid, quiet){
       .then(function(r){ return r.json(); })
       .then(function(j){
         if (j.error) { if (!quiet) showToast(j.error, true); return; }
-        if (j.added) showToast(j.added + ' message' + (j.added===1?'':'s') + ' from the thread pulled in');
+        var bits = [];
+        if (j.added) bits.push(j.added + ' message' + (j.added===1?'':'s') + ' pulled in');
+        if (j.removed) bits.push(j.removed + ' duplicate draft' + (j.removed===1?'':'s') + ' cleaned up');
+        if (bits.length) showToast(bits.join(' · '));
         else if (!quiet) showToast('Thread is already complete');
         loadPipeline();
       }).catch(function(){});
