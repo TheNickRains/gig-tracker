@@ -1392,8 +1392,8 @@ function renderPipeline() {
   // Flat list, priority-ordered: follow-up-due first, then hottest stage, then
   // most recent activity. Search + stage filter chips above. (Deeper view-type
   // exploration is with the designer.)
+  renderPipeLocSelect(); // first: may self-clear a stale pipeLoc that stage counts depend on
   renderPipeFilterSelect();
-  renderPipeLocSelect();
   var q = (pipeQuery || '').toLowerCase();
   var rows = pipeline.filter(function(p){
     if (pipeFilter !== 'all' && p.s !== pipeFilter) return false;
@@ -1861,11 +1861,11 @@ function renderPipeLocSelect(){
   if (!el || !chip) return;
   var states = {};
   pipeline.forEach(function(p){
-    if (!p.city && !p.state) return;
-    var st = p.state || '';
+    var city = normCity(p.city), st = normSt(p.state);
+    if (!city && !st) return;
     var s = states[st] = states[st] || { n: 0, cities: {} };
     s.n++;
-    if (p.city) s.cities[p.city] = (s.cities[p.city]||0) + 1;
+    if (city) s.cities[city] = (s.cities[city]||0) + 1;
   });
   var keys = Object.keys(states).sort(function(a,b){ return (STATE_NAMES[a]||a||'~') < (STATE_NAMES[b]||b||'~') ? -1 : 1; });
   // A filter with at most one possible answer is noise — hide the control.
@@ -1912,20 +1912,28 @@ function renderPipeLocSelect(){
   // State selected + cities beneath it → hint that the picker goes deeper.
   chip.classList.toggle('deeper', pipeLoc.indexOf('st:') === 0 && !!states[curSt] && Object.keys(states[curSt].cities).length > 0);
 }
+// City/state values arrive dirty ("Austin," with a trailing comma made two
+// filter rows) — normalize once, use the SAME normalizer to build and match.
+function normCity(c){ return (c||'').replace(/\s*,\s*$/, '').trim(); }
+function normSt(s){ return (s||'').trim(); }
 function pipeLocMatch(p){
   if (!pipeLoc) return true;
-  if (pipeLoc.indexOf('st:') === 0) return (p.state||'') === pipeLoc.slice(3);
-  if (pipeLoc.indexOf('ci:') === 0) { var x = pipeLoc.slice(3).split('|'); return p.city === x[0] && (p.state||'') === x[1]; }
+  if (pipeLoc.indexOf('st:') === 0) return normSt(p.state) === pipeLoc.slice(3);
+  if (pipeLoc.indexOf('ci:') === 0) { var x = pipeLoc.slice(3).split('|'); return normCity(p.city) === x[0] && normSt(p.state) === x[1]; }
   return true;
 }
 function renderPipeFilterSelect(){
   var el = document.getElementById('pipe-filter'); if(!el) return;
-  var present = {}; pipeline.forEach(function(p){ present[p.s] = (present[p.s]||0) + 1; });
+  // Stage counts respect the location scope: filtered to Tennessee, "All · N"
+  // is the Tennessee N, not the whole pipeline (location = scope, stage = lens).
+  var base = pipeline.filter(pipeLocMatch);
+  var present = {}; base.forEach(function(p){ present[p.s] = (present[p.s]||0) + 1; });
   var order = ['talks','hold','pitched','lead','booked','played','passed','dead'].filter(function(s){ return present[s]; });
-  var html = '<option value="all">All · ' + pipeline.length + '</option>';
+  var html = '<option value="all">All · ' + base.length + '</option>';
   order.forEach(function(s){ html += '<option value="' + s + '">' + statusLabel[s] + ' · ' + present[s] + '</option>'; });
   el.innerHTML = html;
   el.value = pipeFilter;
+  if (el.value !== pipeFilter) { pipeFilter = 'all'; el.value = 'all'; } // stage empty in this location scope
 }
 
 // ── Pipeline detail ─────────────────────────────────────
