@@ -442,6 +442,10 @@
   .loc-chip span { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .loc-chip span:empty { display: none; }
   .loc-chip.on { background: var(--amber-50); color: var(--amber-800); font-weight: 600; }
+  /* Caret appears only when the current selection has a deeper level (a state
+     with cities) — a quiet "you can go further" hint. */
+  .loc-chip .loc-caret { font-size: 11px; margin-left: -2px; display: none; }
+  .loc-chip.deeper .loc-caret { display: inline; }
   .loc-chip select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
   .loc-chip:focus-within { box-shadow: 0 0 0 2px var(--amber-400); }
   .view-btn { width: 30px; height: 30px; border-radius: 8px; border: none; background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; }
@@ -891,7 +895,7 @@
       <input class="pipe-search" id="pipe-search" type="search" placeholder="Search venues, stages, notes, conversations…" style="margin-bottom:0;flex:1" oninput="pipeQuery=this.value;renderPipeline()">
       <select class="pipe-sort" id="pipe-filter" onchange="pipeFilter=this.value;lsSet('gc_pipe_filter',this.value);renderPipeline()" title="Filter by stage"></select>
       <label class="loc-chip" id="pipe-loc-chip" title="Filter by location">
-        <i class="ti ti-map-pin"></i><span id="pipe-loc-label"></span>
+        <i class="ti ti-map-pin"></i><span id="pipe-loc-label"></span><i class="ti ti-chevron-down loc-caret"></i>
         <select id="pipe-loc" onchange="setPipeLoc(this.value)"></select>
       </label>
     </div>
@@ -1905,6 +1909,8 @@ function renderPipeLocSelect(){
   var city = pipeLoc.indexOf('ci:') === 0 ? pipeLoc.slice(3).split('|')[0] : '';
   lbl.textContent = city || (pipeLoc && curSt !== null ? (STATE_NAMES[curSt] || curSt || 'No state') : '');
   chip.classList.toggle('on', !!pipeLoc);
+  // State selected + cities beneath it → hint that the picker goes deeper.
+  chip.classList.toggle('deeper', pipeLoc.indexOf('st:') === 0 && !!states[curSt] && Object.keys(states[curSt].cities).length > 0);
 }
 function pipeLocMatch(p){
   if (!pipeLoc) return true;
