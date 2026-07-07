@@ -472,8 +472,17 @@
   .war-count { display: inline-block; min-width: 17px; padding: 1px 5px; border-radius: 999px; background: var(--pitched-text); color: #fff; font-size: 10.5px; font-weight: 700; text-align: center; margin-left: 4px; }
   .war-row { display: flex; gap: 11px; align-items: center; padding: 12px; border-bottom: 0.5px solid var(--border-light); cursor: pointer; }
   .war-row:last-child { border-bottom: none; }
+  @media (hover: hover) { .war-row:hover { background: var(--bg-secondary); } }
+  .war-row.na { opacity: .55; cursor: default; }
+  .war-row.sel { background: var(--bg-secondary); }
+  /* Select-mode action bar sticks: the uncapped list is long, and the commit
+     button must survive the scroll down it. sticky, never fixed (nav idiom). */
+  .war-selbar { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 70px); z-index: 60; display: flex; gap: 8px; align-items: center; background: var(--bg-tertiary); padding: 4px 0 8px; margin-bottom: 6px; }
+  @media (min-width: 600px) { .war-selbar { top: 54px; } }
+  @media (min-width: 1100px) { .war-selbar { top: 0; } }
+  .section-label .vc-btn { padding: 6px 8px; margin: -6px -8px; }
   .war-ic { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 17px; }
-  .war-t { font-size: 13.5px; font-weight: 500; }
+  .war-t { font-size: 13.5px; font-weight: 500; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
   .war-sub { font-size: 12px; color: var(--text-secondary); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .funnel-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; margin: 4px 0 10px; background: var(--bg-secondary); }
   .funnel-seg { height: 100%; min-width: 6px; cursor: pointer; }
@@ -633,7 +642,15 @@
   .sched-card .grow { flex: 1; min-width: 0; }
   .sched-card .sub { font-size: 11px; color: var(--text-secondary); margin-top: 1px; }
   .sched-x { background: none; border: none; font-family: inherit; font-size: 12px; color: var(--dead-text); cursor: pointer; flex-shrink: 0; }
-  .war-x { background: none; border: 0.5px solid var(--border-light); border-radius: 8px; font-family: inherit; font-size: 11px; color: var(--text-secondary); cursor: pointer; flex-shrink: 0; padding: 4px 9px; }
+  /* Converged on .vchip metrics (border-mid, radius 7, 11.5px) — one dismiss
+     vocabulary across Needs You, Unrecognized mail, and the detail screen.
+     ::after extends the touch target without moving a pixel visually. */
+  .war-x { display: inline-flex; align-items: center; gap: 4px; background: var(--bg-primary); border: 0.5px solid var(--border-mid); border-radius: 7px; font-family: inherit; font-size: 11.5px; color: var(--text-secondary); cursor: pointer; flex-shrink: 0; padding: 7px 11px; position: relative; }
+  .war-x::after { content: ''; position: absolute; inset: -6px; }
+  .war-x:hover { border-color: var(--amber-400); color: var(--text-primary); }
+  .war-x:active { background: var(--bg-secondary); }
+  .feed-x { background: none; border: none; color: var(--text-tertiary); cursor: pointer; flex-shrink: 0; padding: 6px; border-radius: 6px; font-size: 13px; line-height: 1; }
+  .feed-x:hover { color: var(--text-secondary); background: var(--bg-secondary); }
   .locked-head { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-tertiary); display: flex; align-items: center; gap: 5px; margin-bottom: 8px; }
   .locked-body { font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; background: var(--bg-secondary); border-radius: 10px; padding: 11px 12px; }
   .act-raw { font-size: 12px; color: var(--text-tertiary); margin-top: 6px; white-space: pre-wrap; word-break: break-word; }
@@ -1453,26 +1470,37 @@ function lastInboundPreview(p){
   return '';
 }
 // Collective feed: real shared signals — comments + new venues from the roster.
+// Dismissals live in localStorage (per device): the feed is shared social info,
+// so "dismiss" means "stop showing ME this" — the underlying row is never touched.
 var feedCache = null;
+function feedDismissed(){ try { return JSON.parse(lsGet('gc_feed_dismissed') || '[]'); } catch(e){ return []; } }
+function dismissFeedItem(key){
+  var d = feedDismissed(); if (d.indexOf(key) < 0) d.push(key);
+  lsSet('gc_feed_dismissed', JSON.stringify(d.slice(-80)));
+  feedCache = null; renderFeed();
+}
 function renderFeed(){
   var el = document.getElementById('war-feed'); if (!el) return;
   if (feedCache) { el.innerHTML = feedCache; return; }
   Promise.all([
-    sb.from('venue_comments').select('author_name,body,created_at,venue_id').order('created_at',{ascending:false}).limit(5),
-    sb.from('venues').select('id,name,city,created_at,created_by').order('created_at',{ascending:false}).limit(5),
-    sb.from('venue_wins').select('author_name,status,created_at,venue_id').order('created_at',{ascending:false}).limit(5)
+    sb.from('venue_comments').select('author_name,body,created_at,venue_id').order('created_at',{ascending:false}).limit(10),
+    sb.from('venues').select('id,name,city,created_at,created_by').order('created_at',{ascending:false}).limit(10),
+    sb.from('venue_wins').select('author_name,status,created_at,venue_id').order('created_at',{ascending:false}).limit(10)
   ]).then(function(rs){
     var items = [];
-    ((rs[0].data)||[]).forEach(function(cm){ items.push({ t: new Date(cm.created_at).getTime(), ic:'ti-message-circle', txt:'<strong>' + esc(cm.author_name||'A member') + '</strong> on a venue: ' + esc(cm.body.slice(0,80)), vid: cm.venue_id, time: relTime(cm.created_at) }); });
-    ((rs[1].data)||[]).forEach(function(v){ if (v.created_by && v.created_by !== ME) items.push({ t: new Date(v.created_at).getTime(), ic:'ti-map-pin-plus', txt:'New venue in Discover: <strong>' + esc(v.name) + '</strong>' + (v.city ? ' · ' + esc(v.city) : ''), vid: v.id, time: relTime(v.created_at) }); });
+    ((rs[0].data)||[]).forEach(function(cm){ items.push({ key:'c:'+cm.created_at, t: new Date(cm.created_at).getTime(), ic:'ti-message-circle', txt:'<strong>' + esc(cm.author_name||'A member') + '</strong> on a venue: ' + esc(cm.body.slice(0,80)), vid: cm.venue_id, time: relTime(cm.created_at) }); });
+    ((rs[1].data)||[]).forEach(function(v){ if (v.created_by && v.created_by !== ME) items.push({ key:'v:'+v.id, t: new Date(v.created_at).getTime(), ic:'ti-map-pin-plus', txt:'New venue in Discover: <strong>' + esc(v.name) + '</strong>' + (v.city ? ' · ' + esc(v.city) : ''), vid: v.id, time: relTime(v.created_at) }); });
     var vname = {}; venues.forEach(function(v){ vname[v.id] = v.name; });
-    ((rs[2] && rs[2].data)||[]).forEach(function(w){ items.push({ t: new Date(w.created_at).getTime(), ic:'ti-trophy', txt:'<strong>' + esc(w.author_name||'A member') + '</strong> ' + (w.status==='played'?'played':'booked') + ' <strong>' + esc(vname[w.venue_id]||'a venue') + '</strong> 🏆', vid: w.venue_id, time: relTime(w.created_at) }); });
+    ((rs[2] && rs[2].data)||[]).forEach(function(w){ items.push({ key:'w:'+w.created_at, t: new Date(w.created_at).getTime(), ic:'ti-trophy', txt:'<strong>' + esc(w.author_name||'A member') + '</strong> ' + (w.status==='played'?'played':'booked') + ' <strong>' + esc(vname[w.venue_id]||'a venue') + '</strong> 🏆', vid: w.venue_id, time: relTime(w.created_at) }); });
+    var dis = feedDismissed();
+    items = items.filter(function(it){ return dis.indexOf(it.key) < 0; });
     items.sort(function(a,b){ return b.t - a.t; });
     items = items.slice(0, 6);
     feedCache = items.length
       ? '<div class="card card-flush" style="margin-bottom:20px">' + items.map(function(it){
           return '<div class="war-row" onclick="openVenueDetail(\'' + it.vid + '\')"><div class="war-ic" style="background:var(--bg-secondary);color:var(--text-secondary)"><i class="ti ' + it.ic + '"></i></div>'
-            + '<div style="flex:1;min-width:0"><div class="war-sub" style="-webkit-line-clamp:2">' + it.txt + '</div><div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">' + it.time + '</div></div></div>';
+            + '<div style="flex:1;min-width:0"><div class="war-sub" style="-webkit-line-clamp:2">' + it.txt + '</div><div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">' + it.time + '</div></div>'
+            + '<button class="feed-x" onclick="event.stopPropagation();dismissFeedItem(\'' + it.key + '\')" title="Dismiss"><i class="ti ti-x"></i></button></div>';
         }).join('') + '</div>'
       : '<div class="card placeholder" style="margin-bottom:20px"><div class="ph-caption">Quiet so far — when your roster posts venue intel or adds rooms, it shows here.</div></div>';
     el.innerHTML = feedCache;
@@ -1668,16 +1696,10 @@ function snoozeFollowup(entryUuid){
     loadPipeline();
   });
 }
-// …or permanently dismissable: nags stay off for this deal until a NEW
-// outbound goes out (re-engaging re-arms the follow-up machine).
-function dismissFollowup(entryUuid){
-  sb.from('activities').insert({ pipeline_entry_id: entryUuid, kind: 'system', source: 'manual', body: '✓ Follow-up dismissed' }).then(function(r){
-    if (r.error) { showToast('Could not dismiss: ' + r.error.message, true); return; }
-    showToast('Dismissed — no more follow-up nags here unless you email them again');
-    loadPipeline();
-  });
-}
 // ── Bulk dismiss: select-mode on the Needs You list ──
+// Permanent dismiss lives HERE (not per-row — designer pass measured two text
+// buttons leaving ~13 chars of title on a 375px screen): select-mode rows write
+// '✓ Follow-up dismissed', which kills the nag until a NEW outbound re-arms it.
 var warSelect = false, warSel = {}, warItems = [];
 function toggleWarSelect(){ warSelect = !warSelect; warSel = {}; renderHome(); }
 function toggleWarSel(uuid){ if (warSel[uuid]) delete warSel[uuid]; else warSel[uuid] = true; renderHome(); }
@@ -1711,7 +1733,7 @@ function renderHome(){
     if (p.bounced) items.push({p:p, tier:0, ic:'ti-mail-x', c:'var(--dead-text)', bg:'var(--dead-bg)', t:'Email bounced — fix the address', sub:'The pitch never arrived; edit the contact and re-send', marker:'✓ Bounce dismissed', btns:[{fn:'dismissBounce', label:'Dismiss', title:'I’ve handled this another way'}]});
     else if (p.sched && p.sched.status==='ready') items.push({p:p, tier:0, ic:'ti-bell-ringing', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Send awaiting your review', sub:'Auto-send is off — review & fire'});
     else if (needsReply(p)) items.push({p:p, tier:1, ic:'ti-mail', c:'var(--talks-text)', bg:'var(--talks-bg)', t:'You\u2019ve got mail — ' + ((p.contact||'').split(' ')[0]||'they') + ' replied', sub:lastInboundPreview(p), marker:'✓ Reply dismissed', btns:[{fn:'dismissReply', label:'Dismiss', title:'No reply needed'}]});
-    else if (followupDue(p)) items.push({p:p, tier:2, ic:'ti-clock-exclamation', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Follow-up due · ' + p.days + 'd quiet', sub:'Nudge them or schedule it', marker:'✓ Follow-up dismissed', btns:[{fn:'snoozeFollowup', label:'Snooze', title:'Snooze 7 days — comes back if they stay quiet'},{fn:'dismissFollowup', label:'Dismiss', title:'Stop follow-up nags for this deal — a new send re-arms them'}]});
+    else if (followupDue(p)) items.push({p:p, tier:2, ic:'ti-clock-exclamation', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Follow-up due · ' + p.days + 'd quiet', sub:'Nudge them or schedule it', marker:'✓ Follow-up dismissed', btns:[{fn:'snoozeFollowup', label:'Snooze', title:'Snooze 7 days — comes back if they stay quiet'}]});
   });
   // Scale: hardest-to-ignore first (ready > replies > follow-ups, oldest first),
   // capped — the overflow lives in Pipeline sorted by Priority, one tap away.
@@ -1727,13 +1749,13 @@ function renderHome(){
   if (warPrevCount > 0 && items.length === 0 && currentScreen === 'home') showToast('War room cleared — go play 🎸');
   warPrevCount = items.length;
   var html = '<div class="section-label" style="display:flex;align-items:center;gap:8px">Needs you' + (items.length ? ' <span class="war-count">' + items.length + '</span>' : '')
-    + (items.length ? '<button class="vc-btn" style="margin-left:auto" onclick="toggleWarSelect()">' + (warSelect ? 'Done' : '<i class="ti ti-checkbox"></i> Select') + '</button>' : '')
+    + (items.length ? '<button class="vc-btn" style="margin-left:auto" aria-pressed="' + warSelect + '" onclick="toggleWarSelect()">' + (warSelect ? 'Done' : '<i class="ti ti-checkbox"></i> Select') + '</button>' : '')
     + '</div>';
   if (warSelect) {
     var dismissable = items.filter(function(it){ return it.marker; });
     var selCount = dismissable.filter(function(it){ return warSel[it.p.uuid]; }).length;
     var allSel = dismissable.length && selCount === dismissable.length;
-    html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">'
+    html += '<div class="war-selbar">'
       + '<button class="vchip" onclick="warSelAll()">' + (allSel ? 'Clear all' : 'Select all') + '</button>'
       + (selCount
         ? '<button class="vchip primary" onclick="bulkDismissWar()"><i class="ti ti-x"></i> Dismiss ' + selCount + ' selected</button>'
@@ -1748,12 +1770,14 @@ function renderHome(){
       var click = warSelect
         ? (it.marker ? 'toggleWarSel(\'' + it.p.uuid + '\')' : '')
         : 'openDetail(' + it.p.id + ')';
-      return '<div class="war-row" onclick="' + click + '"' + (warSelect && !it.marker ? ' style="opacity:.45" title="Can’t dismiss — needs your review"' : '') + '>'
+      return '<div class="war-row' + (warSelect && !it.marker ? ' na' : '') + (warSelect && sel ? ' sel' : '') + '" onclick="' + click + '">'
         + '<div class="war-ic" style="background:' + it.bg + ';color:' + it.c + '"><i class="ti ' + it.ic + '"></i></div>'
         + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(it.p.venue) + ' — ' + it.t + '</div>'
         + (it.sub ? '<div class="war-sub">' + esc(it.sub) + '</div>' : '') + '</div>'
         + (warSelect
-          ? (it.marker ? '<i class="ti ' + (sel ? 'ti-square-check-filled' : 'ti-square') + '" style="font-size:19px;color:' + (sel ? 'var(--amber-800)' : 'var(--text-tertiary)') + '"></i>' : '')
+          ? (it.marker
+              ? '<i class="ti ' + (sel ? 'ti-square-check-filled' : 'ti-square') + '" style="font-size:19px;color:' + (sel ? 'var(--text-primary)' : 'var(--text-tertiary)') + '"></i>'
+              : '<span style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.04em;flex-shrink:0">review</span>')
           : (it.btns||[]).map(function(b){
               return '<button class="war-x" onclick="event.stopPropagation();' + b.fn + '(\'' + it.p.uuid + '\')" title="' + esc(b.title) + '">' + b.label + '</button>';
             }).join('') + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i>')
