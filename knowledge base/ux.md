@@ -43,10 +43,10 @@ Greeting + subhead, then the command center:
 
 Master venue list. Shared across all artists. Written to by the collective's adds and updates.
 
-**Filters** — inline row, 3 controls:
-1. Location — the SAME `.loc-chip` drill-down control as Pipeline (shared `renderLocScope('disc-loc', venues, discLoc)` + `locMatch`; see Pipeline section for full behavior). Replaced the old state→city cascading selects. Persisted via `gc_disc_loc`.
-2. Ticket type (All / Hard / Soft)
-3. Pipeline status (`#disc-pipe-filter`): All / In pipeline / Not in pipeline
+**Search + filters** — ONE row, same grammar as Pipeline (search flexes · lens selects · place chip anchors the end, all `.pipe-sort`/`.loc-chip` compact styling — the old separate `.filter-row` of bordered form-selects is gone):
+1. Ticket type (All / Hard / Soft)
+2. Pipeline status (`#disc-pipe-filter`): All / In pipeline / Not in pipeline
+3. Location — the SAME `.loc-chip` drill-down control as Pipeline (shared `renderLocScope('disc-loc', venues, discLoc)` + `locMatch`; see Pipeline section for full behavior). Replaced the old state→city cascading selects. Persisted via `gc_disc_loc`.
 
 **Venue grid** — 2 columns. Each card:
 - Venue name (bold)

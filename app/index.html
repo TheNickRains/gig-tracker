@@ -336,8 +336,6 @@
   .feed-time { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 
   /* ── DISCOVER ── */
-  .filter-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-  .filter-row .form-select { width: auto; font-size: 13px; padding: 6px 10px; }
   .venue-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .venue-card {
     background: var(--bg-primary); border: 0.5px solid var(--border-light);
@@ -853,22 +851,23 @@
       <div class="page-title" style="margin-bottom:0">Discover venues</div>
       <button class="view-btn" onclick="go('add')" title="Add venue" style="background:var(--amber-800);color:#fff"><i class="ti ti-plus"></i></button>
     </div>
-    <input class="pipe-search" id="disc-search" type="search" placeholder="Search rooms or people…" oninput="discQuery=this.value;renderDiscover()">
-    <div class="filter-row">
-      <label class="loc-chip" id="disc-loc-chip" title="Filter by location">
-        <i class="ti ti-map-pin"></i><span id="disc-loc-label"></span><i class="ti ti-chevron-down loc-caret"></i>
-        <select id="disc-loc" onchange="setDiscLoc(this.value)"></select>
-      </label>
-      <select class="form-select" id="type-filter" onchange="renderDiscover()">
+    <!-- Same grammar as Pipeline: search flexes, lens selects follow, place chip anchors the end. -->
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <input class="pipe-search" id="disc-search" type="search" placeholder="Search rooms or people…" style="margin-bottom:0;flex:1" oninput="discQuery=this.value;renderDiscover()">
+      <select class="pipe-sort" id="type-filter" onchange="renderDiscover()">
         <option value="">All types</option>
         <option value="hard">Hard ticket</option>
         <option value="soft">Soft ticket</option>
       </select>
-      <select class="form-select" id="disc-pipe-filter" onchange="renderDiscover()">
+      <select class="pipe-sort" id="disc-pipe-filter" onchange="renderDiscover()">
         <option value="">Pipeline: all</option>
         <option value="in">In pipeline</option>
         <option value="out">Not in pipeline</option>
       </select>
+      <label class="loc-chip" id="disc-loc-chip" title="Filter by location">
+        <i class="ti ti-map-pin"></i><span id="disc-loc-label"></span><i class="ti ti-chevron-down loc-caret"></i>
+        <select id="disc-loc" onchange="setDiscLoc(this.value)"></select>
+      </label>
     </div>
     <div class="venue-grid" id="venue-grid"></div>
   </div>
