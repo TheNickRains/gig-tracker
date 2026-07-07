@@ -43,10 +43,11 @@ Greeting + subhead, then the command center:
 
 Master venue list. Shared across all artists. Written to by the collective's adds and updates.
 
-**Filters** — inline row, 3 dropdowns:
-1. State (selecting a state populates cities)
-2. City (hierarchical — only shows cities for selected state)
+**Filters** — inline row, 4 dropdowns:
+1. State — options built dynamically from venues that exist (`renderStateFilter()` + `STATE_NAMES` code→name map; a hardcoded list rotted). Selecting a state populates cities.
+2. City (hierarchical — only shows cities for selected state, also derived from live data)
 3. Ticket type (All / Hard / Soft)
+4. Pipeline status (`#disc-pipe-filter` — renamed from `pipe-filter`, which collided with Pipeline's stage select and got its options clobbered): All / In pipeline / Not in pipeline
 
 **Venue grid** — 2 columns. Each card:
 - Venue name (bold)
@@ -67,7 +68,7 @@ The worker auto-advances stages from Gmail: outbound pitch to the contact ⇒ Le
 
 **Priority list** (grouping was tried and rejected) — one flat list sorted by `priorityScore`: replies awaiting response (In talks, ≥1d) → follow-up overdue (Pitched ≥7d) → Pitched aging → fresh replies → Lead/Hold going stale → Booked → Played → Passed/Dead at bottom.
 
-**Search** — input row at top; matches venue/contact/city **plus stage names and the deal's notes + conversation text**. **Filter** — a select beside the search (All · {stage} · counts; chips were tried and REJECTED as noisy). **Defaults every visit: filter All + sort Recent** (search cleared; view type persists). **Sort** — select: Recent (default) / Priority / Name (hidden while grouped). **Views** — list / 2-col grid toggle (persisted) + the Group-by toggle.
+**Search** — input row at top; matches venue/contact/city **plus stage names and the deal's notes + conversation text**. **Filter** — two selects beside the search: stage (All · {stage} · counts; chips were tried and REJECTED as noisy) and **location** (`#pipe-loc`: Anywhere / "City, ST · count", options mirror the deals actually in the pipeline, persisted via `gc_pipe_loc`, self-clears if the location vanishes). **Defaults every visit: filter All + sort Recent** (search cleared; view type + location persist). **Sort** — select: Recent (default) / Priority / Name (hidden while grouped). **Views** — list / 2-col grid toggle (persisted) + the Group-by toggle.
 
 **Group by (Notion-style)** — rows-icon toggle, OFF by default, persisted (`gc_pipe_group`): collapsible tinted stage sections (In talks → Pitched → Hold → Lead → Booked → Played → Passed → Dead end), per-stage collapse persisted, search auto-expands, grid disabled while grouped, empty groups never render.
 

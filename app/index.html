@@ -843,10 +843,6 @@
     <div class="filter-row">
       <select class="form-select" id="state-filter" onchange="filterCities()">
         <option value="">All states</option>
-        <option value="TX">Texas</option>
-        <option value="TN">Tennessee</option>
-        <option value="CA">California</option>
-        <option value="CO">Colorado</option>
       </select>
       <select class="form-select" id="city-filter" onchange="renderDiscover()">
         <option value="">All cities</option>
@@ -856,7 +852,7 @@
         <option value="hard">Hard ticket</option>
         <option value="soft">Soft ticket</option>
       </select>
-      <select class="form-select" id="pipe-filter" onchange="renderDiscover()">
+      <select class="form-select" id="disc-pipe-filter" onchange="renderDiscover()">
         <option value="">Pipeline: all</option>
         <option value="in">In pipeline</option>
         <option value="out">Not in pipeline</option>
@@ -884,6 +880,7 @@
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <input class="pipe-search" id="pipe-search" type="search" placeholder="Search venues, stages, notes, conversations…" style="margin-bottom:0;flex:1" oninput="pipeQuery=this.value;renderPipeline()">
       <select class="pipe-sort" id="pipe-filter" onchange="pipeFilter=this.value;lsSet('gc_pipe_filter',this.value);renderPipeline()" title="Filter by stage"></select>
+      <select class="pipe-sort" id="pipe-loc" onchange="pipeLoc=this.value;lsSet('gc_pipe_loc',this.value);renderPipeline()" title="Filter by location"></select>
     </div>
     <div class="card card-flush" id="pipe-list"></div>
   </div>
@@ -1058,7 +1055,7 @@
     <div class="cal-legend">
       <span><span class="leg-dot" style="background:var(--booked-bg);border:1px solid var(--booked-text)"></span>Available</span>
       <span><span class="leg-dot" style="background:var(--dead-bg);border:1px solid var(--dead-text)"></span>Busy</span>
-      <span><span class="leg-dot" style="background:var(--amber-800);border-radius:50%"></span>Gig</span>
+      <span><span class="leg-dot" style="background:var(--text-primary);border-radius:50%"></span>Gig</span>
       <span style="color:var(--text-tertiary)">Tap a day to cycle · clear on third tap</span>
     </div>
     <div class="section-label" style="margin-top:18px">Weekly blocks</div>
@@ -1316,6 +1313,16 @@ function goProfile() {
 }
 
 // ── Discover ────────────────────────────────────────────
+// The state list mirrors rooms that actually EXIST — a hardcoded list rots the
+// moment someone adds a venue in a new state (it did: TX/TN/CA/CO only).
+var STATE_NAMES = {AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',CT:'Connecticut',DE:'Delaware',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',DC:'Washington DC'};
+function renderStateFilter(){
+  var el = document.getElementById('state-filter'); if (!el) return;
+  var cur = el.value;
+  var sts = Object.keys(cities).sort(function(a,b){ return (STATE_NAMES[a]||a) < (STATE_NAMES[b]||b) ? -1 : 1; });
+  el.innerHTML = '<option value="">All states</option>' + sts.map(function(s){ return '<option value="' + esc(s) + '">' + esc(STATE_NAMES[s]||s) + '</option>'; }).join('');
+  el.value = sts.indexOf(cur) >= 0 ? cur : '';
+}
 function filterCities() {
   var state = document.getElementById('state-filter').value;
   var sel = document.getElementById('city-filter');
@@ -1330,7 +1337,7 @@ function renderDiscover() {
   var state = document.getElementById('state-filter').value;
   var city = document.getElementById('city-filter').value;
   var type = document.getElementById('type-filter').value;
-  var pf = document.getElementById('pipe-filter').value;
+  var pf = document.getElementById('disc-pipe-filter').value;
   var q = (discQuery || '').toLowerCase();
   var inPipe = {}; pipeline.forEach(function(p){ if (p.venueId) inPipe[p.venueId] = true; });
   Object.keys(dealVenueMap).forEach(function(vid){ inPipe[vid] = true; });
@@ -1369,9 +1376,11 @@ function renderPipeline() {
   // most recent activity. Search + stage filter chips above. (Deeper view-type
   // exploration is with the designer.)
   renderPipeFilterSelect();
+  renderPipeLocSelect();
   var q = (pipeQuery || '').toLowerCase();
   var rows = pipeline.filter(function(p){
     if (pipeFilter !== 'all' && p.s !== pipeFilter) return false;
+    if (pipeLoc && pipeLocOf(p) !== pipeLoc) return false;
     if (!q) return true;
     // Searches the whole deal: venue, contact, place, stage name, notes + conversation.
     var blob = p.venue + ' ' + p.contact + ' ' + p.city + ' ' + p.state + ' ' + (statusLabel[p.s]||p.s) + ' '
@@ -1552,8 +1561,8 @@ function renderMiniCal(){
   el.innerHTML = '<div class="section-label" style="display:flex;align-items:center;justify-content:space-between">'
     + '<span>' + now.toLocaleDateString(undefined,{month:'long'}) + ' at a glance</span>'
     + '<span style="display:flex;gap:4px">'
-    + '<button class="view-btn" style="width:26px;height:26px" onclick="lsSet(\'gc_glance\',\'cal\');renderHome()" title="Month"><i class="ti ti-calendar" style="font-size:13px;color:' + (glance==='cal'?'var(--amber-800)':'var(--text-tertiary)') + '"></i></button>'
-    + '<button class="view-btn" style="width:26px;height:26px" onclick="lsSet(\'gc_glance\',\'up\');renderHome()" title="Upcoming"><i class="ti ti-list-details" style="font-size:13px;color:' + (glance==='up'?'var(--amber-800)':'var(--text-tertiary)') + '"></i></button>'
+    + '<button class="view-btn' + (glance==='cal'?' on':'') + '" style="width:26px;height:26px" onclick="lsSet(\'gc_glance\',\'cal\');renderHome()" title="Month"><i class="ti ti-calendar" style="font-size:13px"></i></button>'
+    + '<button class="view-btn' + (glance==='up'?' on':'') + '" style="width:26px;height:26px" onclick="lsSet(\'gc_glance\',\'up\');renderHome()" title="Upcoming"><i class="ti ti-list-details" style="font-size:13px"></i></button>'
     + '</span></div>'
     + (glance==='cal'
       ? '<div class="card" style="margin-bottom:20px;cursor:pointer" onclick="go(\'calendar\')" title="Open calendar"><div class="mc-grid">' + ['S','M','T','W','T','F','S'].map(function(x){ return '<div class="mc-dow">' + x + '</div>'; }).join('') + cells + '</div></div>'
@@ -1795,7 +1804,7 @@ function renderHome(){
   if (se) se.innerHTML = sends.length
     ? '<div class="section-label">Scheduled sends</div><div class="card card-flush" style="margin-bottom:20px">' + sends.map(function(p){
         return '<div class="war-row" onclick="openDetail(' + p.id + ')">'
-          + '<div class="war-ic" style="background:var(--bg-secondary);color:var(--amber-800)"><i class="ti ti-clock-hour-4"></i></div>'
+          + '<div class="war-ic" style="background:var(--bg-secondary);color:var(--text-primary)"><i class="ti ti-clock-hour-4"></i></div>'
           + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(p.venue) + '</div><div class="war-sub">Sends ' + fmtWhen(p.sched.send_at) + ' · cancels if they reply</div></div>'
           + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
       }).join('') + '</div>'
@@ -1817,6 +1826,18 @@ function priorityScore(p) {
 }
 var pipeQuery = '';
 var pipeFilter = lsGet('gc_pipe_filter') || 'all';
+var pipeLoc = lsGet('gc_pipe_loc') || '';
+function pipeLocOf(p){ return p.city ? p.city + (p.state ? ', ' + p.state : '') : ''; }
+// Location filter mirrors the deals actually in the pipeline (city, state + count).
+function renderPipeLocSelect(){
+  var el = document.getElementById('pipe-loc'); if (!el) return;
+  var locs = {};
+  pipeline.forEach(function(p){ var l = pipeLocOf(p); if (l) locs[l] = (locs[l]||0) + 1; });
+  var keys = Object.keys(locs).sort();
+  if (pipeLoc && !locs[pipeLoc]) pipeLoc = '';
+  el.innerHTML = '<option value="">Anywhere</option>' + keys.map(function(l){ return '<option value="' + esc(l) + '">' + esc(l) + ' · ' + locs[l] + '</option>'; }).join('');
+  el.value = pipeLoc;
+}
 function renderPipeFilterSelect(){
   var el = document.getElementById('pipe-filter'); if(!el) return;
   var present = {}; pipeline.forEach(function(p){ present[p.s] = (present[p.s]||0) + 1; });
@@ -1900,7 +1921,7 @@ function ppRoomSearch(pid, q){
   out.innerHTML = (hits.length ? hits.map(function(v){
     return '<div class="ws-row" onclick="linkRoomToPerson(\'' + pid + '\',\'' + v.id + '\')"><div class="ws-name">' + esc(v.name) + '</div><div class="ws-addr">' + esc(v.city || '') + '</div></div>';
   }).join('') : '')
-  + '<div class="ws-row" onclick="createAndLinkRoom(\'' + pid + '\',document.getElementById(\'pp-room-q\').value)"><div class="ws-name" style="color:var(--amber-800)"><i class="ti ti-plus"></i> Create \u201c' + esc(q) + '\u201d and link it</div><div class="ws-addr">New venue, attached to this booker — details later via Edit</div></div>';
+  + '<div class="ws-row" onclick="createAndLinkRoom(\'' + pid + '\',document.getElementById(\'pp-room-q\').value)"><div class="ws-name" style="color:var(--text-primary)"><i class="ti ti-plus"></i> Create \u201c' + esc(q) + '\u201d and link it</div><div class="ws-addr">New venue, attached to this booker — details later via Edit</div></div>';
 }
 var cnr = {}; // create-and-link mini-intake state
 function createAndLinkRoom(pid, name){
@@ -2122,7 +2143,7 @@ function openDetail(id) {
     var gdDate = gd ? toLocalDT(p.gig_date).slice(0,10) : '';
     var gdTime = gd ? toLocalDT(p.gig_date).slice(11,16) : '';
     gigDateBlock = '<div class="card" style="margin-bottom:12px">'
-      + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px"><i class="ti ti-calendar-event" style="color:var(--amber-800);margin-right:5px"></i>Gig date' + (p.s==='hold' ? ' · tentative hold' : '') + ' — confirm with the check; edits & clears mirror to Google Calendar</div>'
+      + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px"><i class="ti ti-calendar-event" style="color:var(--text-primary);margin-right:5px"></i>Gig date' + (p.s==='hold' ? ' · tentative hold' : '') + ' — confirm with the check; edits & clears mirror to Google Calendar</div>'
       + '<div style="display:flex;gap:8px;align-items:center">'
       + '<input type="date" class="pipe-search" style="margin:0;flex:1" id="gig-date-' + id + '" value="' + gdDate + '">'
       + '<input type="time" class="pipe-search" style="margin:0;width:120px" id="gig-time-' + id + '" value="' + (gdTime || '20:00') + '" step="900">'
@@ -2659,7 +2680,7 @@ function openEventView(uuid){
   var gd = p.gig_date ? toLocalDT(p.gig_date) : '';
   var html = '<button class="back-btn" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>'
     + '<div class="page-title" style="margin-bottom:2px">' + (p.s==='hold' ? 'HOLD: ' : 'Gig: ') + esc(p.venue) + '</div>'
-    + '<div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:16px">' + esc(p.city) + (p.state ? ', ' + esc(p.state) : '') + ' · booking@ calendar · <span style="color:var(--amber-800);cursor:pointer" onclick="openDetail(' + idx + ')">open the deal →</span></div>'
+    + '<div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:16px">' + esc(p.city) + (p.state ? ', ' + esc(p.state) : '') + ' · booking@ calendar · <span style="color:var(--text-primary);text-decoration:underline;cursor:pointer" onclick="openDetail(' + idx + ')">open the deal →</span></div>'
     + '<div class="card" style="margin-bottom:12px">'
     + '<div class="field-row"><span class="field-label">Date</span><input type="date" class="pipe-search" style="margin:0;flex:1" id="ev-date" value="' + (gd ? gd.slice(0,10) : '') + '"></div>'
     + '<div class="field-row"><span class="field-label">Start</span><input type="time" class="pipe-search" style="margin:0;width:130px" id="ev-time" value="' + (gd ? gd.slice(11,16) : '20:00') + '" step="900"></div>'
@@ -2946,7 +2967,7 @@ function renderWizard(step, ticket, data) {
     var types = ticket==='hard' ? hardTypes : softTypes;
     html = '<div class="wiz-header"><div class="wiz-step-label">Step 2 of 4</div><div class="wiz-title">Venue details</div></div>'
     + '<div class="wiz-dots">' + dots + '</div>'
-    + '<div class="form-field"><label class="form-label"><i class="ti ti-map-search" style="margin-right:4px;color:var(--amber-800)"></i>Find the venue</label>'
+    + '<div class="form-field"><label class="form-label"><i class="ti ti-map-search" style="margin-right:4px;color:var(--text-primary)"></i>Find the venue</label>'
     + '<input class="form-input" id="wsearch" placeholder="Type a venue name… (fills everything below)" autocomplete="off" oninput="venueSearch(this.value)">'
     + '<div id="wsearch-results"></div></div>'
     + '<div class="form-field"><label class="form-label">Venue name *</label><input class="form-input" id="wn" placeholder="e.g. Dosey Doe"></div>'
@@ -3346,6 +3367,7 @@ function loadVenues(){
               vtype:v.venue_type||'', pay:v.pay_range||'—', contact:((v.venue_people&&v.venue_people[0]&&v.venue_people[0].person&&v.venue_people[0].person.name) || (v.contacts&&v.contacts[0]?v.contacts[0].name:'—')),
               address:v.address||'', clientele:v.clientele||'', notes:v.notes||'', form:v.booking_form_url||''};
     });
+    renderStateFilter();
     if(currentScreen==='discover') renderDiscover();
     retryPendingRoute();
   });
@@ -3769,7 +3791,7 @@ function loadVenueComments(venueId){
         var h = '<div class="note-item" style="margin-left:' + (depth*18) + 'px"><div style="display:flex;gap:8px;align-items:flex-start">'
           + avatarHtml(cm.author_name, cm.author_avatar, 26)
           + '<div style="flex:1;min-width:0">'
-          + '<div style="font-size:11px;font-weight:600;color:var(--amber-800);margin-bottom:2px">' + esc(cm.author_name || 'A member') + ' <span style="font-weight:400;color:var(--text-tertiary)">· ' + relTime(cm.created_at) + '</span></div>'
+          + '<div style="font-size:11px;font-weight:600;color:var(--text-primary);margin-bottom:2px">' + esc(cm.author_name || 'A member') + ' <span style="font-weight:400;color:var(--text-tertiary)">· ' + relTime(cm.created_at) + '</span></div>'
           + '<div class="act-ctx">' + esc(cm.body) + '</div>'
           + '<div class="vc-actions">'
           +   '<button class="vc-btn' + (rx.mine==='up' ? ' on' : '') + '" onclick="reactComment(\'' + cm.id + '\',\'up\',\'' + venueId + '\')"><i class="ti ti-thumb-up"></i>' + (rx.up || '') + '</button>'
@@ -3895,7 +3917,7 @@ function openVenueEdit(id){
     + '<div class="form-field"><label class="form-label">State</label><input class="form-input" id="ev-state" value="'+esc(v.state)+'"></div></div>'
     + '<div class="form-field"><label class="form-label">Ticket type</label><select class="form-select" id="ev-ticket">'+ticketOpts+'</select></div>'
     + '<div class="form-field"><label class="form-label">Venue type</label><input class="form-input" id="ev-vtype" value="'+esc(v.vtype)+'"></div>'
-    + '<div class="form-field"><label class="form-label">Rate / pay</label><input class="form-input" id="ev-pay" placeholder="$150/hr (soft) or $300–500 (hard)" value="'+esc(v.pay==='—'?'':v.pay)+'"></div>'
+    + '<div class="form-field"><label class="form-label">Rate / pay</label><input class="form-input" id="ev-payrange" placeholder="$150/hr (soft) or $300–500 (hard)" value="'+esc(v.pay==='—'?'':v.pay)+'"></div>'
     + '<div class="form-field"><label class="form-label">Address</label><input class="form-input" id="ev-address" value="'+esc(v.address)+'"></div>'
     + '<div class="form-field"><label class="form-label">Typical clientele</label><input class="form-input" id="ev-clientele" value="'+esc(v.clientele)+'"></div>'
     + '<div class="form-field"><label class="form-label">Notes</label><textarea class="form-textarea" id="ev-notes">'+esc(v.notes)+'</textarea></div>'
@@ -3907,7 +3929,7 @@ function saveVenue(id){
   if(!g('ev-name')){ alert('Venue name is required.'); return; }
   var addr=g('ev-address');
   var payload = { name:g('ev-name'), city:g('ev-city')||null, state:(g('ev-state')||'').toUpperCase()||null,
-    ticket_type:g('ev-ticket'), venue_type:g('ev-vtype')||null, pay_range:g('ev-pay')||null,
+    ticket_type:g('ev-ticket'), venue_type:g('ev-vtype')||null, pay_range:g('ev-payrange')||null,
     clientele:g('ev-clientele')||null, notes:g('ev-notes')||null };
   if(addr) payload.address=addr;
   sb.from('venues').update(payload).eq('id',id).then(function(r){
