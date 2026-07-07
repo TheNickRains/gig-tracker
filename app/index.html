@@ -1116,7 +1116,12 @@ var statusOrder = {talks:0,hold:1,pitched:2,lead:3,booked:4,played:5,passed:6,de
                    followup:0,waiting:0,outreach:3,won:4};
 var happyPath = ['lead','pitched','talks','hold','booked','played'];
 function stagesFor(p){ return p.t==='hard' ? happyPath : happyPath.filter(function(s){ return s!=='hold'; }); }
-function followupDue(p){ return p.s==='pitched' && p.days>=7; }
+// 7d of quiet. A snooze restarts the clock from the snooze, not the last activity —
+// so a snoozed nag comes back after another 7 quiet days, not never.
+function followupDue(p){
+  var quiet = p.fuSnoozeTs ? Math.min(p.days, Math.floor((Date.now() - p.fuSnoozeTs) / 86400000)) : p.days;
+  return p.s==='pitched' && quiet >= 7;
+}
 // Venue-type glyphs — rows scan by SHAPE, not just words.
 function venueIcon(vt){
   var t = (vt || '').toLowerCase();
@@ -1648,6 +1653,15 @@ function dismissReply(entryUuid){
     loadPipeline();
   });
 }
+// Follow-up nags are snoozable: a marker activity restarts the 7-day quiet
+// clock (it re-surfaces after another 7 quiet days — Dead/Passed is forever).
+function snoozeFollowup(entryUuid){
+  sb.from('activities').insert({ pipeline_entry_id: entryUuid, kind: 'system', source: 'manual', body: '✓ Follow-up snoozed' }).then(function(r){
+    if (r.error) { showToast('Could not snooze: ' + r.error.message, true); return; }
+    showToast('Snoozed — back in 7 days if they stay quiet');
+    loadPipeline();
+  });
+}
 function dismissUnmatched(uid){
   sb.from('unmatched_mail').update({ status: 'dismissed' }).eq('id', uid).then(function(){ loadUnmatched(); });
 }
@@ -1660,7 +1674,7 @@ function renderHome(){
     if (p.bounced) items.push({p:p, tier:0, ic:'ti-mail-x', c:'var(--dead-text)', bg:'var(--dead-bg)', t:'Email bounced — fix the address', sub:'The pitch never arrived; edit the contact and re-send', dismiss:'dismissBounce', dismissTitle:'I’ve handled this another way'});
     else if (p.sched && p.sched.status==='ready') items.push({p:p, tier:0, ic:'ti-bell-ringing', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Send awaiting your review', sub:'Auto-send is off — review & fire'});
     else if (needsReply(p)) items.push({p:p, tier:1, ic:'ti-mail', c:'var(--talks-text)', bg:'var(--talks-bg)', t:'You\u2019ve got mail — ' + ((p.contact||'').split(' ')[0]||'they') + ' replied', sub:lastInboundPreview(p), dismiss:'dismissReply', dismissTitle:'No reply needed'});
-    else if (followupDue(p)) items.push({p:p, tier:2, ic:'ti-clock-exclamation', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Follow-up due · ' + p.days + 'd quiet', sub:'Nudge them or schedule it'});
+    else if (followupDue(p)) items.push({p:p, tier:2, ic:'ti-clock-exclamation', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Follow-up due · ' + p.days + 'd quiet', sub:'Nudge them or schedule it', dismiss:'snoozeFollowup', dismissLabel:'Snooze', dismissTitle:'Snooze 7 days — comes back if they stay quiet'});
   });
   // Scale: hardest-to-ignore first (ready > replies > follow-ups, oldest first),
   // capped — the overflow lives in Pipeline sorted by Priority, one tap away.
@@ -1681,7 +1695,7 @@ function renderHome(){
         + '<div class="war-ic" style="background:' + it.bg + ';color:' + it.c + '"><i class="ti ' + it.ic + '"></i></div>'
         + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(it.p.venue) + ' — ' + it.t + '</div>'
         + (it.sub ? '<div class="war-sub">' + esc(it.sub) + '</div>' : '') + '</div>'
-        + (it.dismiss ? '<button class="war-x" onclick="event.stopPropagation();' + it.dismiss + '(\'' + it.p.uuid + '\')" title="' + esc(it.dismissTitle||'Dismiss') + '">Dismiss</button>' : '')
+        + (it.dismiss ? '<button class="war-x" onclick="event.stopPropagation();' + it.dismiss + '(\'' + it.p.uuid + '\')" title="' + esc(it.dismissTitle||'Dismiss') + '">' + (it.dismissLabel||'Dismiss') + '</button>' : '')
         + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
     }).join('')
     + (overflow > 0 ? '<div class="war-row" onclick="pipeSort=\'priority\';go(\'pipeline\')"><div class="war-ic" style="background:var(--bg-secondary);color:var(--text-secondary)"><i class="ti ti-list"></i></div><div style="flex:1"><div class="war-t">+' + overflow + ' more — open Pipeline by priority</div></div><i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>' : '')
@@ -3298,7 +3312,7 @@ function loadActivities(ids){
       if (a.kind==='email_in'  && (!lastIn[a.pipeline_entry_id]  || t > lastIn[a.pipeline_entry_id]))  lastIn[a.pipeline_entry_id]  = t;
       if (a.kind==='email_out' && (!lastOut[a.pipeline_entry_id] || t > lastOut[a.pipeline_entry_id])) lastOut[a.pipeline_entry_id] = t;
     });
-    var lastBounce={}, lastDismiss={}, lastReplyDismiss={};
+    var lastBounce={}, lastDismiss={}, lastReplyDismiss={}, lastFuSnooze={};
     (r.data||[]).forEach(function(a){
       if (a.kind!=='system') return;
       var t = new Date(a.created_at).getTime();
@@ -3308,6 +3322,8 @@ function loadActivities(ids){
         if (!lastDismiss[a.pipeline_entry_id] || t > lastDismiss[a.pipeline_entry_id]) lastDismiss[a.pipeline_entry_id] = t;
       } else if ((a.body||'').indexOf('✓ Reply dismissed') === 0) {
         if (!lastReplyDismiss[a.pipeline_entry_id] || t > lastReplyDismiss[a.pipeline_entry_id]) lastReplyDismiss[a.pipeline_entry_id] = t;
+      } else if ((a.body||'').indexOf('✓ Follow-up snoozed') === 0) {
+        if (!lastFuSnooze[a.pipeline_entry_id] || t > lastFuSnooze[a.pipeline_entry_id]) lastFuSnooze[a.pipeline_entry_id] = t;
       }
     });
     pipeline.forEach(function(p){
@@ -3315,6 +3331,7 @@ function loadActivities(ids){
       p.lastInboundTs = lastIn[p.uuid] || 0;
       p.lastOutboundTs = lastOut[p.uuid] || 0;
       p.replyDismissTs = lastReplyDismiss[p.uuid] || 0; // "no reply needed" — cleared if a newer inbound lands
+      p.fuSnoozeTs = lastFuSnooze[p.uuid] || 0; // follow-up snooze — restarts the 7d quiet clock
       p.bounced = (lastBounce[p.uuid] || 0) > Math.max(p.lastOutboundTs, lastDismiss[p.uuid] || 0); // re-send OR dismiss clears it; a fresh bounce re-surfaces
     });
     renderHome();
