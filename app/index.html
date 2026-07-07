@@ -855,12 +855,10 @@
     </div>
     <input class="pipe-search" id="disc-search" type="search" placeholder="Search rooms or people…" oninput="discQuery=this.value;renderDiscover()">
     <div class="filter-row">
-      <select class="form-select" id="state-filter" onchange="filterCities()">
-        <option value="">All states</option>
-      </select>
-      <select class="form-select" id="city-filter" onchange="renderDiscover()">
-        <option value="">All cities</option>
-      </select>
+      <label class="loc-chip" id="disc-loc-chip" title="Filter by location">
+        <i class="ti ti-map-pin"></i><span id="disc-loc-label"></span><i class="ti ti-chevron-down loc-caret"></i>
+        <select id="disc-loc" onchange="setDiscLoc(this.value)"></select>
+      </label>
       <select class="form-select" id="type-filter" onchange="renderDiscover()">
         <option value="">All types</option>
         <option value="hard">Hard ticket</option>
@@ -1134,8 +1132,6 @@ var notables = [];
 var notableEditOpen = false;
 
 var venues = [];
-var cities = {};
-
 var pipeline = [];
 
 // Staging spine. Happy path: lead → pitched → talks → hold (hard ticket only) →
@@ -1333,33 +1329,23 @@ function goProfile() {
 // The state list mirrors rooms that actually EXIST — a hardcoded list rots the
 // moment someone adds a venue in a new state (it did: TX/TN/CA/CO only).
 var STATE_NAMES = {AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',CT:'Connecticut',DE:'Delaware',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',DC:'Washington DC'};
-function renderStateFilter(){
-  var el = document.getElementById('state-filter'); if (!el) return;
-  var cur = el.value;
-  var sts = Object.keys(cities).sort(function(a,b){ return (STATE_NAMES[a]||a) < (STATE_NAMES[b]||b) ? -1 : 1; });
-  el.innerHTML = '<option value="">All states</option>' + sts.map(function(s){ return '<option value="' + esc(s) + '">' + esc(STATE_NAMES[s]||s) + '</option>'; }).join('');
-  el.value = sts.indexOf(cur) >= 0 ? cur : '';
-}
-function filterCities() {
-  var state = document.getElementById('state-filter').value;
-  var sel = document.getElementById('city-filter');
-  sel.innerHTML = '<option value="">All cities</option>';
-  if (state && cities[state]) {
-    cities[state].forEach(function(c){ var o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
-  }
+var discQuery = '';
+var discLoc = lsGet('gc_disc_loc') || '';
+function setDiscLoc(v){
+  discLoc = (v === 'up') ? '' : v;
+  lsSet('gc_disc_loc', discLoc);
   renderDiscover();
 }
-var discQuery = '';
 function renderDiscover() {
-  var state = document.getElementById('state-filter').value;
-  var city = document.getElementById('city-filter').value;
+  discLoc = renderLocScope('disc-loc', venues, discLoc); // same chip as Pipeline
   var type = document.getElementById('type-filter').value;
   var pf = document.getElementById('disc-pipe-filter').value;
   var q = (discQuery || '').toLowerCase();
   var inPipe = {}; pipeline.forEach(function(p){ if (p.venueId) inPipe[p.venueId] = true; });
   Object.keys(dealVenueMap).forEach(function(vid){ inPipe[vid] = true; });
   var f = venues.filter(function(v){
-    if ((state&&v.state!==state)||(city&&v.city!==city)||(type&&v.type!==type)) return false;
+    if (!locMatch(discLoc, v.city, v.state)) return false;
+    if (type && v.type !== type) return false;
     if (pf === 'in' && !inPipe[v.id]) return false;
     if (pf === 'out' && inPipe[v.id]) return false;
     if (!q) return true;
@@ -1849,19 +1835,20 @@ function setPipeLoc(v){
   lsSet('gc_pipe_loc', pipeLoc);
   renderPipeline();
 }
-// Location filter: a map-pin chip whose native select DRILLS DOWN instead of
-// showing the whole tree (the flat optgroup version didn't scale — 40+ picker
-// rows, and iOS flattens optgroups to faint headers). Level 0: "Your markets"
-// (from the profile — the frequent case) + one row per state. Picking a state
-// re-scopes the list to that state's cities; "← Anywhere" is back AND clear.
-// No list ever exceeds ~a dozen rows: cost is O(states) or O(cities-in-state),
-// never O(everything). Values stay st:TN / ci:Memphis|TN — pipeLocMatch unchanged.
-function renderPipeLocSelect(){
-  var el = document.getElementById('pipe-loc'), chip = document.getElementById('pipe-loc-chip'), lbl = document.getElementById('pipe-loc-label');
-  if (!el || !chip) return;
+// Location scope chip — SHARED by Pipeline and Discover (same UX, same code):
+// a map-pin chip whose native select DRILLS DOWN instead of showing the whole
+// tree (a flat optgroup tree didn't scale — 40+ picker rows, and iOS flattens
+// optgroups to faint headers). Level 0: "Your markets" (from the profile — the
+// frequent case) + one row per state. Picking a state re-scopes the list to
+// that state's cities; "← Anywhere" is back AND clear. No list ever exceeds
+// ~a dozen rows: cost is O(states) or O(cities-in-state), never O(everything).
+// rows = anything with .city/.state; returns the (possibly self-cleared) value.
+function renderLocScope(id, rows, cur){
+  var el = document.getElementById(id), chip = document.getElementById(id + '-chip'), lbl = document.getElementById(id + '-label');
+  if (!el || !chip) return cur;
   var states = {};
-  pipeline.forEach(function(p){
-    var city = normCity(p.city), st = normSt(p.state);
+  rows.forEach(function(r){
+    var city = normCity(r.city), st = normSt(r.state);
     if (!city && !st) return;
     var s = states[st] = states[st] || { n: 0, cities: {} };
     s.n++;
@@ -1871,13 +1858,13 @@ function renderPipeLocSelect(){
   // A filter with at most one possible answer is noise — hide the control.
   var totalLocs = keys.reduce(function(n, st){ return n + Math.max(1, Object.keys(states[st].cities).length); }, 0);
   chip.style.display = totalLocs > 1 ? '' : 'none';
-  if (totalLocs <= 1) { pipeLoc = ''; return; }
+  if (totalLocs <= 1) return '';
   function cityOptions(st){
     return Object.keys(states[st].cities).sort().map(function(c){
       return '<option value="ci:' + esc(c) + '|' + esc(st) + '">' + esc(c) + ' · ' + states[st].cities[c] + '</option>';
     }).join('');
   }
-  var curSt = pipeLoc.indexOf('st:') === 0 ? pipeLoc.slice(3) : pipeLoc.indexOf('ci:') === 0 ? pipeLoc.slice(3).split('|')[1] : null;
+  var curSt = cur.indexOf('st:') === 0 ? cur.slice(3) : cur.indexOf('ci:') === 0 ? cur.slice(3).split('|')[1] : null;
   var multiState = keys.length > 1;
   var html;
   if (curSt !== null && multiState && states[curSt]) {
@@ -1903,25 +1890,28 @@ function renderPipeLocSelect(){
     html = '<option value="">Anywhere</option>' + (keys.length ? cityOptions(keys[0]) : '');
   }
   el.innerHTML = html;
-  el.value = pipeLoc;
-  if (el.value !== pipeLoc) { pipeLoc = ''; el.value = ''; } // stale/legacy value — reset
+  el.value = cur;
+  if (el.value !== cur) { cur = ''; el.value = ''; } // stale/legacy value — reset
   // The chip face is OURS: short place name, never option text like "All Tennessee · 5".
-  var city = pipeLoc.indexOf('ci:') === 0 ? pipeLoc.slice(3).split('|')[0] : '';
-  lbl.textContent = city || (pipeLoc && curSt !== null ? (STATE_NAMES[curSt] || curSt || 'No state') : '');
-  chip.classList.toggle('on', !!pipeLoc);
+  var city = cur.indexOf('ci:') === 0 ? cur.slice(3).split('|')[0] : '';
+  lbl.textContent = city || (cur && curSt !== null ? (STATE_NAMES[curSt] || curSt || 'No state') : '');
+  chip.classList.toggle('on', !!cur);
   // State selected + cities beneath it → hint that the picker goes deeper.
-  chip.classList.toggle('deeper', pipeLoc.indexOf('st:') === 0 && !!states[curSt] && Object.keys(states[curSt].cities).length > 0);
+  chip.classList.toggle('deeper', cur.indexOf('st:') === 0 && !!states[curSt] && Object.keys(states[curSt].cities).length > 0);
+  return cur;
 }
+function renderPipeLocSelect(){ pipeLoc = renderLocScope('pipe-loc', pipeline, pipeLoc); }
 // City/state values arrive dirty ("Austin," with a trailing comma made two
 // filter rows) — normalize once, use the SAME normalizer to build and match.
 function normCity(c){ return (c||'').replace(/\s*,\s*$/, '').trim(); }
 function normSt(s){ return (s||'').trim(); }
-function pipeLocMatch(p){
-  if (!pipeLoc) return true;
-  if (pipeLoc.indexOf('st:') === 0) return normSt(p.state) === pipeLoc.slice(3);
-  if (pipeLoc.indexOf('ci:') === 0) { var x = pipeLoc.slice(3).split('|'); return normCity(p.city) === x[0] && normSt(p.state) === x[1]; }
+function locMatch(loc, city, state){
+  if (!loc) return true;
+  if (loc.indexOf('st:') === 0) return normSt(state) === loc.slice(3);
+  if (loc.indexOf('ci:') === 0) { var x = loc.slice(3).split('|'); return normCity(city) === x[0] && normSt(state) === x[1]; }
   return true;
 }
+function pipeLocMatch(p){ return locMatch(pipeLoc, p.city, p.state); }
 function renderPipeFilterSelect(){
   var el = document.getElementById('pipe-filter'); if(!el) return;
   // Stage counts respect the location scope: filtered to Tennessee, "All · N"
@@ -3450,12 +3440,10 @@ function loadVenues(){
   sb.from('venues').select('*, venue_people(person:people(name)), contacts(name)').order('created_at',{ascending:false}).then(function(r){
     var rows=r.data||[]; cities={};
     venues = rows.map(function(v){
-      if(v.state){ cities[v.state]=cities[v.state]||[]; if(v.city && cities[v.state].indexOf(v.city)<0) cities[v.state].push(v.city); }
       return {id:v.id, name:v.name, city:v.city||'', state:v.state||'', type:v.ticket_type||'soft', createdAt:v.created_at||null, createdBy:v.created_by||null, createdByName:v.created_by_name||'',
               vtype:v.venue_type||'', pay:v.pay_range||'—', contact:((v.venue_people&&v.venue_people[0]&&v.venue_people[0].person&&v.venue_people[0].person.name) || (v.contacts&&v.contacts[0]?v.contacts[0].name:'—')),
               address:v.address||'', clientele:v.clientele||'', notes:v.notes||'', form:v.booking_form_url||''};
     });
-    renderStateFilter();
     if(currentScreen==='discover') renderDiscover();
     retryPendingRoute();
   });

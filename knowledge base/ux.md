@@ -43,11 +43,10 @@ Greeting + subhead, then the command center:
 
 Master venue list. Shared across all artists. Written to by the collective's adds and updates.
 
-**Filters** — inline row, 4 dropdowns:
-1. State — options built dynamically from venues that exist (`renderStateFilter()` + `STATE_NAMES` code→name map; a hardcoded list rotted). Selecting a state populates cities.
-2. City (hierarchical — only shows cities for selected state, also derived from live data)
-3. Ticket type (All / Hard / Soft)
-4. Pipeline status (`#disc-pipe-filter` — renamed from `pipe-filter`, which collided with Pipeline's stage select and got its options clobbered): All / In pipeline / Not in pipeline
+**Filters** — inline row, 3 controls:
+1. Location — the SAME `.loc-chip` drill-down control as Pipeline (shared `renderLocScope('disc-loc', venues, discLoc)` + `locMatch`; see Pipeline section for full behavior). Replaced the old state→city cascading selects. Persisted via `gc_disc_loc`.
+2. Ticket type (All / Hard / Soft)
+3. Pipeline status (`#disc-pipe-filter`): All / In pipeline / Not in pipeline
 
 **Venue grid** — 2 columns. Each card:
 - Venue name (bold)
