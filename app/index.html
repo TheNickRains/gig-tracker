@@ -434,6 +434,16 @@
   .pf-chip { flex-shrink: 0; font-size: 12px; padding: 5px 11px; border-radius: 999px; border: 1px solid transparent; color: var(--text-secondary); cursor: pointer; background: var(--bg-secondary); font-family: inherit; opacity: 0.85; }
   .pf-chip.on { border-color: currentColor; font-weight: 600; opacity: 1; }
   .pipe-sort { font-size: 12px; font-family: inherit; color: var(--text-secondary); background: var(--bg-secondary); border: none; border-radius: 8px; padding: 6px 8px; }
+  /* Location scope chip: a native select stretched invisibly over a chip face —
+     OS picker ergonomics, but the closed label is OURS (short city/state name,
+     amber ink-on-paper when active), never the option text. */
+  .loc-chip { position: relative; display: inline-flex; align-items: center; gap: 4px; padding: 6px 9px; border-radius: 8px; background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px; flex-shrink: 0; cursor: pointer; }
+  .loc-chip i { font-size: 15px; }
+  .loc-chip span { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .loc-chip span:empty { display: none; }
+  .loc-chip.on { background: var(--amber-50); color: var(--amber-800); font-weight: 600; }
+  .loc-chip select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+  .loc-chip:focus-within { box-shadow: 0 0 0 2px var(--amber-400); }
   .view-btn { width: 30px; height: 30px; border-radius: 8px; border: none; background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; }
   button:focus { outline: none; }
   button:focus-visible { outline: 2px solid var(--amber-400); outline-offset: 2px; }
@@ -880,7 +890,10 @@
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <input class="pipe-search" id="pipe-search" type="search" placeholder="Search venues, stages, notes, conversations…" style="margin-bottom:0;flex:1" oninput="pipeQuery=this.value;renderPipeline()">
       <select class="pipe-sort" id="pipe-filter" onchange="pipeFilter=this.value;lsSet('gc_pipe_filter',this.value);renderPipeline()" title="Filter by stage"></select>
-      <select class="pipe-sort" id="pipe-loc" onchange="pipeLoc=this.value;lsSet('gc_pipe_loc',this.value);renderPipeline()" title="Filter by location"></select>
+      <label class="loc-chip" id="pipe-loc-chip" title="Filter by location">
+        <i class="ti ti-map-pin"></i><span id="pipe-loc-label"></span>
+        <select id="pipe-loc" onchange="setPipeLoc(this.value)"></select>
+      </label>
     </div>
     <div class="card card-flush" id="pipe-list"></div>
   </div>
@@ -1383,7 +1396,7 @@ function renderPipeline() {
     if (!pipeLocMatch(p)) return false;
     if (!q) return true;
     // Searches the whole deal: venue, contact, place, stage name, notes + conversation.
-    var blob = p.venue + ' ' + p.contact + ' ' + p.city + ' ' + p.state + ' ' + (statusLabel[p.s]||p.s) + ' '
+    var blob = p.venue + ' ' + p.contact + ' ' + p.city + ' ' + p.state + ' ' + (STATE_NAMES[p.state]||'') + ' ' + (statusLabel[p.s]||p.s) + ' '
       + (p.activity||[]).map(function(a){ return a.text; }).join(' ');
     return blob.toLowerCase().indexOf(q) >= 0;
   });
@@ -1827,11 +1840,21 @@ function priorityScore(p) {
 var pipeQuery = '';
 var pipeFilter = lsGet('gc_pipe_filter') || 'all';
 var pipeLoc = lsGet('gc_pipe_loc') || '';
-// Location filter mirrors the deals actually in the pipeline, state-first:
-// each state is an optgroup — "All Tennessee · N" then its cities. Values are
-// 'st:TN' (whole state) or 'ci:Memphis|TN' (one city).
+function setPipeLoc(v){
+  pipeLoc = (v === 'up') ? '' : v;
+  lsSet('gc_pipe_loc', pipeLoc);
+  renderPipeline();
+}
+// Location filter: a map-pin chip whose native select DRILLS DOWN instead of
+// showing the whole tree (the flat optgroup version didn't scale — 40+ picker
+// rows, and iOS flattens optgroups to faint headers). Level 0: "Your markets"
+// (from the profile — the frequent case) + one row per state. Picking a state
+// re-scopes the list to that state's cities; "← Anywhere" is back AND clear.
+// No list ever exceeds ~a dozen rows: cost is O(states) or O(cities-in-state),
+// never O(everything). Values stay st:TN / ci:Memphis|TN — pipeLocMatch unchanged.
 function renderPipeLocSelect(){
-  var el = document.getElementById('pipe-loc'); if (!el) return;
+  var el = document.getElementById('pipe-loc'), chip = document.getElementById('pipe-loc-chip'), lbl = document.getElementById('pipe-loc-label');
+  if (!el || !chip) return;
   var states = {};
   pipeline.forEach(function(p){
     if (!p.city && !p.state) return;
@@ -1841,17 +1864,47 @@ function renderPipeLocSelect(){
     if (p.city) s.cities[p.city] = (s.cities[p.city]||0) + 1;
   });
   var keys = Object.keys(states).sort(function(a,b){ return (STATE_NAMES[a]||a||'~') < (STATE_NAMES[b]||b||'~') ? -1 : 1; });
-  var html = '<option value="">Anywhere</option>';
-  keys.forEach(function(st){
-    var s = states[st], label = STATE_NAMES[st] || st || 'No state';
-    html += '<optgroup label="' + esc(label) + '">';
-    html += '<option value="st:' + esc(st) + '">All ' + esc(label) + ' · ' + s.n + '</option>';
-    Object.keys(s.cities).sort().forEach(function(c){ html += '<option value="ci:' + esc(c) + '|' + esc(st) + '">' + esc(c) + ' · ' + s.cities[c] + '</option>'; });
-    html += '</optgroup>';
-  });
+  // A filter with at most one possible answer is noise — hide the control.
+  var totalLocs = keys.reduce(function(n, st){ return n + Math.max(1, Object.keys(states[st].cities).length); }, 0);
+  chip.style.display = totalLocs > 1 ? '' : 'none';
+  if (totalLocs <= 1) { pipeLoc = ''; return; }
+  function cityOptions(st){
+    return Object.keys(states[st].cities).sort().map(function(c){
+      return '<option value="ci:' + esc(c) + '|' + esc(st) + '">' + esc(c) + ' · ' + states[st].cities[c] + '</option>';
+    }).join('');
+  }
+  var curSt = pipeLoc.indexOf('st:') === 0 ? pipeLoc.slice(3) : pipeLoc.indexOf('ci:') === 0 ? pipeLoc.slice(3).split('|')[1] : null;
+  var multiState = keys.length > 1;
+  var html;
+  if (curSt !== null && multiState && states[curSt]) {
+    // Level 1 — inside a state.
+    var name = STATE_NAMES[curSt] || curSt || 'No state';
+    html = '<option value="up">← Anywhere</option>'
+      + '<option value="st:' + esc(curSt) + '">All ' + esc(name) + ' · ' + states[curSt].n + '</option>'
+      + cityOptions(curSt);
+  } else if (multiState) {
+    // Level 0 — markets first ("what's cooking at home"), then states.
+    var mk = {};
+    markets.concat(profile.home_market ? [profile.home_market] : []).forEach(function(m){ mk[(m||'').split(',')[0].trim().toLowerCase()] = true; });
+    var mine = [];
+    keys.forEach(function(st){ Object.keys(states[st].cities).forEach(function(c){ if (mk[c.toLowerCase()]) mine.push({ c: c, st: st, n: states[st].cities[c] }); }); });
+    mine.sort(function(a,b){ return a.c < b.c ? -1 : 1; });
+    html = '<option value="">Anywhere</option>';
+    if (mine.length) html += '<optgroup label="Your markets">' + mine.map(function(m){ return '<option value="ci:' + esc(m.c) + '|' + esc(m.st) + '">' + esc(m.c) + ', ' + esc(m.st) + ' · ' + m.n + '</option>'; }).join('') + '</optgroup>';
+    html += (mine.length ? '<optgroup label="By state">' : '')
+      + keys.map(function(st){ return '<option value="st:' + esc(st) + '">' + esc(STATE_NAMES[st]||st||'No state') + ' · ' + states[st].n + '</option>'; }).join('')
+      + (mine.length ? '</optgroup>' : '');
+  } else {
+    // One state — flat cities, no hierarchy theater.
+    html = '<option value="">Anywhere</option>' + (keys.length ? cityOptions(keys[0]) : '');
+  }
   el.innerHTML = html;
   el.value = pipeLoc;
   if (el.value !== pipeLoc) { pipeLoc = ''; el.value = ''; } // stale/legacy value — reset
+  // The chip face is OURS: short place name, never option text like "All Tennessee · 5".
+  var city = pipeLoc.indexOf('ci:') === 0 ? pipeLoc.slice(3).split('|')[0] : '';
+  lbl.textContent = city || (pipeLoc && curSt !== null ? (STATE_NAMES[curSt] || curSt || 'No state') : '');
+  chip.classList.toggle('on', !!pipeLoc);
 }
 function pipeLocMatch(p){
   if (!pipeLoc) return true;
