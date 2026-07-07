@@ -1380,7 +1380,7 @@ function renderPipeline() {
   var q = (pipeQuery || '').toLowerCase();
   var rows = pipeline.filter(function(p){
     if (pipeFilter !== 'all' && p.s !== pipeFilter) return false;
-    if (pipeLoc && pipeLocOf(p) !== pipeLoc) return false;
+    if (!pipeLocMatch(p)) return false;
     if (!q) return true;
     // Searches the whole deal: venue, contact, place, stage name, notes + conversation.
     var blob = p.venue + ' ' + p.contact + ' ' + p.city + ' ' + p.state + ' ' + (statusLabel[p.s]||p.s) + ' '
@@ -1827,16 +1827,37 @@ function priorityScore(p) {
 var pipeQuery = '';
 var pipeFilter = lsGet('gc_pipe_filter') || 'all';
 var pipeLoc = lsGet('gc_pipe_loc') || '';
-function pipeLocOf(p){ return p.city ? p.city + (p.state ? ', ' + p.state : '') : ''; }
-// Location filter mirrors the deals actually in the pipeline (city, state + count).
+// Location filter mirrors the deals actually in the pipeline, state-first:
+// each state is an optgroup — "All Tennessee · N" then its cities. Values are
+// 'st:TN' (whole state) or 'ci:Memphis|TN' (one city).
 function renderPipeLocSelect(){
   var el = document.getElementById('pipe-loc'); if (!el) return;
-  var locs = {};
-  pipeline.forEach(function(p){ var l = pipeLocOf(p); if (l) locs[l] = (locs[l]||0) + 1; });
-  var keys = Object.keys(locs).sort();
-  if (pipeLoc && !locs[pipeLoc]) pipeLoc = '';
-  el.innerHTML = '<option value="">Anywhere</option>' + keys.map(function(l){ return '<option value="' + esc(l) + '">' + esc(l) + ' · ' + locs[l] + '</option>'; }).join('');
+  var states = {};
+  pipeline.forEach(function(p){
+    if (!p.city && !p.state) return;
+    var st = p.state || '';
+    var s = states[st] = states[st] || { n: 0, cities: {} };
+    s.n++;
+    if (p.city) s.cities[p.city] = (s.cities[p.city]||0) + 1;
+  });
+  var keys = Object.keys(states).sort(function(a,b){ return (STATE_NAMES[a]||a||'~') < (STATE_NAMES[b]||b||'~') ? -1 : 1; });
+  var html = '<option value="">Anywhere</option>';
+  keys.forEach(function(st){
+    var s = states[st], label = STATE_NAMES[st] || st || 'No state';
+    html += '<optgroup label="' + esc(label) + '">';
+    html += '<option value="st:' + esc(st) + '">All ' + esc(label) + ' · ' + s.n + '</option>';
+    Object.keys(s.cities).sort().forEach(function(c){ html += '<option value="ci:' + esc(c) + '|' + esc(st) + '">' + esc(c) + ' · ' + s.cities[c] + '</option>'; });
+    html += '</optgroup>';
+  });
+  el.innerHTML = html;
   el.value = pipeLoc;
+  if (el.value !== pipeLoc) { pipeLoc = ''; el.value = ''; } // stale/legacy value — reset
+}
+function pipeLocMatch(p){
+  if (!pipeLoc) return true;
+  if (pipeLoc.indexOf('st:') === 0) return (p.state||'') === pipeLoc.slice(3);
+  if (pipeLoc.indexOf('ci:') === 0) { var x = pipeLoc.slice(3).split('|'); return p.city === x[0] && (p.state||'') === x[1]; }
+  return true;
 }
 function renderPipeFilterSelect(){
   var el = document.getElementById('pipe-filter'); if(!el) return;
