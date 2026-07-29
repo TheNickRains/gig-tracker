@@ -2317,7 +2317,8 @@ function openDetail(id) {
     if (p.sched) {
       var draftBlock;
       if (schedEditing[id]) {
-        draftBlock = '<textarea class="tpl-body" id="sched-edit-' + id + '" spellcheck="false">' + esc(p.sched.body) + '</textarea>'
+        draftBlock = '<input class="pipe-search" id="sched-subj-' + id + '" placeholder="Subject" autocomplete="off" value="' + esc(p.sched.subject || '') + '" style="margin:0 0 8px" title="Email subject line">'
+          + '<textarea class="tpl-body" id="sched-edit-' + id + '" spellcheck="false">' + esc(p.sched.body) + '</textarea>'
           + '<div class="tpl-actions">'
           + '<button class="btn-primary btn-sm" onclick="saveSchedEdit(' + id + ')"><i class="ti ti-check"></i> Save draft</button>'
           + '<button class="btn-secondary btn-sm" onclick="openLinkBar(\'sched-edit-' + id + '\')" title="Turn the selected words into a clickable link"><i class="ti ti-link"></i> Link</button>'
@@ -2325,6 +2326,7 @@ function openDetail(id) {
           + '<div id="lb-sched-edit-' + id + '" style="display:none;gap:8px;margin-top:8px"><input class="pipe-search" id="lb-url-sched-edit-' + id + '" placeholder="https://… (select words first — they become the link)" autocomplete="off" style="margin:0;flex:1" onkeydown="linkBarKey(event,\'sched-edit-' + id + '\')"><button class="btn-primary btn-sm" onclick="insertLink(\'sched-edit-' + id + '\')">Insert</button></div>';
       } else {
         draftBlock = '<div class="locked-head"><i class="ti ti-lock"></i> ' + (p.sched.status==='ready' ? 'Awaiting your review' : 'Locked — sends exactly as written') + '</div>'
+          + (p.sched.subject ? '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px"><span style="color:var(--text-tertiary)">Subject:</span> ' + esc(p.sched.subject) + '</div>' : '')
           + '<div class="locked-body">' + mdRich(p.sched.body) + '</div>'
           + '<div class="tpl-actions"><button class="btn-secondary btn-sm" onclick="editSched(' + id + ')"><i class="ti ti-pencil"></i> Edit draft</button></div>';
       }
@@ -2335,6 +2337,7 @@ function openDetail(id) {
       // Blank canvas by default — your words, AI's words, or a loaded template.
       // draftText[uuid] survives every re-render; nothing overwrites it silently.
       var draftVal = draftText[p.uuid] !== undefined ? draftText[p.uuid] : '';
+      var subjVal = draftSubject[p.uuid] !== undefined ? draftSubject[p.uuid] : defaultSubject();
       var ph = 'Write your message here, or select a template from the dropdown above.\n\n✨ Draft with AI writes it in your voice — try it out!';
       tplSection = '<div class="section-label" style="margin-top:4px">Draft outreach</div>'
         + '<div class="card" style="margin-bottom:12px">'
@@ -2342,6 +2345,7 @@ function openDetail(id) {
         + '<option value=""' + (!activeTpl[id] ? ' selected' : '') + '>Select a template…</option>'
         + tplKeys.map(function(k,i){ return '<option value="' + k + '"' + (activeTpl[id]===k?' selected':'') + '>' + tplLabels[i] + '</option>'; }).join('')
         + '</select>'
+        + (p.email ? '<input class="pipe-search" id="tpl-subj-' + id + '" placeholder="Subject" autocomplete="off" value="' + esc(subjVal) + '" oninput="draftSubject[\'' + p.uuid + '\']=this.value" style="margin:0 0 8px" title="Email subject line">' : '')
         + '<textarea class="tpl-body" id="tpl-body-' + id + '" spellcheck="false" placeholder="' + esc(ph) + '" oninput="draftText[\'' + p.uuid + '\']=this.value">' + esc(draftVal) + '</textarea>'
         + '<div class="tpl-actions">'
         + (p.email ? '<button class="btn-primary btn-sm" onclick="sendNowInline(' + id + ')"><i class="ti ti-send"></i> Send now</button>' : '')
@@ -2419,6 +2423,7 @@ function openDetail(id) {
 
 var draftText = {}; // per-entry draft (keyed by uuid) — survives re-renders
 var draftAI = {};   // last AI generation per entry — diffed against what you send
+var draftSubject = {}; // per-entry subject (keyed by uuid) — same lifecycle as draftText
 
 // ── Links in drafts: [text](url) — the one markdown-ism drafts understand ──
 // The worker renders it as a real <a> in the email's HTML part; every
@@ -2473,6 +2478,10 @@ function copyTpl(id) {
   showToast();
 }
 function defaultSubject(){ return profile.name + ' — booking inquiry'; }
+function draftSubjectFor(p){ // your subject if you wrote one; blank falls back to the default
+  var s = draftSubject[p.uuid] !== undefined ? draftSubject[p.uuid].trim() : '';
+  return s || defaultSubject();
+}
 
 // ── Slice C: AI drafting (Gemini lives in the worker; the key never reaches the browser) ──
 var WORKER_URL = 'https://gig-worker-production.up.railway.app';
@@ -2505,7 +2514,7 @@ function aiDraft(id) {
 function emailTpl(id) {
   var p = pipeline[id];
   var body = mdStrip(document.getElementById('tpl-body-' + id).value);
-  window.open('mailto:' + p.email + '?subject=' + encodeURIComponent(defaultSubject()) + '&body=' + encodeURIComponent(body));
+  window.open('mailto:' + p.email + '?subject=' + encodeURIComponent(draftSubjectFor(p)) + '&body=' + encodeURIComponent(body));
 }
 
 // Form-gate venues: draft → copy → GO. Opening the form logs the pitch.
@@ -2623,9 +2632,11 @@ function saveSchedEdit(id){
   var p = pipeline[id]; if(!p.sched) return;
   var body = document.getElementById('sched-edit-' + id).value.trim();
   if(!body){ showToast('Draft is empty', true); return; }
-  sb.from('scheduled_messages').update({ body: body }).eq('id', p.sched.id).then(function(r){
+  var si = document.getElementById('sched-subj-' + id);
+  var subject = (si && si.value.trim()) || defaultSubject();
+  sb.from('scheduled_messages').update({ body: body, subject: subject }).eq('id', p.sched.id).then(function(r){
     if(r.error){ showToast('Could not save: ' + r.error.message, true); return; }
-    p.sched.body = body; delete schedEditing[id]; openDetail(id); showToast('Draft updated');
+    p.sched.body = body; p.sched.subject = subject; delete schedEditing[id]; openDetail(id); showToast('Draft updated');
   });
 }
 function pickSendChip(id, val) {
@@ -2670,11 +2681,12 @@ function scheduleSend(id) {
   } else { at = new Date(); at.setDate(at.getDate() + sel); at.setHours(9, 0, 0, 0); }
   sb.from('scheduled_messages').insert({
     artist_id: ME, pipeline_entry_id: p.uuid, to_email: p.email,
-    subject: defaultSubject(), body: body, send_at: at.toISOString(), human: now, ai_draft: draftAI[p.uuid] || null
+    subject: draftSubjectFor(p), body: body, send_at: at.toISOString(), human: now, ai_draft: draftAI[p.uuid] || null
   }).select().single().then(function(r){
     if (r.error) { showToast('Could not schedule: ' + r.error.message, true); return; }
     p.sched = r.data;
     delete draftText[p.uuid]; // committed — the scheduled body is the truth now
+    delete draftSubject[p.uuid];
     openDetail(id);
     if (now) { showToast('Sending!'); pokeWorker(); }
     else showToast('Scheduled for ' + fmtWhen(at.toISOString()));
