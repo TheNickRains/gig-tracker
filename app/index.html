@@ -2320,10 +2320,12 @@ function openDetail(id) {
         draftBlock = '<textarea class="tpl-body" id="sched-edit-' + id + '" spellcheck="false">' + esc(p.sched.body) + '</textarea>'
           + '<div class="tpl-actions">'
           + '<button class="btn-primary btn-sm" onclick="saveSchedEdit(' + id + ')"><i class="ti ti-check"></i> Save draft</button>'
-          + '<button class="btn-secondary btn-sm" onclick="cancelSchedEdit(' + id + ')">Discard changes</button></div>';
+          + '<button class="btn-secondary btn-sm" onclick="openLinkBar(\'sched-edit-' + id + '\')" title="Turn the selected words into a clickable link"><i class="ti ti-link"></i> Link</button>'
+          + '<button class="btn-secondary btn-sm" onclick="cancelSchedEdit(' + id + ')">Discard changes</button></div>'
+          + '<div id="lb-sched-edit-' + id + '" style="display:none;gap:8px;margin-top:8px"><input class="pipe-search" id="lb-url-sched-edit-' + id + '" placeholder="https://… (select words first — they become the link)" autocomplete="off" style="margin:0;flex:1" onkeydown="linkBarKey(event,\'sched-edit-' + id + '\')"><button class="btn-primary btn-sm" onclick="insertLink(\'sched-edit-' + id + '\')">Insert</button></div>';
       } else {
         draftBlock = '<div class="locked-head"><i class="ti ti-lock"></i> ' + (p.sched.status==='ready' ? 'Awaiting your review' : 'Locked — sends exactly as written') + '</div>'
-          + '<div class="locked-body">' + esc(p.sched.body) + '</div>'
+          + '<div class="locked-body">' + mdRich(p.sched.body) + '</div>'
           + '<div class="tpl-actions"><button class="btn-secondary btn-sm" onclick="editSched(' + id + ')"><i class="ti ti-pencil"></i> Edit draft</button></div>';
       }
       tplSection = '<div class="section-label" style="margin-top:4px">Scheduled draft</div>'
@@ -2345,9 +2347,11 @@ function openDetail(id) {
         + (p.email ? '<button class="btn-primary btn-sm" onclick="sendNowInline(' + id + ')"><i class="ti ti-send"></i> Send now</button>' : '')
         + (p.phone ? '<button class="btn-' + (p.email ? 'secondary' : 'primary') + ' btn-sm" onclick="textDraft(' + id + ')"><i class="ti ti-message"></i> Text it</button>' : '')
         + (p.form ? '<button class="btn-' + (p.email || p.phone ? 'secondary' : 'primary') + ' btn-sm" onclick="openBookingForm(' + id + ')"><i class="ti ti-external-link"></i> Open form</button>' : '')
+        + '<button class="btn-secondary btn-sm" onclick="openLinkBar(\'tpl-body-' + id + '\')" title="Turn the selected words into a clickable link"><i class="ti ti-link"></i> Link</button>'
         + '<button class="btn-secondary btn-sm" onclick="copyTpl(' + id + ')"><i class="ti ti-copy"></i> Copy</button>'
         + '<button class="btn-secondary btn-sm" onclick="aiDraft(' + id + ')"><i class="ti ti-sparkles"></i> ' + (activeTpl[id] ? 'Enhance with AI' : 'Draft with AI') + '</button>'
         + '</div>'
+        + '<div id="lb-tpl-body-' + id + '" style="display:none;gap:8px;margin-top:8px"><input class="pipe-search" id="lb-url-tpl-body-' + id + '" placeholder="https://… (select words first — they become the link)" autocomplete="off" style="margin:0;flex:1" onkeydown="linkBarKey(event,\'tpl-body-' + id + '\')"><button class="btn-primary btn-sm" onclick="insertLink(\'tpl-body-' + id + '\')">Insert</button></div>'
         + (p.email
           ? '<div style="border-top:0.5px solid var(--border-light);padding-top:12px;margin-top:12px">'
             + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Schedule</div>'
@@ -2415,6 +2419,40 @@ function openDetail(id) {
 
 var draftText = {}; // per-entry draft (keyed by uuid) — survives re-renders
 var draftAI = {};   // last AI generation per entry — diffed against what you send
+
+// ── Links in drafts: [text](url) — the one markdown-ism drafts understand ──
+// The worker renders it as a real <a> in the email's HTML part; every
+// plain-text exit (SMS, copy, mailto) degrades it to "text (url)".
+var MD_LINK = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+function mdStrip(s){ return (s||'').replace(MD_LINK, '$1 ($2)'); }
+function mdRich(s){ return esc(s).replace(MD_LINK, function(_, t, u){ return '<a href="' + u + '" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">' + t + '</a>'; }); }
+var linkSel = {}; // textarea id -> [selStart, selEnd] captured when the bar opened
+function openLinkBar(taId){
+  var ta = document.getElementById(taId); if (!ta) return;
+  linkSel[taId] = [ta.selectionStart, ta.selectionEnd]; // survives the focus move to the URL input
+  var bar = document.getElementById('lb-' + taId); if (!bar) return;
+  var show = bar.style.display === 'none';
+  bar.style.display = show ? 'flex' : 'none';
+  if (show) { var inp = document.getElementById('lb-url-' + taId); inp.value = ''; inp.focus(); }
+}
+function linkBarKey(e, taId){ if (e.key === 'Enter') { e.preventDefault(); insertLink(taId); } }
+function insertLink(taId){
+  var ta = document.getElementById(taId), inp = document.getElementById('lb-url-' + taId);
+  if (!ta || !inp) return;
+  var url = (inp.value || '').trim();
+  if (!url) { showToast('Paste the URL first', true); return; }
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  var se = linkSel[taId] || [ta.value.length, ta.value.length];
+  var label = ta.value.slice(se[0], se[1]).trim();
+  if (!label) { try { label = new URL(url).hostname.replace(/^www\./,''); } catch(e){ label = 'link'; } }
+  var md = '[' + label + '](' + url + ')';
+  ta.value = ta.value.slice(0, se[0]) + md + ta.value.slice(se[1]);
+  ta.dispatchEvent(new Event('input')); // fires oninput so draftText stays in sync
+  document.getElementById('lb-' + taId).style.display = 'none';
+  var pos = se[0] + md.length;
+  ta.focus(); ta.setSelectionRange(pos, pos);
+  showToast('Link in — sends as clickable text');
+}
 function switchTpl(id, key) {
   var p = pipeline[id];
   if (!key) { activeTpl[id] = null; openDetail(id); return; }
@@ -2430,7 +2468,7 @@ function stageIntent(p){
   return 'pitch';
 }
 function copyTpl(id) {
-  var txt = document.getElementById('tpl-body-' + id).value;
+  var txt = mdStrip(document.getElementById('tpl-body-' + id).value);
   navigator.clipboard.writeText(txt).catch(function(){});
   showToast();
 }
@@ -2466,7 +2504,7 @@ function aiDraft(id) {
 }
 function emailTpl(id) {
   var p = pipeline[id];
-  var body = document.getElementById('tpl-body-' + id).value;
+  var body = mdStrip(document.getElementById('tpl-body-' + id).value);
   window.open('mailto:' + p.email + '?subject=' + encodeURIComponent(defaultSubject()) + '&body=' + encodeURIComponent(body));
 }
 
@@ -2518,7 +2556,7 @@ function pickVenueResult(i){
 // ── Off-grid channels: text the draft, log exchanges by hand — same engine ──
 function textDraft(id){
   var p = pipeline[id];
-  var body = (draftText[p.uuid] !== undefined ? draftText[p.uuid] : (document.getElementById('tpl-body-' + id) || {value:''}).value).trim();
+  var body = mdStrip((draftText[p.uuid] !== undefined ? draftText[p.uuid] : (document.getElementById('tpl-body-' + id) || {value:''}).value).trim());
   var digits = (p.phone || '').replace(/[^+0-9]/g, '');
   if (!digits) { showToast('No phone on this contact', true); return; }
   location.href = 'sms:' + digits + '?&body=' + encodeURIComponent(body);
@@ -2661,7 +2699,7 @@ function cancelScheduled(id) {
 }
 function openScheduledInEmail(id) {
   var p = pipeline[id]; if (!p.sched) return;
-  window.open('mailto:' + p.sched.to_email + '?subject=' + encodeURIComponent(p.sched.subject) + '&body=' + encodeURIComponent(p.sched.body));
+  window.open('mailto:' + p.sched.to_email + '?subject=' + encodeURIComponent(p.sched.subject) + '&body=' + encodeURIComponent(mdStrip(p.sched.body)));
 }
 function markScheduledSent(id) {
   var p = pipeline[id]; if (!p.sched) return;
@@ -3367,12 +3405,16 @@ function loadAll(){ loadProfile(); loadVenues(); loadPipeline(); loadAvail(); lo
 // Live updates over websockets: when the worker writes a reply/stage change,
 // Supabase Realtime pushes it here and we refresh — no manual reload. RLS means
 // each user only receives their own rows.
-var rtSubscribed = false;
+//
+// The socket is MORTAL: phones kill it on lock/background, and Supabase drops
+// it when the hour-old JWT it connected with expires. Missed events are never
+// replayed — so recovery is always resubscribe AND refetch, never just one.
+var rtChannel = null, rtRetryTimer = null, rtRetryMs = 2000;
 var currentDetailUuid = null;
 function subscribeRealtime(){
-  if(rtSubscribed || !sb.channel) return;
-  rtSubscribed = true;
-  sb.channel('pipeline-rt')
+  if(!sb.channel) return;
+  if(rtChannel){ try { sb.removeChannel(rtChannel); } catch(e){} rtChannel = null; }
+  var ch = sb.channel('pipeline-rt')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, function(){ loadPipeline(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pipeline_entries' }, function(){ loadPipeline(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'scheduled_messages' }, function(){ loadPipeline(); })
@@ -3386,8 +3428,52 @@ function subscribeRealtime(){
       feedCache = null; renderFeed();
       if (currentScreen==='venue' && currentVenueId) loadVenueComments(currentVenueId);
     })
-    .subscribe();
+    .subscribe(function(status){
+      if (ch !== rtChannel) return; // a torn-down channel reporting CLOSED — ignore
+      if (status === 'SUBSCRIBED') { rtRetryMs = 2000; return; }
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') scheduleRtRetry();
+    });
+  rtChannel = ch;
 }
+function scheduleRtRetry(){
+  if (rtRetryTimer) return;
+  rtRetryTimer = setTimeout(function(){
+    rtRetryTimer = null;
+    if (document.visibilityState === 'hidden') { scheduleRtRetry(); return; } // wakeSync handles resume
+    rtRetryMs = Math.min(rtRetryMs * 2, 60000);
+    refreshRtAuth(function(){ subscribeRealtime(); refetchAll(); });
+  }, rtRetryMs);
+}
+// getSession() refreshes an expired access token; feeding it to the realtime
+// socket is what keeps the channel authorized past the first hour.
+function refreshRtAuth(cb){
+  sb.auth.getSession().then(function(s){
+    var t = s.data && s.data.session && s.data.session.access_token;
+    try { if (t && sb.realtime) sb.realtime.setAuth(t); } catch(e){}
+    if (cb) cb();
+  });
+}
+function refetchAll(){
+  loadPipeline(); loadUnmatched();
+  if (currentScreen==='calendar') loadAvail();
+  feedCache = null; renderFeed();
+}
+// Coming back from the background (tab switch, phone unlock, PWA resume): the
+// page is still alive but the socket usually isn't — and nothing that happened
+// while asleep will ever be pushed. Reauth, resubscribe if dead, refetch.
+var lastHiddenAt = 0;
+document.addEventListener('visibilitychange', function(){
+  if (document.visibilityState === 'hidden') { lastHiddenAt = Date.now(); return; }
+  if (!APP_SHOWN) return;
+  refreshRtAuth(function(){
+    var dead = !rtChannel || rtChannel.state !== 'joined';
+    if (dead) subscribeRealtime();
+    if (dead || Date.now() - lastHiddenAt > 5000) refetchAll();
+  });
+});
+window.addEventListener('online', function(){
+  if (APP_SHOWN) refreshRtAuth(function(){ subscribeRealtime(); refetchAll(); });
+});
 
 function loadProfile(){
   sb.from('artists').select('*').eq('id',ME).single().then(function(r){
@@ -4032,7 +4118,12 @@ if(!window.GIG_CONFIG || !window.GIG_CONFIG.SUPABASE_URL || window.GIG_CONFIG.SU
   // Defer the token write out of the auth callback: supabase-js holds an internal
   // lock during onAuthStateChange, so a nested DB write goes out unauthenticated
   // (auth.uid() = null) and trips RLS. setTimeout(0) lets the session attach first.
-  sb.auth.onAuthStateChange(function(_event, session){ if(session){ showApp(session); setTimeout(function(){ captureGoogleToken(session); }, 0); } });
+  sb.auth.onAuthStateChange(function(_event, session){ if(session){
+    // Every refresh (TOKEN_REFRESHED fires ~hourly) re-arms the realtime socket
+    // with the new JWT — without this the channel dies silently after an hour.
+    try { if (sb.realtime && session.access_token) sb.realtime.setAuth(session.access_token); } catch(e){}
+    showApp(session); setTimeout(function(){ captureGoogleToken(session); }, 0);
+  } });
 }
 </script>
 </body>

@@ -163,30 +163,49 @@ function header(msg, name) {
 function b64url(s) { return Buffer.from(s).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
 function mimeWord(s) { return /[^\x20-\x7E]/.test(s) ? "=?UTF-8?B?" + Buffer.from(s).toString("base64") + "?=" : s; }
 function escHtml(t) { return (t || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+// Drafts speak one markdown-ism: [text](url) becomes a real link in the HTML
+// part; the plain-text part degrades it to "text (url)". Bare URLs get
+// linkified too — Gmail renders text/html verbatim and won't do it for us.
+const MD_LINK = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+function mdToPlain(t) { return (t || "").replace(MD_LINK, "$1 ($2)"); }
+function mdToHtml(t) {
+  const linkify = (s) => escHtml(s).replace(/https?:\/\/[^\s<]+/g, (u) => {
+    const clean = u.replace(/[.,;:!?]+$/, ""); // sentence punctuation isn't part of the URL
+    return '<a href="' + clean + '">' + clean + "</a>" + u.slice(clean.length);
+  });
+  const parts = [];
+  let last = 0, m;
+  MD_LINK.lastIndex = 0;
+  while ((m = MD_LINK.exec(t || ""))) {
+    parts.push(linkify(t.slice(last, m.index)));
+    parts.push('<a href="' + escHtml(m[2]) + '">' + escHtml(m[1]) + "</a>");
+    last = m.index + m[0].length;
+  }
+  parts.push(linkify((t || "").slice(last)));
+  return parts.join("").replace(/\r?\n/g, "<br>");
+}
 async function gmailSend(token, to, subject, body, thread, sig) {
   let headers = `To: ${to}\r\nSubject: ${mimeWord(subject)}\r\nMIME-Version: 1.0\r\n`;
   if (thread && thread.msgId) headers += `In-Reply-To: ${thread.msgId}\r\nReferences: ${thread.msgId}\r\n`;
-  let raw;
-  if (sig && (sig.logo || sig.name)) {
-    // multipart/alternative: plain text + HTML with the branded signature
-    const sigText = "\n\n--\n" + [sig.name, sig.phone, sig.site].filter(Boolean).join(" · ");
-    const sigHtml = '<br><br><div style="border-top:1px solid #ddd;padding-top:12px;margin-top:4px">'
+  // Always multipart/alternative (even without a signature) so [text](url)
+  // links render everywhere; plain-text readers get the degraded body.
+  const hasSig = sig && (sig.logo || sig.name);
+  const sigText = hasSig ? "\n\n--\n" + [sig.name, sig.phone, sig.site].filter(Boolean).join(" · ") : "";
+  const sigHtml = hasSig
+    ? '<br><br><div style="border-top:1px solid #ddd;padding-top:12px;margin-top:4px">'
       + (sig.logo ? '<img src="' + sig.logo + '" width="120" alt="' + escHtml(sig.name || "") + '" style="display:block;margin-bottom:8px"><br>' : "")
       + '<strong style="font:14px -apple-system,Segoe UI,Helvetica,Arial,sans-serif">' + escHtml(sig.name || "") + "</strong>"
       + '<div style="font:12px/1.5 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#666">'
-      + [sig.phone, sig.site].filter(Boolean).map(escHtml).join(" · ") + "</div></div>";
-    // literal <br> tags, not white-space CSS — several clients (Spark, Outlook) strip it
-    const htmlBody = '<div style="font:14px/1.55 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#222">' + escHtml(body).replace(/\r?\n/g, "<br>") + "</div>" + sigHtml;
-    const bnd = "gigc_" + Date.now().toString(36);
-    headers += `Content-Type: multipart/alternative; boundary="${bnd}"\r\n`;
-    raw =
-      headers + "\r\n" +
-      `--${bnd}\r\nContent-Type: text/plain; charset="UTF-8"\r\n\r\n` + body + sigText + `\r\n` +
-      `--${bnd}\r\nContent-Type: text/html; charset="UTF-8"\r\n\r\n` + htmlBody + `\r\n--${bnd}--`;
-  } else {
-    headers += `Content-Type: text/plain; charset="UTF-8"\r\n`;
-    raw = headers + "\r\n" + body;
-  }
+      + [sig.phone, sig.site].filter(Boolean).map(escHtml).join(" · ") + "</div></div>"
+    : "";
+  // literal <br> tags, not white-space CSS — several clients (Spark, Outlook) strip it
+  const htmlBody = '<div style="font:14px/1.55 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#222">' + mdToHtml(body) + "</div>" + sigHtml;
+  const bnd = "gigc_" + Date.now().toString(36);
+  headers += `Content-Type: multipart/alternative; boundary="${bnd}"\r\n`;
+  const raw =
+    headers + "\r\n" +
+    `--${bnd}\r\nContent-Type: text/plain; charset="UTF-8"\r\n\r\n` + mdToPlain(body) + sigText + `\r\n` +
+    `--${bnd}\r\nContent-Type: text/html; charset="UTF-8"\r\n\r\n` + htmlBody + `\r\n--${bnd}--`;
   const payload = { raw: b64url(raw) };
   if (thread && thread.threadId) payload.threadId = thread.threadId;
   const r = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
@@ -759,8 +778,8 @@ async function handleAiDraft(req, res, bodyStr) {
     const draft = await gemini(
       `TODAY IS ${today}. Never propose dates in the past; prefer concrete dates at least 5 days out (e.g. "Friday June 20"), and resolve phrases like "this weekend" against today.\n\n` +
       (isTextThread
-        ? `CHANNEL: TEXT MESSAGE (SMS). This thread lives in texts — NOT email. Write 1-3 short sentences, casual and direct: no greeting line, NO sign-off of any kind (no name, no phone — texts from the artist's own phone carry identity), no "email" vocabulary, links only if essential. It should read like a text from a friend who's also a pro.\n\n`
-        : `CHANNEL: EMAIL. Plain text only — no subject line, no markdown, no placeholders/brackets, under 160 words, direct and human (never marketing copy). Do NOT add a signature, name, or phone number at the end — the artist's branded signature is appended automatically on send. End with the ask, or at most a short "Thanks," line.\n\n`) +
+        ? `CHANNEL: TEXT MESSAGE (SMS). This thread lives in texts — NOT email. Write 1-3 short sentences, casual and direct: no greeting line, NO sign-off of any kind (no name, no phone — texts from the artist's own phone carry identity), no "email" vocabulary, links only if essential (and then as a bare URL, never [text](url) syntax). It should read like a text from a friend who's also a pro.\n\n`
+        : `CHANNEL: EMAIL. Plain text only — no subject line, no formatting, no placeholders, under 160 words, direct and human (never marketing copy). ONE exception: a hyperlink may be written as [text](https://url) — it renders as clickable words, e.g. "[hear the live set](URL)" — use it for the listen/EPK link when one fits naturally, instead of pasting a raw URL. Do NOT add a signature, name, or phone number at the end — the artist's branded signature is appended automatically on send. End with the ask, or at most a short "Thanks," line.\n\n`) +
       (enhance ? enhanceObjective : objective) + "\n\n" +
       `DEAL STAGE: ${e.status}${gigWhen ? " · TARGET DATE: " + gigWhen : ""}\n` +
       (lastInbound ? `THEIR LAST MESSAGE (answer this):\n"""${lastInbound.slice(0, 600)}"""\n` : "") +
