@@ -3425,7 +3425,10 @@ var rtChannel = null, rtRetryTimer = null, rtRetryMs = 2000;
 var currentDetailUuid = null;
 function subscribeRealtime(){
   if(!sb.channel) return;
-  if(rtChannel){ try { sb.removeChannel(rtChannel); } catch(e){} rtChannel = null; }
+  // Detach BEFORE removing: teardown fires the old channel's CLOSED callback
+  // synchronously, while it still === rtChannel — the guard below would pass,
+  // schedule a retry, and the retry loop feeds itself forever (2s refetch jitter).
+  if(rtChannel){ var old = rtChannel; rtChannel = null; try { sb.removeChannel(old); } catch(e){} }
   var ch = sb.channel('pipeline-rt')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, function(){ loadPipeline(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pipeline_entries' }, function(){ loadPipeline(); })
@@ -3452,6 +3455,7 @@ function scheduleRtRetry(){
   rtRetryTimer = setTimeout(function(){
     rtRetryTimer = null;
     if (document.visibilityState === 'hidden') { scheduleRtRetry(); return; } // wakeSync handles resume
+    if (rtChannel && rtChannel.state === 'joined') { rtRetryMs = 2000; return; } // channel recovered on its own — don't tear it down
     rtRetryMs = Math.min(rtRetryMs * 2, 60000);
     refreshRtAuth(function(){ subscribeRealtime(); refetchAll(); });
   }, rtRetryMs);
