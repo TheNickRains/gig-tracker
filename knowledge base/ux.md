@@ -67,13 +67,13 @@ Route `#venue/<uuid>` (`openVenueDetail`). The collective's shared view of one r
 
 **Header** — venue-type icon chip, name, type · city, state · pay meta line, ticket badge.
 
-**Details card** — one `field-row` per venue field: Booking contact (only when set — contacts are edited from deals, not here) · Pay · Address · Booking form (live link) · Clientele · Notes (`notesBlock_`: ≤80 chars single-line = label/value row, longer = full-width pre-wrap block). **Empty fields still render** as a tappable "Add ✎" row that opens Edit — a field is never invisible just because it's unset (parity rule: everything the detail shows, Edit can change).
+**Details card** — one `field-row` per venue field: Booking contact (only when set — contacts are edited from deals, not here) · Phone (`tel:` link) · Website (live link) · Pay · Address · Booking form (live link) · Clientele · Notes (`notesBlock_`: ≤80 chars single-line = label/value row, longer = full-width pre-wrap block). **Empty fields still render** as a tappable "Add ✎" row that opens Edit — a field is never invisible just because it's unset (parity rule: everything the detail shows, Edit can change).
 
 **Location** — Google Maps embed when any of address/city/state exist; placeholder card pointing at Edit otherwise.
 
 **Collective intel** — "Added by {name}" credit, wins wall (avatars of members who booked/played it), AI pulse summary, threaded comments (one reply level, 👍/👎 reactions, delete own) + composer ("Share intel for the collective…").
 
-**Edit venue** (`openVenueEdit`, same container) — form fields: name*, city, state, ticket type (soft/hard select), venue type, rate/pay, address, booking form URL, clientele, notes (textarea). Save updates the shared `venues` row (RLS: any member may edit any venue) and clears a field when blanked; Cancel/Back returns to detail.
+**Edit venue** (`openVenueEdit`, same container) — form fields: name*, city, state, ticket type (soft/hard select), venue type, rate/pay, address, venue phone + website (row-2), booking form URL, clientele, notes (textarea). Save updates the shared `venues` row (RLS: any member may edit any venue) and clears a field when blanked; Cancel/Back returns to detail.
 
 ---
 
@@ -154,12 +154,16 @@ Full CRM view for one venue. Accessed from My pipeline.
 Two large buttons: Soft ticket (glass icon) · Hard ticket (armchair icon). Selection persists to step 2 and determines venue type options.
 
 **Step 2 — Venue details**
-- Venue name
-- City + State (2-column grid)
+- "Find the venue" Maps search (`venueSearch` → worker `/places/search`, 350ms debounce): picking a result fills name/city/state/address/phone/website below, all visible + correctable
+- Venue name*
+- City* + State* (2-column grid)
 - Venue type (select, options cascade from step 1 selection)
   - Soft: Bar / Pub, Coffee shop, Restaurant, Hotel bar, Winery / Brewery, Casino floor, Festival stage, Other
   - Hard: Listening room, Theater, Concert hall, Performing arts center, Music club (ticketed), Other
 - "Other" selection spawns a free-text input below the select
+- Address (optional)
+- Venue phone + Website (2-column grid — dedicated `venues.phone`/`venues.website` columns, migration 032; they used to be appended to notes)
+- Booking form URL
 
 **Step 3 — Pay & booking contact**
 - Pay low ($) + Pay high ($) (2-column grid)
