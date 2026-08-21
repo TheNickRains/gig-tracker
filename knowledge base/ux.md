@@ -59,6 +59,24 @@ Map view: deferred to v2.
 
 ---
 
+## Venue detail (Discover)
+
+Route `#venue/<uuid>` (`openVenueDetail`). The collective's shared view of one room — distinct from Pipeline detail (your deal on it).
+
+**Top row** — "← Back" + chips: pipeline state ("In pipeline" check / "In play — {deal}" link / "+ to Pipeline" primary) · Edit · Delete (two-tap armed confirm).
+
+**Header** — venue-type icon chip, name, type · city, state · pay meta line, ticket badge.
+
+**Details card** — one `field-row` per venue field: Booking contact (only when set — contacts are edited from deals, not here) · Pay · Address · Booking form (live link) · Clientele · Notes (`notesBlock_`: ≤80 chars single-line = label/value row, longer = full-width pre-wrap block). **Empty fields still render** as a tappable "Add ✎" row that opens Edit — a field is never invisible just because it's unset (parity rule: everything the detail shows, Edit can change).
+
+**Location** — Google Maps embed when any of address/city/state exist; placeholder card pointing at Edit otherwise.
+
+**Collective intel** — "Added by {name}" credit, wins wall (avatars of members who booked/played it), AI pulse summary, threaded comments (one reply level, 👍/👎 reactions, delete own) + composer ("Share intel for the collective…").
+
+**Edit venue** (`openVenueEdit`, same container) — form fields: name*, city, state, ticket type (soft/hard select), venue type, rate/pay, address, booking form URL, clientele, notes (textarea). Save updates the shared `venues` row (RLS: any member may edit any venue) and clears a field when blanked; Cancel/Back returns to detail.
+
+---
+
 ## Pipeline (renamed from "My pipeline")
 
 Personal CRM. Stages (the spine): **Lead → Pitched → In talks → Hold → Booked → Played**, with exits **Passed** (recyclable no — fair to circle back) and **Dead end** (terminal — never resurface). Hold appears only for hard-ticket venues. Follow-up is not a stage; it's a scheduled action (slice B).

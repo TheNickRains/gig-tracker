@@ -3888,7 +3888,13 @@ function openVenueDetail(id){
     mapBlock = '<div class="section-label" style="margin-top:4px">Location <span class="soon">map: coming soon</span></div>'
       + '<div class="card placeholder" style="text-align:center;color:var(--text-tertiary);font-size:13px;padding:28px 16px;margin-bottom:20px">Add an address (Edit ↑) to place this venue on a map.</div>';
   }
-  var row = function(label, val){ return val ? ('<div class="field-row"><span class="field-label">' + label + '</span><span class="field-value">' + esc(val) + '</span></div>') : ''; };
+  // Every field the venue carries gets a row — empty ones become an "Add"
+  // affordance into Edit, so nothing is invisible just because it's unset.
+  var row = function(label, val){
+    return val
+      ? '<div class="field-row"><span class="field-label">' + label + '</span><span class="field-value">' + esc(val) + '</span></div>'
+      : '<div class="field-row" style="cursor:pointer" onclick="openVenueEdit(\'' + v.id + '\')" title="Add ' + label.toLowerCase() + '"><span class="field-label">' + label + '</span><span class="field-value empty">Add <i class="ti ti-pencil" style="font-size:11px"></i></span></div>';
+  };
   document.getElementById('venue-container').innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
     + '<button class="back-btn" style="margin-bottom:0" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>'
@@ -3909,13 +3915,14 @@ function openVenueDetail(id){
     + '<span class="badge badge-' + v.type + '" style="margin-top:6px">' + (v.type==='hard'?'Hard ticket':'Soft ticket') + '</span></div>'
     + '</div></div>'
     + '<div class="card card-flush" style="margin-bottom:20px">'
-    + row('Booking contact', v.contact && v.contact!=='—' ? v.contact : '')
+    + (v.contact && v.contact!=='—' ? row('Booking contact', v.contact) : '')
     + row('Pay', v.pay && v.pay!=='—' ? v.pay : '')
     + row('Address', v.address)
-    + (v.form ? '<div class="field-row"><span class="field-label">Booking form</span><a class="field-value fv-ell" style="color:var(--talks-text)" target="_blank" rel="noopener" href="' + esc(linkUrl(v.form)) + '">' + esc(v.form) + '</a></div>' : '')
+    + (v.form
+        ? '<div class="field-row"><span class="field-label">Booking form</span><a class="field-value fv-ell" style="color:var(--talks-text)" target="_blank" rel="noopener" href="' + esc(linkUrl(v.form)) + '">' + esc(v.form) + '</a></div>'
+        : row('Booking form', ''))
     + row('Clientele', v.clientele)
-    + (v.notes ? notesBlock_(v.notes) : '')
-    + (!(v.contact && v.contact!=='—') && !v.address && !v.clientele && !v.notes && (!v.pay || v.pay==='—') ? '<div class="field-row"><span class="field-value empty">No details yet — tap Edit to add them.</span></div>' : '')
+    + (v.notes ? notesBlock_(v.notes) : row('Notes', ''))
     + '</div>'
     + mapBlock
     + '<div class="section-label" style="margin-top:16px">Collective intel</div>'
@@ -4096,6 +4103,7 @@ function openVenueEdit(id){
     + '<div class="form-field"><label class="form-label">Venue type</label><input class="form-input" id="ev-vtype" value="'+esc(v.vtype)+'"></div>'
     + '<div class="form-field"><label class="form-label">Rate / pay</label><input class="form-input" id="ev-payrange" placeholder="$150/hr (soft) or $300–500 (hard)" value="'+esc(v.pay==='—'?'':v.pay)+'"></div>'
     + '<div class="form-field"><label class="form-label">Address</label><input class="form-input" id="ev-address" value="'+esc(v.address)+'"></div>'
+    + '<div class="form-field"><label class="form-label">Booking form URL <span style="font-weight:400;color:var(--text-tertiary)">(if they book via web form)</span></label><input class="form-input" id="ev-form" placeholder="venue.com/booking" value="'+esc(v.form)+'"></div>'
     + '<div class="form-field"><label class="form-label">Typical clientele</label><input class="form-input" id="ev-clientele" value="'+esc(v.clientele)+'"></div>'
     + '<div class="form-field"><label class="form-label">Notes</label><textarea class="form-textarea" id="ev-notes">'+esc(v.notes)+'</textarea></div>'
     + '<div class="save-row"><button class="btn-primary" onclick="saveVenue(\''+v.id+'\')">Save changes</button><button class="btn-secondary" onclick="openVenueDetail(\''+v.id+'\')">Cancel</button></div>';
@@ -4104,16 +4112,15 @@ function openVenueEdit(id){
 function saveVenue(id){
   var g=function(i){ var e=document.getElementById(i); return e?e.value.trim():''; };
   if(!g('ev-name')){ alert('Venue name is required.'); return; }
-  var addr=g('ev-address');
   var payload = { name:g('ev-name'), city:g('ev-city')||null, state:(g('ev-state')||'').toUpperCase()||null,
     ticket_type:g('ev-ticket'), venue_type:g('ev-vtype')||null, pay_range:g('ev-payrange')||null,
+    address:g('ev-address')||null, booking_form_url:g('ev-form')||null,
     clientele:g('ev-clientele')||null, notes:g('ev-notes')||null };
-  if(addr) payload.address=addr;
   sb.from('venues').update(payload).eq('id',id).then(function(r){
     if(r.error){ alert('Could not save: '+r.error.message); return; }
     var v = venues.filter(function(x){ return x.id===id; })[0];
     if(v){ v.name=payload.name; v.city=payload.city||''; v.state=payload.state||''; v.type=payload.ticket_type;
-           v.vtype=payload.venue_type||''; v.pay=payload.pay_range||'—'; v.address=addr; v.clientele=payload.clientele||''; v.notes=payload.notes||''; }
+           v.vtype=payload.venue_type||''; v.pay=payload.pay_range||'—'; v.address=payload.address||''; v.form=payload.booking_form_url||''; v.clientele=payload.clientele||''; v.notes=payload.notes||''; }
     loadVenues();
     openVenueDetail(id);
   });
