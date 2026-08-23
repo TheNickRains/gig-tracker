@@ -2351,7 +2351,8 @@ function openDetail(id) {
         + '<div class="tpl-actions">'
         + (p.email ? '<button class="btn-primary btn-sm" onclick="sendNowInline(' + id + ')"><i class="ti ti-send"></i> Send now</button>' : '')
         + (p.phone ? '<button class="btn-' + (p.email ? 'secondary' : 'primary') + ' btn-sm" onclick="textDraft(' + id + ')"><i class="ti ti-message"></i> Text it</button>' : '')
-        + (p.form ? '<button class="btn-' + (p.email || p.phone ? 'secondary' : 'primary') + ' btn-sm" onclick="openBookingForm(' + id + ')"><i class="ti ti-external-link"></i> Open form</button>' : '')
+        + (p.instagram ? '<button class="btn-' + (p.email || p.phone ? 'secondary' : 'primary') + ' btn-sm" onclick="igDraft(' + id + ')"><i class="ti ti-brand-instagram"></i> DM it</button>' : '')
+        + (p.form ? '<button class="btn-' + (p.email || p.phone || p.instagram ? 'secondary' : 'primary') + ' btn-sm" onclick="openBookingForm(' + id + ')"><i class="ti ti-external-link"></i> Open form</button>' : '')
         + '<button class="btn-secondary btn-sm" onclick="openLinkBar(\'tpl-body-' + id + '\')" title="Turn the selected words into a clickable link"><i class="ti ti-link"></i> Link</button>'
         + '<button class="btn-secondary btn-sm" onclick="copyTpl(' + id + ')"><i class="ti ti-copy"></i> Copy</button>'
         + '<button class="btn-secondary btn-sm" onclick="aiDraft(' + id + ')"><i class="ti ti-sparkles"></i> ' + (activeTpl[id] ? 'Enhance with AI' : 'Draft with AI') + '</button>'
@@ -2406,7 +2407,7 @@ function openDetail(id) {
     +       '<button class="cc-opt' + (qlDir[p.uuid]==='in'?' on':'') + '" onclick="setQlDir(' + id + ',\'in\',this)">' + esc(first) + '</button>'
     +     '</div>'
     +     '<div class="cc-channels">'
-    + [['💬','Text'],['📞','Call'],['📝','Form'],['🤝','Met'],['✉️','Email']].map(function(ch){
+    + [['💬','Text'],['📸','DM'],['📞','Call'],['📝','Form'],['🤝','Met'],['✉️','Email']].map(function(ch){
         return '<button class="cc-ch' + ((quickLogChannel[p.uuid]||'💬')===ch[0]?' on':'') + '" onclick="setQlChan(' + id + ',\'' + ch[0] + '\',this)" title="' + ch[1] + '">' + ch[0] + '</button>';
       }).join('')
     +     '</div>'
@@ -2486,7 +2487,7 @@ function draftSubjectFor(p){ // your subject if you wrote one; blank falls back 
 
 // ── Slice C: AI drafting (Gemini lives in the worker; the key never reaches the browser) ──
 var WORKER_URL = 'https://gig-worker-production.up.railway.app';
-function aiDraft(id) {
+function aiDraft(id, channel) {
   var p = pipeline[id];
   showToast('Drafting with AI…');
   sb.auth.getSession().then(function(s){
@@ -2499,7 +2500,8 @@ function aiDraft(id) {
         entry_id: p.uuid,
         mode: activeTpl[id] ? 'enhance' : 'draft',
         template_kind: activeTpl[id] || null,
-        template_text: activeTpl[id] ? ((document.getElementById('tpl-body-' + id) || {value:''}).value || '') : null
+        template_text: activeTpl[id] ? ((document.getElementById('tpl-body-' + id) || {value:''}).value || '') : null,
+        channel: channel || null
       })
     }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
       .then(function(x){
@@ -2507,7 +2509,7 @@ function aiDraft(id) {
         draftText[p.uuid] = x.j.draft || '';
         draftAI[p.uuid] = x.j.draft || '';
         var ta = document.getElementById('tpl-body-' + id);
-        if (ta) { ta.value = draftText[p.uuid]; showToast('Draft ready — make it yours before sending'); }
+        if (ta) { ta.value = draftText[p.uuid]; showToast(channel === 'dm' ? 'DM draft ready — tap DM it to copy & open Instagram' : 'Draft ready — make it yours before sending'); }
       })
       .catch(function(e){ showToast('AI draft failed: ' + e.message, true); });
   });
@@ -2573,6 +2575,24 @@ function textDraft(id){
   // Pre-arm the composer so one line captures what went out.
   qlDir[p.uuid] = 'out'; quickLogChannel[p.uuid] = '💬'; composeOpen[p.uuid] = true;
   setTimeout(function(){ openDetail(id); }, 400);
+}
+// Instagram DMs can't be automated (Meta's API can't initiate a DM — only reply
+// inside a 24h window), so the flow is assisted: short AI draft → clipboard →
+// straight into their DM thread. First tap on an empty box writes the DM.
+function igDraft(id){
+  var p = pipeline[id];
+  var handle = (p.instagram || '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/^@/, '').replace(/\/.*$/, '');
+  if (!handle) { showToast('No Instagram on this contact', true); return; }
+  var body = mdStrip((draftText[p.uuid] !== undefined ? draftText[p.uuid] : (document.getElementById('tpl-body-' + id) || {value:''}).value).trim());
+  if (!body) { aiDraft(id, 'dm'); return; }
+  var done = function(){
+    window.open('https://ig.me/m/' + handle, '_blank', 'noopener');
+    qlDir[p.uuid] = 'out'; quickLogChannel[p.uuid] = '📸'; composeOpen[p.uuid] = true;
+    showToast('Draft copied — paste it in their DMs, then log it below');
+    setTimeout(function(){ openDetail(id); }, 400);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(body).then(done, done);
+  else done();
 }
 var qlDir = {};            // 'out' (default) | 'in'
 var composeOpen = {};
@@ -3863,21 +3883,50 @@ function wizSubmit(ticket){
 
 // ── Edit a venue (shared collective layer) ──────────────
 function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-// Render multi-line notes as a dash listicle; single line stays plain text.
-// Short note -> normal label/value row. Long note -> full-width block that
-// keeps the note's own formatting (no injected bullets; phones get the width).
-function notesBlock_(s){
-  s = String(s||'');
-  if (s.length <= 80 && s.indexOf('\n') < 0) {
-    return '<div class="field-row"><span class="field-label">Notes</span><span class="field-value">' + esc(s) + '</span></div>';
-  }
-  return '<div class="field-row" style="display:block">'
-    + '<span class="field-label" style="display:block;margin-bottom:6px">Notes</span>'
-    + '<div style="font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + esc(s.trim()) + '</div></div>';
+// Quick-edit fields on the venue detail: tap a row, type, Enter. One field at
+// a time (vEditField). Identity fields (name/city/state/types) stay in Edit.
+var VFIELDS = {
+  phone:     { label:'Phone',        col:'phone',            ph:'(713) 555-0182', link:'tel' },
+  website:   { label:'Website',      col:'website',          ph:'venue.com', link:'url' },
+  pay:       { label:'Pay',          col:'pay_range',        ph:'$150/hr (soft) or $300–500 (hard)' },
+  address:   { label:'Address',      col:'address',          ph:'Street address — powers the map' },
+  form:      { label:'Booking form', col:'booking_form_url', ph:'venue.com/booking', link:'url' },
+  clientele: { label:'Clientele',    col:'clientele',        ph:'e.g. Americana fans, 35–55, seated' },
+  notes:     { label:'Notes',        col:'notes',            ph:'Load-in details, who to name-drop…', area:true }
+};
+var vEditField = null;
+function vFieldVal(v, k){
+  var val = v[k] || '';
+  if (k === 'pay') val = (v.pay && v.pay !== '—') ? v.pay : '';
+  return val;
+}
+function startVField(k){
+  vEditField = k;
+  openVenueDetail(currentVenueId);
+  var el = document.getElementById('vf-in');
+  if (el) { el.focus(); try { var n = el.value.length; el.setSelectionRange(n, n); } catch(e){} }
+}
+function vFieldKey(e, k){
+  if (e.key === 'Escape') { vEditField = null; openVenueDetail(currentVenueId); return; }
+  if (e.key === 'Enter' && (!VFIELDS[k].area || e.metaKey || e.ctrlKey)) { e.preventDefault(); saveVField(k); }
+}
+function saveVField(k){
+  var f = VFIELDS[k], el = document.getElementById('vf-in'); if (!el) return;
+  var val = el.value.trim(), vid = currentVenueId;
+  var patch = {}; patch[f.col] = val || null;
+  sb.from('venues').update(patch).eq('id', vid).then(function(r){
+    if (r.error) { showToast('Could not save: ' + r.error.message, true); return; }
+    var v = venues.filter(function(x){ return x.id === vid; })[0];
+    if (v) v[k] = (k === 'pay') ? (val || '—') : val;
+    vEditField = null;
+    openVenueDetail(vid);
+    showToast(f.label + ' saved');
+  });
 }
 function openVenueDetail(id){
   var v = venues.filter(function(x){ return x.id===id; })[0];
   if(!v) return;
+  if (currentVenueId !== id) vEditField = null; // don't carry an open editor to another venue
   currentVenueId = id;
   var loc = [v.address, v.city, v.state].filter(function(x){ return x; }).join(', ');
   var mapBlock;
@@ -3888,14 +3937,34 @@ function openVenueDetail(id){
       + '</div>';
   } else {
     mapBlock = '<div class="section-label" style="margin-top:4px">Location <span class="soon">map: coming soon</span></div>'
-      + '<div class="card placeholder" style="text-align:center;color:var(--text-tertiary);font-size:13px;padding:28px 16px;margin-bottom:20px">Add an address (Edit ↑) to place this venue on a map.</div>';
+      + '<div class="card placeholder" style="text-align:center;color:var(--text-tertiary);font-size:13px;padding:28px 16px;margin-bottom:20px">Tap Address above to add one — it places this venue on the map.</div>';
   }
-  // Every field the venue carries gets a row — empty ones become an "Add"
-  // affordance into Edit, so nothing is invisible just because it's unset.
-  var row = function(label, val){
-    return val
-      ? '<div class="field-row"><span class="field-label">' + label + '</span><span class="field-value">' + esc(val) + '</span></div>'
-      : '<div class="field-row" style="cursor:pointer" onclick="openVenueEdit(\'' + v.id + '\')" title="Add ' + label.toLowerCase() + '"><span class="field-label">' + label + '</span><span class="field-value empty">Add <i class="ti ti-pencil" style="font-size:11px"></i></span></div>';
+  // Every field is a QUICK edit in place — tap a row, type, Enter. The full
+  // Edit form remains for identity fields (name/city/state/types).
+  var vrow = function(k){
+    var f = VFIELDS[k], val = vFieldVal(v, k);
+    if (vEditField === k) {
+      var inputHtml = f.area
+        ? '<textarea class="note-input" id="vf-in" rows="3" placeholder="' + esc(f.ph) + '" onkeydown="vFieldKey(event,\'' + k + '\')">' + esc(val) + '</textarea>'
+        : '<input class="note-input" id="vf-in" placeholder="' + esc(f.ph) + '" value="' + esc(val) + '" onkeydown="vFieldKey(event,\'' + k + '\')">';
+      return '<div class="field-row" style="display:block"><span class="field-label" style="display:block;margin-bottom:6px">' + f.label
+        + ' <span style="font-weight:400;color:var(--text-tertiary)">' + (f.area ? '⌘↵ saves' : '↵ saves') + ' · Esc cancels</span></span>'
+        + '<div class="composer" style="padding:0">' + inputHtml
+        + '<button class="send-btn" onclick="saveVField(\'' + k + '\')" title="Save"><i class="ti ti-check"></i></button></div></div>';
+    }
+    if (!val) return '<div class="field-row" style="cursor:pointer" onclick="startVField(\'' + k + '\')" title="Add ' + f.label.toLowerCase() + '"><span class="field-label">' + f.label + '</span><span class="field-value empty">Add <i class="ti ti-pencil" style="font-size:11px"></i></span></div>';
+    if (k === 'notes' && (val.length > 80 || val.indexOf('\n') >= 0)) {
+      return '<div class="field-row" style="display:block;cursor:pointer" onclick="startVField(\'notes\')" title="Edit notes">'
+        + '<span class="field-label" style="display:block;margin-bottom:6px">Notes <i class="ti ti-pencil" style="font-size:11px;color:var(--text-tertiary)"></i></span>'
+        + '<div style="font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + esc(val.trim()) + '</div></div>';
+    }
+    var valHtml;
+    if (f.link === 'tel') valHtml = '<a class="field-value" style="color:var(--talks-text)" href="tel:' + esc(val).replace(/[^+0-9]/g,'') + '" onclick="event.stopPropagation()">' + esc(val) + '</a>';
+    else if (f.link === 'url') valHtml = '<a class="field-value fv-ell" style="color:var(--talks-text)" target="_blank" rel="noopener" href="' + esc(linkUrl(val)) + '" onclick="event.stopPropagation()">' + esc(val) + '</a>';
+    else valHtml = '<span class="field-value">' + esc(val) + '</span>';
+    return '<div class="field-row" style="cursor:pointer" onclick="startVField(\'' + k + '\')" title="Edit ' + f.label.toLowerCase() + '">'
+      + '<span class="field-label">' + f.label + '</span>' + valHtml
+      + '<i class="ti ti-pencil" style="font-size:12px;color:var(--text-tertiary);margin-left:8px;flex-shrink:0"></i></div>';
   };
   document.getElementById('venue-container').innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
@@ -3917,20 +3986,14 @@ function openVenueDetail(id){
     + '<span class="badge badge-' + v.type + '" style="margin-top:6px">' + (v.type==='hard'?'Hard ticket':'Soft ticket') + '</span></div>'
     + '</div></div>'
     + '<div class="card card-flush" style="margin-bottom:20px">'
-    + (v.contact && v.contact!=='—' ? row('Booking contact', v.contact) : '')
-    + (v.phone
-        ? '<div class="field-row"><span class="field-label">Phone</span><a class="field-value" style="color:var(--talks-text)" href="tel:' + esc(v.phone).replace(/[^+0-9]/g,'') + '">' + esc(v.phone) + '</a></div>'
-        : row('Phone', ''))
-    + (v.website
-        ? '<div class="field-row"><span class="field-label">Website</span><a class="field-value fv-ell" style="color:var(--talks-text)" target="_blank" rel="noopener" href="' + esc(linkUrl(v.website)) + '">' + esc(v.website) + '</a></div>'
-        : row('Website', ''))
-    + row('Pay', v.pay && v.pay!=='—' ? v.pay : '')
-    + row('Address', v.address)
-    + (v.form
-        ? '<div class="field-row"><span class="field-label">Booking form</span><a class="field-value fv-ell" style="color:var(--talks-text)" target="_blank" rel="noopener" href="' + esc(linkUrl(v.form)) + '">' + esc(v.form) + '</a></div>'
-        : row('Booking form', ''))
-    + row('Clientele', v.clientele)
-    + (v.notes ? notesBlock_(v.notes) : row('Notes', ''))
+    + (v.contact && v.contact!=='—' ? '<div class="field-row"><span class="field-label">Booking contact</span><span class="field-value">' + esc(v.contact) + '</span></div>' : '')
+    + vrow('phone')
+    + vrow('website')
+    + vrow('pay')
+    + vrow('address')
+    + vrow('form')
+    + vrow('clientele')
+    + vrow('notes')
     + '</div>'
     + mapBlock
     + '<div class="section-label" style="margin-top:16px">Collective intel</div>'
