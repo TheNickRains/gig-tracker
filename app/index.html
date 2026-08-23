@@ -873,8 +873,8 @@
       <input class="pipe-search" id="disc-search" type="search" placeholder="Search rooms or people…" style="margin-bottom:0;flex:1" oninput="discQuery=this.value;renderDiscover()">
       <select class="pipe-sort" id="type-filter" onchange="renderDiscover()">
         <option value="">All types</option>
-        <option value="hard">Ticketed (hard)</option>
-        <option value="soft">Flat rate (soft)</option>
+        <option value="hard">Hard ticket</option>
+        <option value="soft">Soft ticket</option>
       </select>
       <select class="pipe-sort" id="disc-pipe-filter" onchange="renderDiscover()">
         <option value="">Pipeline: all</option>
@@ -1207,6 +1207,10 @@ var templates = {
     return 'Hey ' + p.contact.split(' ')[0] + ',\n\nHope things are going well at ' + p.venue + '. Staying on your radar — I have a run of dates coming up and ' + p.city + ' is high on the list.\n\nAnything open worth exploring?\n\n' + profile.name;
   }
 };
+// Feature flags. staticTemplates: canned templates are the no-AI fallback —
+// hidden by default now that drafting is AI-first (flip via
+// localStorage gc_flag_templates = '1'). Product fork maps this to plan gating.
+var FLAGS = { staticTemplates: lsGet('gc_flag_templates') === '1' };
 var tplKeys = ['outreach','followup','pitch','checkin'];
 var tplLabels = ['Cold outreach','Follow-up','Full pitch','Check-in'];
 
@@ -2028,7 +2032,7 @@ function createAndLinkRoom(pid, name){
     + '<div class="form-field"><label class="form-label">Venue name</label><input class="form-input" id="cnr-name" value="' + esc(name) + '"></div>'
     + '<div id="cnr-loc" style="font-size:11.5px;color:var(--text-tertiary);margin:-4px 0 10px">Searching Maps for the address…</div>'
     + '<div class="form-row-2">'
-    + '<div class="form-field"><label class="form-label">Ticket (mostly)</label><select class="form-select" id="cnr-ticket" onchange="document.getElementById(\'cnr-type\').innerHTML=(this.value===\'hard\'?' + "hardTypes" + ':' + "softTypes" + ').map(function(x){return \'<option>\'+x+\'</option>\';}).join(\'\')"><option value="hard">Ticketed (hard)</option><option value="soft">Flat rate (soft)</option></select></div>'
+    + '<div class="form-field"><label class="form-label">Ticket (mostly)</label><select class="form-select" id="cnr-ticket" onchange="document.getElementById(\'cnr-type\').innerHTML=(this.value===\'hard\'?' + "hardTypes" + ':' + "softTypes" + ').map(function(x){return \'<option>\'+x+\'</option>\';}).join(\'\')"><option value="hard">Hard ticket</option><option value="soft">Soft ticket</option></select></div>'
     + '<div class="form-field"><label class="form-label">Venue type</label><select class="form-select" id="cnr-type">' + typeOpts('hard') + '</select></div>'
     + '</div>'
     + '<button class="btn-primary btn-sm" style="width:100%" onclick="cnrCreate()"><i class="ti ti-plus"></i> Create &amp; link</button>'
@@ -2356,13 +2360,17 @@ function openDetail(id) {
       // draftText[uuid] survives every re-render; nothing overwrites it silently.
       var draftVal = draftText[p.uuid] !== undefined ? draftText[p.uuid] : '';
       var subjVal = draftSubject[p.uuid] !== undefined ? draftSubject[p.uuid] : defaultSubject();
-      var ph = 'Write your message here, or select a template from the dropdown above.\n\n✨ Draft with AI writes it in your voice — try it out!';
+      var ph = FLAGS.staticTemplates
+        ? 'Write your message here, or select a template from the dropdown above.\n\n✨ Draft with AI writes it in your voice — try it out!'
+        : 'Write your message here…\n\n✨ Draft with AI writes it in your voice — it knows this venue, this contact, and the conversation.';
       tplSection = '<div class="section-label" style="margin-top:4px">Draft outreach</div>'
         + '<div class="card" style="margin-bottom:12px">'
-        + '<select class="pipe-sort" style="margin-bottom:10px" onchange="switchTpl(' + id + ',this.value)" title="Load a template">'
-        + '<option value=""' + (!activeTpl[id] ? ' selected' : '') + '>Select a template…</option>'
-        + tplKeys.map(function(k,i){ return '<option value="' + k + '"' + (activeTpl[id]===k?' selected':'') + '>' + tplLabels[i] + '</option>'; }).join('')
-        + '</select>'
+        + (FLAGS.staticTemplates
+          ? '<select class="pipe-sort" style="margin-bottom:10px" onchange="switchTpl(' + id + ',this.value)" title="Load a template">'
+            + '<option value=""' + (!activeTpl[id] ? ' selected' : '') + '>Select a template…</option>'
+            + tplKeys.map(function(k,i){ return '<option value="' + k + '"' + (activeTpl[id]===k?' selected':'') + '>' + tplLabels[i] + '</option>'; }).join('')
+            + '</select>'
+          : '')
         + (p.email ? '<input class="pipe-search" id="tpl-subj-' + id + '" placeholder="Subject" autocomplete="off" value="' + esc(subjVal) + '" oninput="draftSubject[\'' + p.uuid + '\']=this.value" style="margin:0 0 8px" title="Email subject line">' : '')
         + '<textarea class="tpl-body" id="tpl-body-' + id + '" spellcheck="false" placeholder="' + esc(ph) + '" oninput="draftText[\'' + p.uuid + '\']=this.value">' + esc(draftVal) + '</textarea>'
         + '<div class="tpl-actions">'
@@ -3123,9 +3131,9 @@ function renderWizard(step, ticket, data) {
     + '<div class="wiz-dots">' + dots + '</div>'
     + '<div class="ticket-grid">'
     + '<div class="ticket-btn' + (ticket==='soft'?' selected':'') + '" onclick="renderWizard(2,\'soft\',{})">'
-    + '<i class="ti ti-glass-full"></i><div class="ticket-name">They pay you a rate</div><div class="ticket-desc">Bar, restaurant, winery, hotel — a flat rate to play (&ldquo;soft ticket&rdquo;<span class="info-tip" tabindex="0" onclick="event.stopPropagation()" data-tip="&ldquo;Soft ticket&rdquo;: entry is free — the venue pays you to set the vibe and keep people eating &amp; drinking. Your money comes from the venue, not the audience. Usually quoted per hour or per set.">i</span>)</div></div>'
+    + '<i class="ti ti-glass-full"></i><div class="ticket-name">Soft ticket<span class="info-tip" tabindex="0" onclick="event.stopPropagation()" data-tip="&ldquo;Soft ticket&rdquo;: entry is free — the venue pays you to set the vibe and keep people eating &amp; drinking. Your money comes from the venue, not the audience. Usually quoted per hour or per set.">i</span></div><div class="ticket-desc">They pay you a flat rate to play — bar, restaurant, winery, hotel</div></div>'
     + '<div class="ticket-btn' + (ticket==='hard'?' selected':'') + '" onclick="renderWizard(2,\'hard\',{})">'
-    + '<i class="ti ti-ticket"></i><div class="ticket-name">You sell tickets</div><div class="ticket-desc">Listening room, theater, club — you earn from the door (&ldquo;hard ticket&rdquo;<span class="info-tip" tabindex="0" onclick="event.stopPropagation()" data-tip="&ldquo;Hard ticket&rdquo;: people buy tickets to see YOU — your draw is the product. Pay is a door split, a guarantee, or both, so these rooms will ask how many people you bring.">i</span>)</div></div>'
+    + '<i class="ti ti-ticket"></i><div class="ticket-name">Hard ticket<span class="info-tip" tabindex="0" onclick="event.stopPropagation()" data-tip="&ldquo;Hard ticket&rdquo;: people buy tickets to see YOU — your draw is the product. Pay is a door split, a guarantee, or both, so these rooms will ask how many people you bring.">i</span></div><div class="ticket-desc">You sell tickets &amp; earn from the door — listening room, theater, club</div></div>'
     + '</div>'
     + '<div style="font-size:11.5px;color:var(--text-tertiary);margin-top:12px;text-align:center">This sets the venue\u2019s default — rooms like theaters do both, and every deal can flip later.</div>';
   } else if (step===2) {
@@ -3703,7 +3711,7 @@ function setDealTicket(id, t){
   openDetail(id);
   sb.from('pipeline_entries').update({ ticket_type: t }).eq('id', p.uuid).then(function(r){
     if (r.error) { showToast('Could not save: ' + r.error.message, true); return; }
-    showToast(t === 'hard' ? 'Ticketed (hard) — Hold stage available, hard rate quoted' : 'Flat rate (soft) — soft rate quoted');
+    showToast(t === 'hard' ? 'Hard ticket — Hold stage available, hard rate quoted' : 'Soft ticket — soft rate quoted');
   });
 }
 // Rooms in play: one opportunity, several of the booker's rooms.
@@ -4000,7 +4008,7 @@ function openVenueDetail(id){
     + '<div class="detail-header"><div class="detail-icon"><i class="ti ' + venueIcon(v.vtype) + '"></i></div>'
     + '<div style="flex:1"><div class="detail-venue">' + esc(v.name) + '</div>'
     + '<div class="detail-meta">' + esc([v.vtype, [v.city, v.state].filter(function(x){return x;}).join(', '), (v.pay && v.pay!=='—' ? v.pay : '')].filter(function(x){return x;}).join(' · ')) + '</div>'
-    + '<span class="badge badge-' + v.type + '" style="margin-top:6px">' + (v.type==='hard'?'Ticketed (hard)':'Flat rate (soft)') + '</span></div>'
+    + '<span class="badge badge-' + v.type + '" style="margin-top:6px">' + (v.type==='hard'?'Hard ticket':'Soft ticket') + '</span></div>'
     + '</div></div>'
     + '<div class="card card-flush" style="margin-bottom:20px">'
     + (v.contact && v.contact!=='—' ? '<div class="field-row"><span class="field-label">Booking contact</span><span class="field-value">' + esc(v.contact) + '</span></div>' : '')
@@ -4180,7 +4188,7 @@ function addVenueToPipeline(venueId){
 function openVenueEdit(id){
   var v = venues.filter(function(x){ return x.id===id; })[0];
   if(!v) return;
-  var ticketOpts = ['soft','hard'].map(function(t){ return '<option value="'+t+'"'+(v.type===t?' selected':'')+'>'+(t==='soft'?'Flat rate (soft ticket)':'Ticketed (hard ticket)')+'</option>'; }).join('');
+  var ticketOpts = ['soft','hard'].map(function(t){ return '<option value="'+t+'"'+(v.type===t?' selected':'')+'>'+(t==='soft'?'Soft ticket':'Hard ticket')+'</option>'; }).join('');
   document.getElementById('venue-container').innerHTML =
     '<button class="back-btn" onclick="openVenueDetail(\'' + v.id + '\')"><i class="ti ti-arrow-left"></i> Back</button>'
     + '<div class="page-title" style="margin-bottom:16px">Edit venue</div>'

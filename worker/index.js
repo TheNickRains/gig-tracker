@@ -502,7 +502,16 @@ async function refreshToneProfile(artistId, token, force) {
   const arts = await sGet(`artists?id=eq.${artistId}&select=tone_updated_at`);
   if (!arts.length) return;
   const last = arts[0].tone_updated_at ? new Date(arts[0].tone_updated_at).getTime() : 0;
-  if (!force && Date.now() - last < 24 * 3600000) return; // daily — unless a fresh diff forces it
+  // Material-aware, not clock-based: retrain whenever there's a send the model
+  // hasn't learned from yet (checked every poll + on Gmail push), so the
+  // assistant grows with every interaction. Zero Gemini spend when nothing new.
+  if (!force) {
+    const newest = await sGet(
+      `activities?select=created_at,entry:pipeline_entries!inner(artist_id)` +
+      `&entry.artist_id=eq.${artistId}&kind=eq.email_out&order=created_at.desc&limit=1`);
+    const newestTs = newest.length ? new Date(newest[0].created_at).getTime() : 0;
+    if (newestTs <= last) return; // nothing sent since the last retrain
+  }
 
   // Everything the artist has sent, WITH deal context, categorized into cells.
   const acts = await sGet(
@@ -816,15 +825,16 @@ async function handleAiDraft(req, res, bodyStr) {
     const dealPay = (e.gig_pay || "").trim();
     const dealCosts = (e.gig_costs || "").trim();
     const ticket = e.ticket_type || v.ticket_type || "soft";
-    // Rate precedence (never misquote): the deal's own pay the artist set for
-    // THIS show wins outright; otherwise a number the artist wrote in MY NOTE on
-    // this deal wins; otherwise the standing rate matching the ticket type.
-    // Quote verbatim — never round, re-derive, discount, or underbid.
+    // Rates GROUND the AI — they exist so it never invents or misquotes a
+    // number, NOT so it volunteers one. Naming a rate in a pitch kills sales;
+    // the artist's rule: never lead with money. Precedence when a number IS
+    // called for: deal's own pay > a number in MY NOTE > standing rate.
+    const rateWhen = `WHEN to name a number — ONLY if (a) their last message asks about price/rate/money, or (b) the deal is at hold/booked and you are confirming already-agreed terms. NEVER volunteer a rate in a pitch, intro, or follow-up — money talk unprompted kills the sale. If they ask and you have no grounded number, defer ("happy to talk numbers").\n`;
     const rateLine = dealPay
-      ? `RATE FOR THIS DEAL (authoritative — the artist set this exact number for this show; quote it VERBATIM, do not round, multiply, discount, or swap in a generic rate): ${dealPay}${dealCosts ? ` · costs/notes: ${dealCosts}` : ""}.${(a.rate_soft || a.rate_hard) ? ` (Standing rates are reference only and must NOT override the deal rate above: soft ${a.rate_soft || "—"} · hard ${a.rate_hard || "—"}.)` : ""}\n`
+      ? rateWhen + `GROUNDED RATE for this deal (the artist set this exact number for this show — when a number is called for per the rule above, quote it VERBATIM; never round, multiply, discount, or swap in a generic rate): ${dealPay}${dealCosts ? ` · costs/notes: ${dealCosts}` : ""}.${(a.rate_soft || a.rate_hard) ? ` (Standing rates are reference only and must NOT override it: soft ${a.rate_soft || "—"} · hard ${a.rate_hard || "—"}.)` : ""}\n`
       : (a.rate_soft || a.rate_hard)
-        ? `RATES — the artist's standing numbers. Quote the one matching THIS deal's ${ticket} ticket EXACTLY (NEVER invent, round, discount, or underbid): soft ticket ${a.rate_soft || "not set"} · hard ticket ${a.rate_hard || "not set"}. IMPORTANT: if MY NOTE on this deal (in the conversation) names a specific number or rate, THAT note rate is authoritative for this deal — quote it instead of the standing rate.\n`
-        : `RATES: not set — do NOT name any number; if they ask about rate, defer ("happy to talk numbers").\n`;
+        ? rateWhen + `GROUNDED RATES (standing) — when a number is called for per the rule above, quote the one matching THIS deal's ${ticket} ticket EXACTLY (never invent, round, discount, or underbid): soft ticket ${a.rate_soft || "not set"} · hard ticket ${a.rate_hard || "not set"}. If MY NOTE on this deal names a specific number, THAT is authoritative — quote it instead.\n`
+        : `RATES: not set — do NOT name any number under any circumstances; if they ask, defer ("happy to talk numbers").\n`;
     const acts = await sGet(`activities?pipeline_entry_id=eq.${entryId}&kind=in.(email_in,email_out,note)&order=created_at.desc&limit=8&select=kind,body`);
     const lastInbound = (acts.find((x) => x.kind === "email_in") || {}).body || "";
     const convo = acts.slice().reverse().map((x) => (x.kind === "email_in" ? "THEM: " : x.kind === "email_out" ? "ME: " : "MY NOTE: ") + x.body).join("\n");
