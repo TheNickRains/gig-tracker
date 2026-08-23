@@ -81,9 +81,27 @@ no per-feature event vocabularies.
 6. **Collective intel** (~3d) — ship LAST: it needs enough seeded intel that the
    blur hides something real (launch-metro dependency).
 
-Parallel tracks from the commercialization plan: Google CASA verification starts
-now (its clock, not ours, is the floor); Capacitor/App Store wrap after the fork
-exists; TestFlight beta with the trusted circle while under the 100-user OAuth cap.
+### Gmail scope strategy (CASA deferred until revenue — decided 2026-08-22)
+
+Google's compliance wall is on *reading* Gmail, not sending: `gmail.send` is a
+"sensitive" scope (free verification, no CASA); `gmail.readonly`/`modify` are
+"restricted" (CASA assessment, ~$500–1k at budget labs, annual).
+
+- **Stage 1 (launch, $0 compliance):** send-only. AI drafts, scheduled sends,
+  and the auto-follow-up engine all work from the artist's real address. Inbound
+  degrades to: per-artist ingest address (`slug@in.<domain>` via Cloudflare Email
+  Routing → worker) — forward a venue reply and it files itself, advances the
+  stage, fires the pipeline; auto-BCC threads outbound; manual logging is the
+  floor. The hook becomes the assistant loop, not the Gmail backfill.
+- **Stage 2 (first revenue):** CASA Tier 2 (~50 Pro-months of MRR) unlocks
+  restricted scopes; "connect your inbox, watch your pipeline assemble itself"
+  ships as the upgrade event to an audience that already pays.
+- Planning facts: apps in Google "testing" status get 7-day refresh-token expiry
+  (weekly reconnects — do the sensitive-scope verification early to escape it);
+  the 100-user cap applies until verification either way.
+
+Other parallel tracks: Capacitor/App Store wrap after the fork exists; TestFlight
+beta with the trusted circle fits inside the 100-user cap.
 
 ## What we measure
 
