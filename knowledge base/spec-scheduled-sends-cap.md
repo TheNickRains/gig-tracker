@@ -2,6 +2,15 @@
 
 Product-track only. Ships in the commercial fork; Nick's production instance is untouched.
 
+> **Platform note:** this was the first gate spec; its primitives were since
+> promoted into [spec-entitlements-platform.md](spec-entitlements-platform.md),
+> which supersedes the sketches here. Build against the platform: the trigger
+> calls `effective_plan()` + `limit_scheduled_sends()` (app_config-tunable, not
+> the hardcoded fn below), errors route through `handleGate()` → `showGate('SEND_CAP', ctx)`,
+> and analytics use the six canonical `gate_events` names — `cap_hit`→`gate_hit`,
+> `cap_swap`→`swap`, `cap_upgrade_click`→`upgrade_click`, `cap_keep_draft`→`dismiss`
+> with `context.kept_draft:true`, `ghost_slot_seen`→`ghost_seen`.
+
 ## The rule
 
 A **free** artist may have **one active scheduled send** at a time, account-wide.
