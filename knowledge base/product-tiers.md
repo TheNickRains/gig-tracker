@@ -34,37 +34,42 @@ production instance stays free and untouched.
 - **Meters recycle.** Slots and monthly quotas re-present the gate indefinitely;
   every reset is a fresh sales conversation.
 
-## Two axes: payment and standing (decided 2026-08-22)
+## The collective is GROUPS you form, not a commons (Nick, 2026-08-22 — supersedes everything below-dated)
 
-Payment tiers (Free/Pro) buy the **assistant**. The **collective** is gated by
-**standing — earned or vouched, never purchasable** (a paid door would let venue
-owners buy their way into the room where artists compare notes). Three layers:
+The adoption blocker Nick hears from real musicians: **"can this burn me?"** —
+booking runs on reputation in small scenes; one leaked candid comment about a
+venue can cost a room you've played for years. No vouching system or moderation
+policy fixes that fear in a shared commons of strangers.
 
-1. **Directory** (names, cities, types) — open; the acquisition/SEO surface.
-2. **Community** (read/post intel, wins, add venues) — **membership**: invited by
-   a member or earned by doing the work. Solves the strangers/vandalism problem
-   (open decision #3: nobody writes until vouched — creator-owns-delete plus
-   versioning shrink to cleanup detail). "The {metro} collective is invite-only"
-   is the launch pitch; founding members hold invites.
-3. **Intelligence** — a **membership benefit, never sold** (reframed 2026-08-22;
-   supersedes spec-collective-intel's earn-per-venue/Pro-everywhere hybrid).
-   The Waze model, not Glassdoor: contribution is AMBIENT — members doing their
-   own booking in the tool feed the commons automatically (real pay from logged
-   `gig_pay`, response rates and time-to-reply from activity timestamps,
-   pitch→booked conversion, wins, venue-liveness signals). Comments are garnish,
-   not the load-bearing data. No token economy: no unlocks, credits, or
-   quality-bar mechanics — standing = live pipeline activity (you're doing the
-   work). Pitch: **"Stop asking around. Just know."** Hard design requirement:
-   aggregation thresholds enforced in schema (pay ranges only at n≥3 members,
-   minimum samples for rates, nothing individually attributable except the
-   already-social wins/comments) — nobody's negotiated rate is visible to the
-   competitor for their Tuesday slot.
+The answer is structural: **there is no commons.** The product's social unit is
+a **group you form yourself** — your actual trusted circle, the people you
+already text about gigs. Two modes:
 
-Monetization therefore lives entirely on the assistant axis (drafts, sends,
-follow-ups, notifications). Cost acknowledged: membership gating throttles
-top-of-funnel on purpose — data quality and trust density over volume. The CRM
-stays open to anyone (solo mode works without the collective), so the product
-keeps an ungated on-ramp.
+- **Solo (default):** a self-booking tracker. Complete on its own — CRM +
+  assistant, nothing shared with anyone.
+- **Groups (user-formed, private):** the group chat where somebody always knows
+  who books in Austin, made organized and permanent. Members pool knowledge
+  about ROOMS: the shared venue book, intel/comments, wins. You can be in
+  multiple groups (hometown crew, touring circuit crew).
+
+The sharing boundary (default, per-item overridable): **venues, intel, and wins
+are group-shared; your pipeline, deals, and rates are private** unless you
+explicitly share a specific deal. Working together = pooling room knowledge,
+not opening your negotiations to friends who might pitch the same room next month.
+
+Consequences:
+- Reputation fear dissolves structurally — every room you're candid in is one
+  you built. No strangers, ever.
+- The earlier metro-commons machinery is dead: no vouching chains, no standing
+  axis, no invite flywheel, no membership spec, no aggregation-threshold privacy
+  layer (a group IS the privacy boundary). spec-collective-intel is superseded
+  wholesale; growth is groups inviting their own people (a group is only useful
+  full, so the product's viral unit is "start a group with your crew").
+- Groups are free (they're the retention + moat); monetization stays entirely on
+  the assistant axis (drafts, sends, follow-ups, notifications). A future paid
+  'team' tier remains reserved for MANAGED multi-artist setups (agents), which
+  are a different thing than peer groups.
+- Nick's current instance is, in product terms, the first group.
 
 ## The matrix
 
@@ -109,11 +114,12 @@ no per-feature event vocabularies.
    from (2) and the Stage-1 tone-card source (product-sent + paste-in).
 4. **Auto-follow-ups, review-to-fire mode** (~2d) — depends on (2)'s slot
    semantics for engine sends.
-5. **Membership + ambient intelligence** (~4d, needs its own spec) — invite/vouch
-   flow, standing = live pipeline activity, and the derived-intel layer
-   (aggregated pay/response/conversion stats with n≥3 thresholds). Replaces the
-   old collective-intel gate build. Launch-metro dependency: derived stats need
-   member density before they say anything.
+5. **Groups** (~4d, needs its own spec — see open decisions) — create/invite/
+   leave, group-scoped venue book + intel + wins, private-by-default pipelines
+   with per-deal sharing. Replaces the old collective-intel gate build and all
+   commons/membership machinery. The fork's schema should be group-scoped from
+   day one (a `group_id` on the venue/intel tables is cheap now, a migration
+   nightmare later); solo mode = the groupless default.
 6. **Notifications digest/instant** (~3d) — **Stage 2 (post-CASA)**: the instant
    gate requires reply detection; only the free digest ships earlier.
 
@@ -179,14 +185,11 @@ beta with the trusted circle fits inside the 100-user cap.
 
 ## Open product decisions (owner: Nick)
 
-1. **Launch metro #1** — the collective's value at launch is whatever its data
-   says about one scene. (Nashville? Memphis? Houston? — wherever the founding
-   circle's density is highest.)
-2. **Price point** — $12 anchor; test against $9.99/$14.99 once the funnel has
+1. **Price point** — $12 anchor; test against $9.99/$14.99 once the funnel has
    volume. Annual plan (2 months free) at launch or later.
-3. **Membership mechanics** (invite flow, contribution-earned entry, vouching,
-   invite quotas for founders) — the standing axis (see "Two axes" above) needs
-   its own spec before strangers arrive; membership gating replaces most of the
-   old permissions-rework concern, leaving creator-owns-delete + edit versioning
-   as cleanup detail inside that spec.
-4. **Name/brand for the commercial product** vs. "Gig Collective".
+2. **Groups spec** (create/invite/leave, the shared-vs-private boundary and its
+   per-item overrides, multi-group membership, what happens to shared venues
+   when someone leaves) — needs writing before the fork build reaches it;
+   supersedes the old "membership mechanics" decision.
+3. **Name/brand for the commercial product** vs. "Gig Collective" (the word
+   "collective" now means a group, which may strengthen the name).
