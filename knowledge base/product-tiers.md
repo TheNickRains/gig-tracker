@@ -42,17 +42,29 @@ owners buy their way into the room where artists compare notes). Three layers:
 
 1. **Directory** (names, cities, types) — open; the acquisition/SEO surface.
 2. **Community** (read/post intel, wins, add venues) — **membership**: invited by
-   a member or earned by contribution. Solves the strangers/vandalism problem
+   a member or earned by doing the work. Solves the strangers/vandalism problem
    (open decision #3: nobody writes until vouched — creator-owns-delete plus
    versioning shrink to cleanup detail). "The {metro} collective is invite-only"
    is the launch pitch; founding members hold invites.
-3. **Intelligence** (pay aggregates, pulse, wins detail) — the money layer per
-   [spec-collective-intel.md](spec-collective-intel.md): earn per-venue or Pro
-   everywhere.
+3. **Intelligence** — a **membership benefit, never sold** (reframed 2026-08-22;
+   supersedes spec-collective-intel's earn-per-venue/Pro-everywhere hybrid).
+   The Waze model, not Glassdoor: contribution is AMBIENT — members doing their
+   own booking in the tool feed the commons automatically (real pay from logged
+   `gig_pay`, response rates and time-to-reply from activity timestamps,
+   pitch→booked conversion, wins, venue-liveness signals). Comments are garnish,
+   not the load-bearing data. No token economy: no unlocks, credits, or
+   quality-bar mechanics — standing = live pipeline activity (you're doing the
+   work). Pitch: **"Stop asking around. Just know."** Hard design requirement:
+   aggregation thresholds enforced in schema (pay ranges only at n≥3 members,
+   minimum samples for rates, nothing individually attributable except the
+   already-social wins/comments) — nobody's negotiated rate is visible to the
+   competitor for their Tuesday slot.
 
-Cost acknowledged: membership gating throttles top-of-funnel on purpose — data
-quality and trust density over volume. The CRM stays open to anyone (solo mode
-works without the collective), so the product keeps an ungated on-ramp.
+Monetization therefore lives entirely on the assistant axis (drafts, sends,
+follow-ups, notifications). Cost acknowledged: membership gating throttles
+top-of-funnel on purpose — data quality and trust density over volume. The CRM
+stays open to anyone (solo mode works without the collective), so the product
+keeps an ungated on-ramp.
 
 ## The matrix
 
@@ -65,8 +77,7 @@ works without the collective), so the product keeps an ungated on-ramp.
 | Scheduled sends | 1 active slot | Unlimited |
 | Auto-follow-up engine | Ghost rows only | ✓ |
 | Reply notifications | Daily digest | Instant push |
-| Collective: browse, add, comment | ✓ always | ✓ |
-| Collective deep intel (pay data, pulse, wins detail) | Earn per-venue (give-to-get) | Everywhere |
+| Collective (community + intelligence) | ✓ for members — standing-gated, never sold | same |
 | Calendar sync (Google) | — | ✓ |
 | Trial | every signup: 14 days Pro (column defaults, no cron) | |
 
@@ -82,7 +93,7 @@ artists — the whale seat**. Not designed yet; deliberately later.
 | AI drafts + voice | `DRAFT_CAP`, voice gate | 3/mo meter + "Rewrite in your voice — Pro" | [spec-ai-drafts.md](spec-ai-drafts.md) | 3d |
 | Auto-follow-ups | ghost-only | Pro-only engine, war-room ghost rows (max 2) | [spec-auto-followups.md](spec-auto-followups.md) | ~2d |
 | Notifications | `PUSH_GATE` | daily digest vs instant push, tease-in-digest | [spec-notifications.md](spec-notifications.md) | 3d |
-| Collective intel | `INTEL_LOCKED` | hybrid: earn per-venue or Pro everywhere | [spec-collective-intel.md](spec-collective-intel.md) | ~3d |
+| Collective intel | — | **superseded 2026-08-22**: intelligence is a membership benefit (ambient contribution, aggregation thresholds) — enforcement machinery in the spec survives, the monetization mechanic does not; fold into membership-mechanics spec | [spec-collective-intel.md](spec-collective-intel.md) | — |
 
 All gates ship only: a `limit_*` fn + `app_config` row, one server-side
 enforcement (trigger / RLS / worker per platform §2), `GATE_COPY` rows, and
@@ -98,8 +109,11 @@ no per-feature event vocabularies.
    from (2) and the Stage-1 tone-card source (product-sent + paste-in).
 4. **Auto-follow-ups, review-to-fire mode** (~2d) — depends on (2)'s slot
    semantics for engine sends.
-5. **Collective intel** (~3d) — needs enough seeded intel that the blur hides
-   something real (launch-metro dependency).
+5. **Membership + ambient intelligence** (~4d, needs its own spec) — invite/vouch
+   flow, standing = live pipeline activity, and the derived-intel layer
+   (aggregated pay/response/conversion stats with n≥3 thresholds). Replaces the
+   old collective-intel gate build. Launch-metro dependency: derived stats need
+   member density before they say anything.
 6. **Notifications digest/instant** (~3d) — **Stage 2 (post-CASA)**: the instant
    gate requires reply detection; only the free digest ships earlier.
 
