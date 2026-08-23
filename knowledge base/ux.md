@@ -150,8 +150,8 @@ Full CRM view for one venue. Accessed from My pipeline.
 
 4 steps + success screen. State does not persist between wizard opens.
 
-**Step 1 — Ticket type**
-Two large buttons: Soft ticket (glass icon) · Hard ticket (armchair icon). Selection persists to step 2 and determines venue type options.
+**Step 1 — How does this room usually pay?** (plain-language, 2026-08-23 — artists don't know hard/soft jargon)
+Two large buttons: **"They pay you a rate"** (glass icon — bar, restaurant, winery, hotel; "soft ticket" taught in the description) · **"You sell tickets"** (ticket icon — listening room, theater, club; "hard ticket" in the description). Selection persists to step 2 and determines venue type options. Everywhere else hard/soft surfaces (Discover filter, venue badge, edit selects, deal flip toast) the labels are "Flat rate (soft)" / "Ticketed (hard)" — plain words first, jargon in parentheses as education.
 
 **Step 2 — Venue details**
 - "Find the venue" Maps search (`venueSearch` → worker `/places/search`, 350ms debounce): picking a result fills name/city/state/address/phone/website below, all visible + correctable
