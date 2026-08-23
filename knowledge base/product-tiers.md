@@ -75,11 +75,13 @@ no per-feature event vocabularies.
    prerequisite for everything; Nick's instance keeps running unchanged.
 2. **Platform + sends cap together** (~5d) — the proving ground pair.
 3. **AI drafts + voice gate** (~3d) — the highest-envy gate; needs the meter UX
-   from (2).
-4. **Notifications digest/instant** (~3d) — monetizes retention; independent.
-5. **Auto-follow-ups** (~2d) — depends on (2)'s slot semantics for engine sends.
-6. **Collective intel** (~3d) — ship LAST: it needs enough seeded intel that the
-   blur hides something real (launch-metro dependency).
+   from (2) and the Stage-1 tone-card source (product-sent + paste-in).
+4. **Auto-follow-ups, review-to-fire mode** (~2d) — depends on (2)'s slot
+   semantics for engine sends.
+5. **Collective intel** (~3d) — needs enough seeded intel that the blur hides
+   something real (launch-metro dependency).
+6. **Notifications digest/instant** (~3d) — **Stage 2 (post-CASA)**: the instant
+   gate requires reply detection; only the free digest ships earlier.
 
 ### Gmail scope strategy (CASA deferred until revenue — decided 2026-08-22)
 
@@ -98,7 +100,33 @@ Google's compliance wall is on *reading* Gmail, not sending: `gmail.send` is a
   ships as the upgrade event to an audience that already pays.
 - Planning facts: apps in Google "testing" status get 7-day refresh-token expiry
   (weekly reconnects — do the sensitive-scope verification early to escape it);
-  the 100-user cap applies until verification either way.
+  the 100-user cap applies until verification either way. Restricted scopes have
+  NO unverified-production click-through (hard block) — testing-mode allowlist is
+  the only pre-CASA inbox-reading path; reserve it for a hand-picked inner circle
+  who tolerate weekly reconnects (they preview the Stage 2 hook).
+
+### Stage-1 gate viability (audited 2026-08-22)
+
+Send-only breaks three Stage 2 assumptions in the specs:
+
+| Gate | Send-only status |
+|---|---|
+| Sends cap, collective intel, platform | ✓ unaffected |
+| AI drafts | ✓, but **voice gate**: tone profile can't sample sent mail (read scope). Stage 1: build tone card from product-sent mail + paste-in onboarding ("paste 2–3 booking emails you're proud of"); sent-mail sampling is a Stage 2 upgrade. |
+| Auto-follow-ups | ⚠️ can't verify no-reply without inbox read. Stage 1: engine drafts default to review-to-fire (`ready`), "did they reply? forward it first" nudge; autonomous firing is Stage 2. |
+| Notifications | ✗ "instant reply push" needs reply detection — **whole gate moves to Stage 2**. Free digest (sends fired, follow-ups due) survives as retention. |
+
+**Stage 1 Pro sells on:** slot cap + AI drafts/voice + reviewed auto-follow-ups +
+collective intel. Specs need a Stage-1/Stage-2 pass when the fork build starts.
+
+### Funding CASA — the Founding Member annual
+
+Two tiers only (Free / Pro; `team` reserved, undesigned). The CASA fund is a
+**billing offer, not a tier**: Founding Member annual — Pro entitlements, ~$99/yr
+prepaid, price locked for life, founder badge in the collective. Budget CASA
+Tier 2 ≈ $600–1k → **ten founding annuals fund it outright** (vs ~4 months of
+20 monthly subs). Pitch is honest: founders prepay the Stage 2 hook into
+existence, and they're first through the door when inbox-reading ships.
 
 Other parallel tracks: Capacitor/App Store wrap after the fork exists; TestFlight
 beta with the trusted circle fits inside the 100-user cap.
