@@ -4,6 +4,27 @@ The strategy doc. Feature-level detail lives in the per-gate specs (linked below
 this is the why, the matrix, and the sequencing. Product-track only — Nick's
 production instance stays free and untouched.
 
+## What this is (positioning, 2026-08-23)
+
+**A vertical CRM for gig booking with an outreach assistant.** CRM is the
+category (what it replaces: inbox + spreadsheet); the assistant is what Pro
+sells; groups are the differentiator and retention layer, not the category.
+Pitch order: "stop booking out of your inbox" → "your crew's shared venue book."
+
+**Collaboration is incentivized structurally, never scored:** contribution is a
+byproduct (working your own pipeline feeds the group book automatically), the
+payoff is instant and selfish (add a venue → see your crewmate's history with
+it), reciprocity is visible (feed, wins, weekly group digest) but never counted
+— no leaderboards, no contribution scores. Main group risk is dormancy, not
+free-riding; solo usefulness keeps the book fed through quiet seasons.
+
+**Teams/labels = the reserved `team` tier's buyer:** agent/manager/label running
+outreach for a roster — a MANAGED workspace (per-artist pipelines under one
+operator, roles, send-on-behalf, roster reporting), not a peer group. Whale
+seat, priced per artist. Build trigger unchanged: a real one asks. Schema-wise a
+team ≈ a group where one member holds keys to others' pipelines — roles + RLS,
+not a rearchitecture.
+
 ## The three jobs the product must do
 
 1. **Hook — zero-entry CRM.** Connect Gmail → your booking life assembles itself:
