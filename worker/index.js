@@ -475,39 +475,118 @@ function extractPlainText(payload) {
   }
   return "";
 }
+// ── Artist tone matrix ──────────────────────────────────
+// One BASE voice card (voice is constant) + per-context CALIBRATIONS learned
+// from everything the artist actually sends, categorized by message intent
+// (cold / followup / reply) × room class (bar / restaurant / winery /
+// listening / festival). Samples come from the deal activity log — real
+// booking mail, never the landlord — with raw Gmail sent-mail only as a
+// bootstrap fallback for brand-new accounts.
+function roomClass(venueType, ticketType) {
+  const t = (venueType || "").toLowerCase();
+  if (/listening|theater|theatre|concert|performing|club/.test(t)) return "listening";
+  if (/winery|vineyard|brewery|distillery/.test(t)) return "winery";
+  if (/restaurant|hotel|coffee|cafe/.test(t)) return "restaurant";
+  if (/festival/.test(t)) return "festival";
+  if (/bar|pub|casino/.test(t)) return "bar";
+  return ticketType === "hard" ? "listening" : "bar";
+}
+function cleanOutboundBody(body) {
+  let b = (body || "").replace(/^Sent:\s*/, "").trim();
+  if (/^[💬📞🤝📸📝✉️]/.test(b)) return null; // hand-logged one-liners aren't voice samples
+  if (b.length < 60) return null;
+  return b.slice(0, 600);
+}
 async function refreshToneProfile(artistId, token, force) {
   if (!GEMINI_KEY) return;
   const arts = await sGet(`artists?id=eq.${artistId}&select=tone_updated_at`);
   if (!arts.length) return;
   const last = arts[0].tone_updated_at ? new Date(arts[0].tone_updated_at).getTime() : 0;
   if (!force && Date.now() - last < 24 * 3600000) return; // daily — unless a fresh diff forces it
-  const msgs = await gmailSearch(token, "in:sent newer_than:90d");
-  const samples = [];
-  for (const m of msgs.slice(0, 12)) {
-    const full = await gmailGet(token, m.id);
-    if (!full) continue;
-    let text = extractPlainText(full.payload).trim();
-    text = cleanSnippet(text); // strip quoted tails
-    if (text.length > 60) samples.push(text.slice(0, 600));
-    if (samples.length >= 8) break;
+
+  // Everything the artist has sent, WITH deal context, categorized into cells.
+  const acts = await sGet(
+    `activities?select=kind,body,created_at,pipeline_entry_id,` +
+    `entry:pipeline_entries!inner(artist_id,ticket_type,venue:venues!pipeline_entries_venue_id_fkey(venue_type,ticket_type))` +
+    `&entry.artist_id=eq.${artistId}&kind=in.(email_in,email_out)&order=created_at.asc&limit=600`);
+  const byEntry = {};
+  for (const a of acts) (byEntry[a.pipeline_entry_id] = byEntry[a.pipeline_entry_id] || []).push(a);
+  const cells = {}; // "intent|class" -> [bodies], newest last
+  const flat = [];  // all cleaned outbound, newest last (blanket samples)
+  for (const entryId of Object.keys(byEntry)) {
+    const thread = byEntry[entryId];
+    let sawOut = false, prevKind = null;
+    for (const a of thread) {
+      if (a.kind === "email_out") {
+        const body = cleanOutboundBody(a.body);
+        if (body) {
+          const intent = !sawOut ? "cold" : prevKind === "email_in" ? "reply" : "followup";
+          const ent = a.entry || {}, ven = ent.venue || {};
+          const cls = roomClass(ven.venue_type, ent.ticket_type || ven.ticket_type);
+          (cells[intent + "|" + cls] = cells[intent + "|" + cls] || []).push(body);
+          flat.push(body);
+        }
+        sawOut = true;
+      }
+      prevKind = a.kind;
+    }
+  }
+  let samples = flat.slice(-8).reverse();
+  // Bootstrap: a brand-new account has no logged sends yet — fall back to Gmail.
+  if (samples.length < 2 && token) {
+    const msgs = await gmailSearch(token, "in:sent newer_than:90d");
+    for (const m of msgs.slice(0, 12)) {
+      const full = await gmailGet(token, m.id);
+      if (!full) continue;
+      const text = cleanSnippet(extractPlainText(full.payload).trim());
+      if (text.length > 60) samples.push(text.slice(0, 600));
+      if (samples.length >= 8) break;
+    }
   }
   if (samples.length < 2) { await sPatch(`artists?id=eq.${artistId}`, { tone_updated_at: new Date().toISOString() }); return; }
+
   // The explicit loop: AI generation vs what the artist ACTUALLY sent.
-  const pairs = await sGet(`scheduled_messages?artist_id=eq.${artistId}&status=eq.sent&ai_draft=not.is.null&order=sent_at.desc&limit=5&select=ai_draft,body`);
+  const pairs = await sGet(`scheduled_messages?artist_id=eq.${artistId}&status=eq.sent&ai_draft=not.is.null&order=sent_at.desc&limit=8&select=ai_draft,body`);
   const diffSection = pairs.length
     ? `\n\nEDIT PAIRS — the AI suggested the first version; the artist edited it into the second before sending. LEARN THE EDITS (what they cut, add, reword — that delta IS their taste):\n` +
       pairs.map((pr, i) => `--- PAIR ${i + 1} ---\nAI SUGGESTED:\n${(pr.ai_draft || "").slice(0, 500)}\nARTIST SENT:\n${(pr.body || "").slice(0, 500)}`).join("\n\n")
     : "";
   try {
     const card = await gemini(
-      `These are real emails a working musician sent (their authentic voice — including how they edit AI suggestions before sending):\n\n` +
+      `These are real booking emails a working musician sent (their authentic voice — including how they edit AI suggestions before sending):\n\n` +
       samples.map((s, i) => `--- EMAIL ${i + 1} ---\n${s}`).join("\n\n") +
       diffSection +
       `\n\nDistill a TONE CARD (max 180 words) a ghostwriter would use to write indistinguishably as this person: greeting + sign-off style, sentence rhythm/length, formality, warmth, characteristic phrases (quote 3-5 verbatim), what they never do — and, if edit pairs are present, the specific things they change about AI drafts. Plain text.`, false);
-    if (card) {
-      await sPatch(`artists?id=eq.${artistId}`, { tone_profile: card.slice(0, 2000), tone_updated_at: new Date().toISOString() });
-      console.log("tone profile refreshed", artistId, "from", samples.length, "sent emails");
+    if (!card) return;
+    // Per-cell calibrations: only cells with real evidence (≥3 samples), one
+    // JSON call for all of them. Notes are deltas FROM the base card, not
+    // standalone voices — small, composable, honest about sample size.
+    let matrix = null;
+    const richCells = Object.keys(cells).filter((k) => cells[k].length >= 3);
+    if (richCells.length) {
+      const groups = richCells.map((k) =>
+        `GROUP ${k} (${k.split("|")[0]} message to a ${k.split("|")[1]}-type room, ${cells[k].length} samples):\n` +
+        cells[k].slice(-5).map((b, i) => `--- ${i + 1} ---\n${b.slice(0, 400)}`).join("\n")).join("\n\n");
+      try {
+        const raw = await gemini(
+          `BASE VOICE CARD for a working musician:\n${card}\n\n` +
+          `Below are their real sent messages grouped by context (intent × room type). For EACH group, write a calibration note (max 50 words): how their writing in THIS context differs from the base voice — length, formality, what they lead with, what they skip.\n\n` +
+          groups +
+          `\n\nOutput STRICT JSON: an object whose keys are exactly [${richCells.map((k) => `"${k}"`).join(", ")}] and whose values are the calibration strings.`, true);
+        const parsed = JSON.parse(raw);
+        matrix = { cells: {}, counts: {}, at: new Date().toISOString() };
+        for (const k of richCells) {
+          if (typeof parsed[k] === "string" && parsed[k].trim()) {
+            matrix.cells[k] = parsed[k].trim().slice(0, 500);
+            matrix.counts[k] = cells[k].length;
+          }
+        }
+      } catch (e) { console.error("tone matrix", artistId, e.message); }
     }
+    const patch = { tone_profile: card.slice(0, 2000), tone_updated_at: new Date().toISOString() };
+    if (matrix && Object.keys(matrix.cells).length) patch.tone_matrix = matrix;
+    await sPatch(`artists?id=eq.${artistId}`, patch);
+    console.log("tone refreshed", artistId, "—", samples.length, "samples,", matrix ? Object.keys(matrix.cells).length : 0, "matrix cells");
   } catch (e) { console.error("tone profile", artistId, e.message); }
 }
 
@@ -732,7 +811,7 @@ async function handleAiDraft(req, res, bodyStr) {
       const names = links.map((l) => l.venue && l.venue.name).filter((n) => n && n !== v.name);
       if (names.length) otherRooms = " — also books " + names.join(", ");
     }
-    const arts = await sGet(`artists?id=eq.${uid}&select=display_name,genre,oneliner,website,epk,spotify,draw_claim,typical_crowd,set_formats,notable,markets,phone,tone_profile,rate_soft,rate_hard,home_market`);
+    const arts = await sGet(`artists?id=eq.${uid}&select=display_name,genre,oneliner,website,epk,spotify,draw_claim,typical_crowd,set_formats,notable,markets,phone,tone_profile,tone_matrix,rate_soft,rate_hard,home_market`);
     const a = arts[0] || {};
     const dealPay = (e.gig_pay || "").trim();
     const dealCosts = (e.gig_costs || "").trim();
@@ -795,6 +874,14 @@ async function handleAiDraft(req, res, bodyStr) {
         ? `ARTIST (use what's relevant — this is a first touch): ${a.display_name || ""} — ${a.genre || ""}. ${a.oneliner || ""} Draw: ${a.draw_claim || "n/a"}. Crowd: ${a.typical_crowd || "n/a"}. Formats: ${a.set_formats || "n/a"}. Notable rooms: ${a.notable || "n/a"}. Home market: ${a.home_market || "n/a"}. Site: ${a.website || ""} ${a.epk ? "EPK: " + a.epk : ""} ${a.spotify ? "Spotify: " + a.spotify : ""} Phone: ${a.phone || ""}\n`
         : `ARTIST (background only — do NOT pitch credentials mid-conversation): ${a.display_name || ""}, ${a.genre || ""}. Phone: ${a.phone || ""}\n`) +
       (a.tone_profile ? `\nTONE CARD — write indistinguishably in THIS voice:\n${a.tone_profile}\n` : "") +
+      (function () {
+        // Tone matrix: this artist's learned calibration for THIS kind of
+        // message to THIS kind of room, applied on top of the base voice.
+        const intent = firstTouch ? "cold" : lastInbound ? "reply" : hasOutbound ? "followup" : "cold";
+        const cls = roomClass(v.venue_type, e.ticket_type || v.ticket_type);
+        const note = a.tone_matrix && a.tone_matrix.cells && a.tone_matrix.cells[intent + "|" + cls];
+        return note ? `\nCONTEXT CALIBRATION — how this artist writes ${intent} messages to ${cls}-type rooms (apply on top of the tone card):\n${note}\n` : "";
+      })() +
       `\nWrite only the ${dmChannel ? "DM text" : isTextThread ? "message text" : "email body"}.`, false);
     res.writeHead(200, hdr);
     res.end(JSON.stringify({ draft }));
