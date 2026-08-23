@@ -4,6 +4,12 @@ This document is maintained by Claude. After any session where a screen is added
 
 ---
 
+## Onboarding — welcome checklist + guided tour
+
+**Welcome card** (`#welcome` overlay, shown while `onboarded=false`, dismiss = "I'll explore on my own"): four checklist steps with live done-state — Take the 60-second tour (`gc_tour_done`) → Set up artist profile (done when genre+oneliner set) → Add first venue (done when pipeline non-empty) → Enter the war room (finishes onboarding).
+
+**Guided tour** (`TOUR_STEPS`/`startTour`/`tourNav`, 2026-08-23): 8 coach-mark steps that navigate the real app — war room → island nav → Pipeline → Discover → Add venue wizard → Calendar → Gmail connect row (`#google-row`) → ready. Each step `go()`es to the page, scrolls the target into view, rings it (`.tour-ring` — fixed div whose 9999px box-shadow dims everything else), and shows a `.tour-card` ("n of N", title, teaching copy, Back/Next/Done + Skip). Completing (not skipping) sets `gc_tour_done`. Replayable from Settings → "Replay the tour". Principle: educate, never assume — every screen gets explained in its own context.
+
 ## Nav & routing
 
 **Top bar** — sticky, 54px: brand (tap = Home) left; avatar right (photo if set — opens Profile, amber ring when active). **No hamburger, no dropdown.**
@@ -151,7 +157,7 @@ Full CRM view for one venue. Accessed from My pipeline.
 4 steps + success screen. State does not persist between wizard opens.
 
 **Step 1 — How does this room usually pay?** (2026-08-23)
-Two large buttons titled with the REAL terms — **"Soft ticket ⓘ"** (glass icon) / **"Hard ticket ⓘ"** (ticket icon) — with plain-language descriptions beneath ("They pay you a flat rate to play — bar, restaurant, winery, hotel" / "You sell tickets & earn from the door — listening room, theater, club"). The `.info-tip` ⓘ sits AFTER the title (hover on desktop, tap via tabindex/focus) and teaches the economics. **Standing principle — education over obfuscation: call things what the industry calls them, put the teaching in an `.info-tip` right after the term.** (A first pass used plain-language titles with jargon in parentheses; Nick rejected it — renaming the concept IS obfuscation.) Selection persists to step 2 and determines venue type options. All other hard/soft labels (Discover filter, venue badge, edit selects, deal flip toast) use the plain terms "Hard ticket" / "Soft ticket".
+Two large buttons titled with the REAL terms — **"Soft ticket"** (glass icon) / **"Hard ticket"** (ticket icon) — each with an `.info-tip ticket-tip` ⓘ pinned to the card's TOP-RIGHT corner (hover on desktop, tap via tabindex/focus) teaching the economics, and plain-language descriptions beneath ("They pay you a flat rate — bar, restaurant, winery, festival, private events" / "You sell tickets & earn from the door — listening room, theater, club"). Festivals and private/corporate events are soft-ticket types (both in `softTypes`, incl. 'Promoter / agency' and 'Corporate / private'). **Standing principle — education over obfuscation: call things what the industry calls them, teach with an `.info-tip`.** Selection persists to step 2 and determines venue type options. All other hard/soft labels use the plain terms "Hard ticket" / "Soft ticket".
 
 **Step 2 — Venue details**
 - "Find the venue" Maps search (`venueSearch` → worker `/places/search`, 350ms debounce): picking a result fills name/city/state/address/phone/website below, all visible + correctable

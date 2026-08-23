@@ -214,3 +214,9 @@ beta with the trusted circle fits inside the 100-user cap.
    supersedes the old "membership mechanics" decision.
 3. **Name/brand for the commercial product** vs. "Gig Collective" (the word
    "collective" now means a group, which may strengthen the name).
+4. **Buyers who aren't venues** (flagged 2026-08-23): the model is venue-centric,
+   but booking agencies, promoters, and private-event buyers book ACROSS rooms —
+   today they're shoehorned in as a venue type ('Promoter / agency'). The fork's
+   schema should make the ORG a first-class entity (deals attach to an org OR a
+   venue; people belong to orgs; an org spans venues) from day one — like
+   `group_id`, cheap at birth, a migration nightmare later.

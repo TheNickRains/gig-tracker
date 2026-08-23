@@ -488,6 +488,8 @@ function roomClass(venueType, ticketType) {
   if (/winery|vineyard|brewery|distillery/.test(t)) return "winery";
   if (/restaurant|hotel|coffee|cafe/.test(t)) return "restaurant";
   if (/festival/.test(t)) return "festival";
+  if (/promoter|agency|agent/.test(t)) return "promoter";
+  if (/corporate|private|wedding/.test(t)) return "private";
   if (/bar|pub|casino/.test(t)) return "bar";
   return ticketType === "hard" ? "listening" : "bar";
 }

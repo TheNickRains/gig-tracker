@@ -279,6 +279,23 @@
     line-height: 1.5; text-align: left; padding: 8px 10px; border-radius: 8px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.25); white-space: normal;
   }
+  /* Guided tour: dim the app, ring the feature, teach it. (n of N) + Back/Next. */
+  #tour-ov { position: fixed; inset: 0; z-index: 300; pointer-events: none; }
+  .tour-ring {
+    position: fixed; border: 2px solid var(--amber-400); border-radius: 14px;
+    box-shadow: 0 0 0 9999px rgba(10,9,8,0.55); transition: all .25s ease;
+  }
+  .tour-card {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    width: min(380px, calc(100vw - 32px));
+    background: var(--bg-primary); border: 0.5px solid var(--border-mid);
+    border-radius: 16px; padding: 16px; z-index: 301; pointer-events: auto;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+  }
+  .tour-n { font-size: 10.5px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .tour-t { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .tour-d { font-size: 12.5px; color: var(--text-secondary); line-height: 1.55; margin-bottom: 12px; }
+  .tour-btns { display: flex; gap: 8px; align-items: center; }
   /* Incomplete features: dashed "placeholder" treatment, no fake data */
   .placeholder { border: 1px dashed var(--border-mid) !important; background: transparent !important; }
   .ph-av { background: transparent !important; border: 1px dashed var(--border-mid); color: var(--text-tertiary) !important; }
@@ -708,7 +725,9 @@
   .ticket-btn {
     background: var(--bg-primary); border: 0.5px solid var(--border-mid);
     border-radius: var(--radius-lg); padding: 20px 16px; text-align: center; cursor: pointer;
+    position: relative;
   }
+  .ticket-tip { position: absolute; top: 10px; right: 10px; margin: 0; }
   .ticket-btn:hover { border-color: var(--amber-400); }
   .ticket-btn.selected { border: 2px solid var(--amber-400); background: var(--amber-50); }
   .ticket-btn i { font-size: 26px; color: var(--text-secondary); display: block; margin-bottom: 8px; }
@@ -1110,7 +1129,8 @@
       <div class="setting-row" onclick="goProfile()"><div class="setting-icon"><i class="ti ti-id-badge-2"></i></div><div class="setting-label">Artist profile<div class="section-sub" style="margin-top:2px">EPK, rates, links — powers your outreach</div></div><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row"><div class="setting-icon"><i class="ti ti-bell"></i></div><div class="setting-label">Push notifications<div class="section-sub" style="margin-top:2px">Replies, sends &amp; reviews — on this device</div></div><label class="switch"><input type="checkbox" id="push-toggle" onchange="togglePush()"><span></span></label></div>
       <div class="setting-row"><div class="setting-icon"><i class="ti ti-map-pin"></i></div><div class="setting-label">Home market<div class="section-sub" style="margin-top:2px">Where you live — anchors routing &amp; the AI&rsquo;s sense of place</div></div><input class="pipe-search" id="home-market-input" style="margin:0;max-width:150px;font-size:12.5px" placeholder="e.g. Austin, TX" onchange="saveHomeMarket()"></div>
-      <div class="setting-row" onclick="googleRowClick()"><div class="setting-icon"><i class="ti ti-brand-google"></i></div><div class="setting-label">Gmail &amp; Calendar</div><span class="setting-value" id="google-conn-status">Connect</span><i class="ti ti-chevron-right"></i></div>
+      <div class="setting-row" id="google-row" onclick="googleRowClick()"><div class="setting-icon"><i class="ti ti-brand-google"></i></div><div class="setting-label">Gmail &amp; Calendar</div><span class="setting-value" id="google-conn-status">Connect</span><i class="ti ti-chevron-right"></i></div>
+      <div class="setting-row" onclick="startTour()"><div class="setting-icon"><i class="ti ti-route"></i></div><div class="setting-label">Replay the tour<div class="section-sub" style="margin-top:2px">Every screen and feature, step by step</div></div><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row soon-dim" style="border:1px dashed var(--border-mid);border-radius:10px;margin:6px 8px"><div class="setting-icon"><i class="ti ti-robot"></i></div><div class="setting-label">Agent auto-replies <span class="soon">soon</span><div class="section-sub" style="margin-top:2px">The assistant answering routine emails itself — your scheduled sends already fire on their own</div></div></div>
       <div class="setting-row" onclick="signOut()"><div class="setting-icon"><i class="ti ti-logout"></i></div><div class="setting-label" style="color:var(--dead-text)">Sign out</div></div>
     </div>
@@ -1303,15 +1323,72 @@ if (window.visualViewport) {
   });
 }
 
-// ── First-run onboarding: profile → first venue → the war room ──
+// ── First-run onboarding: tour → profile → first venue → the war room ──
 function welcomeSteps(){
   var s1 = !!(profile.genre && profile.oneliner);
   var s2 = pipeline.length > 0;
   return [
+    { done: lsGet('gc_tour_done') === '1', t: 'Take the 60-second tour', d: 'Every screen and feature, step by step — nothing assumed', act: function(){ startTour(); } },
     { done: s1, t: 'Set up your artist profile', d: 'Name, sound, links, rates — this is what your outreach is built from', act: function(){ hideWelcome(); goProfile(); editSection('identity'); } },
     { done: s2, t: 'Add your first venue', d: 'Got a business card? Put it in — contact and all', act: function(){ hideWelcome(); go('add'); } },
     { done: false, t: 'Enter the war room', d: 'Draft with AI, send, and let the assistant work your pipeline', act: function(){ finishOnboarding(false); } }
   ];
+}
+// ── Guided tour: coach marks across every screen. Educate, never assume. ──
+var TOUR_STEPS = [
+  { page:'home', sel:'#war-needs', t:'The war room', d:'Home answers one question: who needs you today? Replies to answer, bounces to fix, follow-ups due — hardest to ignore first. Clear the list, go play.' },
+  { page:'home', sel:'.bnav', t:'Getting around', d:'Pipeline holds your deals. Discover is the venue book. The center button is Home. Calendar tracks availability and gigs. Settings connects your inbox.', pos:'above' },
+  { page:'pipeline', sel:'#pipe-list', t:'Pipeline — your deals', d:'Every room you’re working, staged Lead → Pitched → In talks → Booked → Played. Stages advance on their own as emails go out and replies land. Tap a deal to work it.' },
+  { page:'discover', sel:'#venue-grid', t:'Discover — the venue book', d:'Every room in the collective: pay, contacts, intel from artists who’ve played it. Tap a venue for details — every field quick-edits in place — and add it to your pipeline in one tap.' },
+  { page:'add', sel:'#wiz-container', t:'Add a venue', d:'Heard about a room? Type its name — Maps fills the address, phone and website. Add the booking contact and it lands in your pipeline ready to pitch.' },
+  { page:'calendar', sel:'#cal-days', t:'Calendar', d:'Tap a day to cycle Available → Busy → clear. Booked gigs land here automatically and mirror to Google Calendar; holds show as tentative.' },
+  { page:'settings', sel:'#google-row', t:'Connect Gmail & Calendar', d:'The magic switch: replies file themselves into the right deal, stages advance without you, and the AI learns your voice from every email you send.' },
+  { page:'home', sel:'#war-needs', t:'You’re ready', d:'Add your first venue, draft with AI, send the pitch. The assistant handles the rest — follow-ups, filing replies, learning how you write.' }
+];
+var tourIdx = -1;
+function startTour(){ hideWelcome(); tourIdx = 0; renderTourStep(); }
+function endTour(done){
+  tourIdx = -1;
+  var o = document.getElementById('tour-ov'); if (o) o.remove();
+  if (done) lsSet('gc_tour_done', '1');
+  if (currentScreen !== 'home') go('home');
+  if (!profile.onboarded) showWelcome(); // back to the checklist
+}
+function tourNav(d){
+  tourIdx += d;
+  if (tourIdx < 0) tourIdx = 0;
+  if (tourIdx >= TOUR_STEPS.length) { endTour(true); return; }
+  renderTourStep();
+}
+function renderTourStep(){
+  var st = TOUR_STEPS[tourIdx]; if (!st) return;
+  if (currentScreen !== st.page) go(st.page);
+  setTimeout(function(){
+    var el = document.querySelector(st.sel);
+    if (el && el.scrollIntoView) try { el.scrollIntoView({ block: 'center' }); } catch(e){}
+    setTimeout(function(){ paintTourStep(st, el); }, 80);
+  }, 160);
+}
+function paintTourStep(st, el){
+  if (tourIdx < 0) return;
+  var o = document.getElementById('tour-ov');
+  if (!o) { o = document.createElement('div'); o.id = 'tour-ov'; document.body.appendChild(o); }
+  var r = el ? el.getBoundingClientRect() : null;
+  var ring = r
+    ? '<div class="tour-ring" style="top:' + Math.max(0, r.top - 6) + 'px;left:' + Math.max(0, r.left - 6) + 'px;width:' + (r.width + 12) + 'px;height:' + (r.height + 12) + 'px"></div>'
+    : '<div class="tour-ring" style="top:-20px;left:50%;width:0;height:0"></div>';
+  var below = r && (r.bottom + 210 < window.innerHeight) && st.pos !== 'above';
+  var cardTop = r ? (below ? (r.bottom + 14) : Math.max(12, r.top - 210)) : 90;
+  o.innerHTML = ring
+    + '<div class="tour-card" style="top:' + cardTop + 'px">'
+    + '<div class="tour-n">' + (tourIdx + 1) + ' of ' + TOUR_STEPS.length + '</div>'
+    + '<div class="tour-t">' + st.t + '</div>'
+    + '<div class="tour-d">' + st.d + '</div>'
+    + '<div class="tour-btns">'
+    + (tourIdx > 0 ? '<button class="btn-secondary btn-sm" onclick="tourNav(-1)"><i class="ti ti-arrow-left"></i> Back</button>' : '')
+    + '<button class="btn-primary btn-sm" onclick="tourNav(1)">' + (tourIdx === TOUR_STEPS.length - 1 ? 'Done ✓' : 'Next <i class="ti ti-arrow-right"></i>') + '</button>'
+    + '<button class="vc-btn" style="margin-left:auto" onclick="endTour(false)">Skip tour</button>'
+    + '</div></div>';
 }
 function renderWelcome(){
   var el = document.getElementById('welcome-steps'); if (!el) return;
@@ -3131,9 +3208,11 @@ function renderWizard(step, ticket, data) {
     + '<div class="wiz-dots">' + dots + '</div>'
     + '<div class="ticket-grid">'
     + '<div class="ticket-btn' + (ticket==='soft'?' selected':'') + '" onclick="renderWizard(2,\'soft\',{})">'
-    + '<i class="ti ti-glass-full"></i><div class="ticket-name">Soft ticket<span class="info-tip" tabindex="0" onclick="event.stopPropagation()" data-tip="&ldquo;Soft ticket&rdquo;: entry is free — the venue pays you to set the vibe and keep people eating &amp; drinking. Your money comes from the venue, not the audience. Usually quoted per hour or per set.">i</span></div><div class="ticket-desc">They pay you a flat rate to play — bar, restaurant, winery, hotel</div></div>'
+    + '<span class="info-tip ticket-tip" tabindex="0" onclick="event.stopPropagation()" data-tip="&ldquo;Soft ticket&rdquo;: entry is free — the venue pays you to set the vibe and keep people eating &amp; drinking. Your money comes from the venue, not the audience. Usually quoted per hour or per set.">i</span>'
+    + '<i class="ti ti-glass-full"></i><div class="ticket-name">Soft ticket</div><div class="ticket-desc">They pay you a flat rate — bar, restaurant, winery, festival, private events</div></div>'
     + '<div class="ticket-btn' + (ticket==='hard'?' selected':'') + '" onclick="renderWizard(2,\'hard\',{})">'
-    + '<i class="ti ti-ticket"></i><div class="ticket-name">Hard ticket<span class="info-tip" tabindex="0" onclick="event.stopPropagation()" data-tip="&ldquo;Hard ticket&rdquo;: people buy tickets to see YOU — your draw is the product. Pay is a door split, a guarantee, or both, so these rooms will ask how many people you bring.">i</span></div><div class="ticket-desc">You sell tickets &amp; earn from the door — listening room, theater, club</div></div>'
+    + '<span class="info-tip ticket-tip" tabindex="0" onclick="event.stopPropagation()" data-tip="&ldquo;Hard ticket&rdquo;: people buy tickets to see YOU — your draw is the product. Pay is a door split, a guarantee, or both, so these rooms will ask how many people you bring.">i</span>'
+    + '<i class="ti ti-ticket"></i><div class="ticket-name">Hard ticket</div><div class="ticket-desc">You sell tickets &amp; earn from the door — listening room, theater, club</div></div>'
     + '</div>'
     + '<div style="font-size:11.5px;color:var(--text-tertiary);margin-top:12px;text-align:center">This sets the venue\u2019s default — rooms like theaters do both, and every deal can flip later.</div>';
   } else if (step===2) {
