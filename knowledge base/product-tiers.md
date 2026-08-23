@@ -34,6 +34,26 @@ production instance stays free and untouched.
 - **Meters recycle.** Slots and monthly quotas re-present the gate indefinitely;
   every reset is a fresh sales conversation.
 
+## Two axes: payment and standing (decided 2026-08-22)
+
+Payment tiers (Free/Pro) buy the **assistant**. The **collective** is gated by
+**standing — earned or vouched, never purchasable** (a paid door would let venue
+owners buy their way into the room where artists compare notes). Three layers:
+
+1. **Directory** (names, cities, types) — open; the acquisition/SEO surface.
+2. **Community** (read/post intel, wins, add venues) — **membership**: invited by
+   a member or earned by contribution. Solves the strangers/vandalism problem
+   (open decision #3: nobody writes until vouched — creator-owns-delete plus
+   versioning shrink to cleanup detail). "The {metro} collective is invite-only"
+   is the launch pitch; founding members hold invites.
+3. **Intelligence** (pay aggregates, pulse, wins detail) — the money layer per
+   [spec-collective-intel.md](spec-collective-intel.md): earn per-venue or Pro
+   everywhere.
+
+Cost acknowledged: membership gating throttles top-of-funnel on purpose — data
+quality and trust density over volume. The CRM stays open to anyone (solo mode
+works without the collective), so the product keeps an ungated on-ramp.
+
 ## The matrix
 
 | | **Free** | **Pro — $12/mo (test $9.99–14.99)** |
@@ -150,6 +170,9 @@ beta with the trusted circle fits inside the 100-user cap.
    circle's density is highest.)
 2. **Price point** — $12 anchor; test against $9.99/$14.99 once the funnel has
    volume. Annual plan (2 months free) at launch or later.
-3. **Collective permissions rework** (creator-owns-delete, versioned edits) —
-   prerequisite for opening the doors to strangers; not yet specced.
+3. **Membership mechanics** (invite flow, contribution-earned entry, vouching,
+   invite quotas for founders) — the standing axis (see "Two axes" above) needs
+   its own spec before strangers arrive; membership gating replaces most of the
+   old permissions-rework concern, leaving creator-owns-delete + edit versioning
+   as cleanup detail inside that spec.
 4. **Name/brand for the commercial product** vs. "Gig Collective".
