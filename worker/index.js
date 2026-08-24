@@ -543,18 +543,29 @@ async function refreshToneProfile(artistId, token, force) {
     }
   }
   let samples = flat.slice(-8).reverse();
-  // Bootstrap: a brand-new account has no logged sends yet — fall back to Gmail.
+  // Bootstrap: no logged sends yet — sample Gmail, but ONLY mail sent to known
+  // booking contacts. A day-job inbox must never become the artist's "voice"
+  // (real incident: tone cards full of "align on project goals, scope, and
+  // timelines" from artists whose Gmail is their work email).
   if (samples.length < 2 && token) {
-    const msgs = await gmailSearch(token, "in:sent newer_than:90d");
-    for (const m of msgs.slice(0, 12)) {
-      const full = await gmailGet(token, m.id);
-      if (!full) continue;
-      const text = cleanSnippet(extractPlainText(full.payload).trim());
-      if (text.length > 60) samples.push(text.slice(0, 600));
+    const ppl = await sGet(`pipeline_entries?artist_id=eq.${artistId}&select=person:people(email),contact:contacts(email)&limit=200`);
+    const addrs = [...new Set(ppl.flatMap((r) => [r.person && r.person.email, r.contact && r.contact.email]).filter(Boolean))].slice(0, 10);
+    for (const addr of addrs) {
       if (samples.length >= 8) break;
+      const msgs = await gmailSearch(token, `in:sent to:${addr}`);
+      for (const m of (msgs || []).slice(0, 3)) {
+        const full = await gmailGet(token, m.id);
+        if (!full) continue;
+        const text = cleanSnippet(extractPlainText(full.payload).trim());
+        if (text.length > 60) samples.push(text.slice(0, 600));
+        if (samples.length >= 8) break;
+      }
     }
   }
-  if (samples.length < 2) { await sPatch(`artists?id=eq.${artistId}`, { tone_updated_at: new Date().toISOString() }); return; }
+  // Fewer than 2 booking samples: leave tone_profile alone and DON'T stamp
+  // tone_updated_at — no card beats a wrong card, and the material-aware gate
+  // will try again as soon as they actually send something.
+  if (samples.length < 2) return;
 
   // The explicit loop: AI generation vs what the artist ACTUALLY sent.
   const pairs = await sGet(`scheduled_messages?artist_id=eq.${artistId}&status=eq.sent&ai_draft=not.is.null&order=sent_at.desc&limit=8&select=ai_draft,body`);
