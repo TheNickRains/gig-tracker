@@ -908,11 +908,16 @@ async function handleAiDraft(req, res, bodyStr) {
         ? rateWhen + `GROUNDED RATES (standing) — when a number is called for per the rule above, quote the one matching THIS deal's ${ticket} ticket EXACTLY (never invent, round, discount, or underbid): soft ticket ${a.rate_soft || "not set"} · hard ticket ${a.rate_hard || "not set"}. If MY NOTE on this deal names a specific number, THAT is authoritative — quote it instead.\n`
         : `RATES: not set — do NOT name any number under any circumstances; if they ask, defer ("happy to talk numbers").\n`;
     const acts = await sGet(`activities?pipeline_entry_id=eq.${entryId}&kind=in.(email_in,email_out,note)&order=created_at.desc&limit=8&select=kind,body`);
-    const lastInbound = (acts.find((x) => x.kind === "email_in") || {}).body || "";
+    // Hand-logged calls/meets/forms (📞🤝📝) are CONTEXT, not correspondence —
+    // "spoke with Debbie" must never put the first email to Blaine in
+    // follow-up register. Texts/DMs (💬📸) ARE messages to the contact.
+    const isRealMsg = (x) => !/^[📞🤝📝]/.test(x.body || "");
+    const lastInbound = (acts.find((x) => x.kind === "email_in" && isRealMsg(x)) || {}).body || "";
     const convo = acts.slice().reverse().map((x) => (x.kind === "email_in" ? "THEM: " : x.kind === "email_out" ? "ME: " : "MY NOTE: ") + x.body).join("\n");
     // The objective is DERIVED FROM EVIDENCE — conversation state, notes, stage,
     // dates — never assumed. Cold intro only when there is zero prior exchange.
-    const hasOutbound = acts.some((x) => x.kind === "email_out");
+    const hasOutbound = acts.some((x) => x.kind === "email_out" && isRealMsg(x));
+    const spokeBefore = acts.some((x) => /^[📞🤝]/.test(x.body || ""));
     // Channel detection: contact without email whose thread is hand-logged
     // texts/calls => the draft must BE a text message, not an email.
     const persons = e.person_id ? await sGet(`people?id=eq.${e.person_id}&select=email,phone`) : [];
@@ -933,6 +938,7 @@ async function handleAiDraft(req, res, bodyStr) {
     if (e.status === "hold" || e.status === "booked") objective = "OBJECTIVE: the deal is at " + e.status + (gigWhen ? " for " + gigWhen : "") + ". Confirm/advance the date and logistics (load-in, set length, rate as agreed). No self-promotion — they already want the artist.";
     else if (lastInbound) objective = "OBJECTIVE: live conversation — their message is the latest word. Reply DIRECTLY to it: answer every question they asked, propose or lock concrete specifics (dates, times, rate, logistics), move the booking one step closer. Do NOT re-introduce the artist, do NOT add credentials or sales language — they already know who they're talking to.";
     else if (hasOutbound) objective = "OBJECTIVE: they haven't replied to the earlier message(s) below. Write a brief, warm follow-up that adds ONE new angle or ask (a specific date works well) without repeating the original pitch. 2-4 sentences. Never re-introduce from scratch.";
+    else if (spokeBefore) objective = "OBJECTIVE: FIRST WRITTEN MESSAGE to this contact, warmed by real-world contact — the conversation log shows a call or meeting. READ THE LOG CAREFULLY: it may have been with a COLLEAGUE of the recipient, not the recipient themselves. Open as a warm introduction: brief who-you-are, then name the referral or call naturally and ONLY as the log supports ('Debbie suggested I reach out' if the call was with Debbie; 'great speaking earlier' only if it was with THIS person), then the pitch. NEVER open with 'following up' or 'circling back' — there is no prior thread with this person, just half a degree of warmth.";
     else if (e.status === "played") objective = "OBJECTIVE: friendly check-in with a room the artist already played — reference the relationship, float availability for another date. Light, no hard sell.";
     else if (v.booking_form_url) objective = "OBJECTIVE: this venue books via a WEB FORM. Write copy ready to paste into their booking form: who the artist is, why they fit this room, draw, one listen link. Skip the salutation and sign-off if it reads more natural for a form; keep the phone/site so they can respond.";
     else objective = "OBJECTIVE: first-touch cold outreach — concise intro, why the artist fits THIS room specifically (use the venue notes/clientele), one listen link, clear ask: are they the right person / can we get a date.";
