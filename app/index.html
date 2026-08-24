@@ -971,19 +971,19 @@
     <!-- Identity -->
     <div class="card" id="card-identity">
       <div class="section-header">
-        <div><div class="section-title">Artist identity</div><div class="section-sub">Used in every template as your intro</div></div>
+        <div><div class="section-title">Artist identity</div><div class="section-sub">How every pitch the AI writes introduces you</div></div>
         <button class="edit-btn" onclick="editSection('identity')"><i class="ti ti-pencil"></i> Edit</button>
       </div>
       <div id="view-identity">
         <div class="field-row"><span class="field-label">Display name</span><span class="field-value" id="fv-name">Nick Rains</span></div>
         <div class="field-row"><span class="field-label">Genre / style</span><span class="field-value" id="fv-genre">Americana / country singer-songwriter</span></div>
-        <div class="field-row"><span class="field-label">One-liner</span><span class="field-value" id="fv-oneliner">Originals with a sound that tends to work well in listening rooms and intimate venues</span></div>
+        <div class="field-row"><span class="field-label">Hook<span class="info-tip" tabindex="0" data-tip="The one line a booker remembers — it opens every pitch the AI writes for you. Make it sound like a reason to book you, not a bio.">i</span></span><span class="field-value" id="fv-oneliner">Originals with a sound that tends to work well in listening rooms and intimate venues</span></div>
         <div class="field-row"><span class="field-label">Phone</span><span class="field-value" id="fv-phone">(713) 555-0100</span></div>
       </div>
       <div id="edit-identity" style="display:none">
         <div class="field-row"><span class="field-label">Display name</span><input class="form-input" id="fi-name" placeholder="Your artist / act name" value="Nick Rains"></div>
         <div class="field-row"><span class="field-label">Genre / style</span><input class="form-input" id="fi-genre" placeholder="e.g. Americana / country singer-songwriter"></div>
-        <div class="field-row"><span class="field-label">One-liner</span><input class="form-input" id="fi-oneliner" placeholder="One sentence on your sound — becomes your intro line in outreach"></div>
+        <div class="field-row"><span class="field-label">Hook</span><input class="form-input" id="fi-oneliner" placeholder="The one line a booker remembers — opens every pitch"></div>
         <div class="field-row"><span class="field-label">Phone</span><input class="form-input" id="fi-phone" placeholder="(512) 555-0100" value="(713) 555-0100"></div>
         <div class="save-row"><button class="btn-primary btn-sm" onclick="saveSection('identity')">Save</button><button class="btn-secondary btn-sm" onclick="cancelSection('identity')">Cancel</button></div>
       </div>
@@ -992,7 +992,7 @@
     <!-- Links -->
     <div class="card" id="card-links">
       <div class="section-header">
-        <div><div class="section-title">Links</div><div class="section-sub">Dropped into pitch and full-pitch templates</div></div>
+        <div><div class="section-title">Links</div><div class="section-sub">The listen — the AI works these into every pitch</div></div>
         <button class="edit-btn" onclick="editSection('links')"><i class="ti ti-pencil"></i> Edit</button>
       </div>
       <div id="view-links">
@@ -1015,7 +1015,7 @@
     <!-- Markets -->
     <div class="card">
       <div class="section-header">
-        <div><div class="section-title">Active markets</div><div class="section-sub">Feeds "I'll be in [city] anyway" in follow-up templates</div></div>
+        <div><div class="section-title">Active markets</div><div class="section-sub">Where you play — powers "I'll be in [city] anyway" follow-ups and location filters</div></div>
         <button class="edit-btn" onclick="toggleMarketEdit()"><i class="ti ti-pencil"></i> Edit</button>
       </div>
       <div class="market-chips" id="market-chips"></div>
@@ -1028,7 +1028,7 @@
     <!-- Draw -->
     <div class="card" id="card-draw">
       <div class="section-header">
-        <div><div class="section-title">Draw & experience</div><div class="section-sub">Credibility signals in pitch templates</div></div>
+        <div><div class="section-title">Draw & experience</div><div class="section-sub">Credibility the AI can draw on — rates stay grounding-only (quoted when asked, never pitched)</div></div>
         <button class="edit-btn" onclick="editSection('draw')"><i class="ti ti-pencil"></i> Edit</button>
       </div>
       <div id="view-draw">
@@ -1051,7 +1051,7 @@
     <!-- Notable venues -->
     <div class="card">
       <div class="section-header">
-        <div><div class="section-title">Notable venues played</div><div class="section-sub">Social proof for pitch templates</div></div>
+        <div><div class="section-title">Notable venues played</div><div class="section-sub">Social proof — the AI name-drops these in first-touch pitches</div></div>
         <button class="edit-btn" onclick="toggleNotableEdit()"><i class="ti ti-pencil"></i> Edit</button>
       </div>
       <div class="market-chips" id="notable-chips"></div>
@@ -1361,7 +1361,7 @@ function renderIntake(step){
     el.innerHTML = '<div class="page-title" style="margin-bottom:4px">Here’s how I’d pitch you</div>'
       + '<div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">Correct anything that’s off — your edits are the point. This is exactly how drafting works from here on: the AI writes, you make it yours.</div>'
       + '<div class="form-field"><label class="form-label">Genre <span style="font-weight:400;color:var(--text-tertiary)">(how a booker files you)</span></label><input class="form-input" id="in-genre" value="' + esc(intakeData.genre || '') + '"></div>'
-      + '<div class="form-field"><label class="form-label">Your show, one sentence</label><textarea class="form-textarea" id="in-oneliner" style="min-height:64px">' + esc(intakeData.oneliner || '') + '</textarea></div>'
+      + '<div class="form-field"><label class="form-label">Your hook <span style="font-weight:400;color:var(--text-tertiary)">(the line a booker remembers)</span></label><textarea class="form-textarea" id="in-oneliner" style="min-height:64px">' + esc(intakeData.oneliner || '') + '</textarea></div>'
       + '<div class="form-field"><label class="form-label">Best brag <span style="font-weight:400;color:var(--text-tertiary)">(rooms, press, numbers)</span></label><input class="form-input" id="in-notable" value="' + esc(intakeData.notable || '') + '"></div>'
       + '<div class="section-label" style="margin-top:14px">Only you know these</div>'
       + '<div class="form-field"><label class="form-label">Home market</label><input class="form-input" id="in-market" placeholder="e.g. Memphis, TN" value="' + esc(profile.home_market || '') + '"></div>'
