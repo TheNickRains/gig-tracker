@@ -215,4 +215,4 @@ Missing fields show an amber warning: "Missing — [consequence]". Section subti
 
 **The collective** — roster of all 7 members. Each row: avatar, name, markets, gig count this year.
 
-**Settings** — Notifications · Home market · Google account · Sign out.
+**Settings** — Artist profile · Notifications · Home market · **Appearance (Auto/Light/Dark — `gc_theme`, Auto follows the OS live; dark tokens live on `html[data-theme=dark]`, resolved by a pre-paint head script that also swaps the theme-color meta)** · Gmail & Calendar · Replay the tour · Sign out.

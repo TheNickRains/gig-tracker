@@ -54,18 +54,20 @@
     --played-bg: #DFEFE8; --played-text: #2F6B55;
     --passed-bg: #EFE9E1; --passed-text: #7A6A55;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg-primary: #232220;
-      --bg-secondary: #2c2a26;
-      --bg-tertiary: #1a1917;
-      --text-primary: #f0ede6;
-      --text-secondary: #a39d8e;
-      --text-tertiary: #6f6a5f;
-      --border-light: rgba(225,215,185,0.07);
-      --border-mid: rgba(225,215,185,0.14);
-      --bg-page: #11100e;
-    }
+  :root { color-scheme: light; }
+  /* Manual theme switch: dark tokens live behind data-theme (set pre-paint by
+     the head script; Auto resolves the OS preference into light/dark). */
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --bg-primary: #232220;
+    --bg-secondary: #2c2a26;
+    --bg-tertiary: #1a1917;
+    --text-primary: #f0ede6;
+    --text-secondary: #a39d8e;
+    --text-tertiary: #6f6a5f;
+    --border-light: rgba(225,215,185,0.07);
+    --border-mid: rgba(225,215,185,0.14);
+    --bg-page: #11100e;
   }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
@@ -303,7 +305,7 @@
   .ph-caption { font-size: 12px; color: var(--text-tertiary); padding: 10px 0 2px; }
   /* Brand logo — monochrome PNG with transparency; invert for dark mode */
   .logo-img { object-fit: contain; display: block; }
-  @media (prefers-color-scheme: dark) { .logo-img { filter: invert(1) brightness(1.75); } }
+  html[data-theme="dark"] .logo-img { filter: invert(1) brightness(1.75); }
 
   /* ── Buttons ── */
   .btn-primary {
@@ -507,9 +509,7 @@
     border: 0.5px solid rgba(255,255,255,0.28);
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.30), inset 0 -1px 0 rgba(0,0,0,0.06), 0 2px 10px rgba(0,0,0,0.16);
   }
-  @media (prefers-color-scheme: dark) {
-    .bnav-item.active { color: #E8E2D4; background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.03)); border-color: rgba(255,255,255,0.18); }
-  }
+  html[data-theme="dark"] .bnav-item.active { color: #E8E2D4; background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.03)); border-color: rgba(255,255,255,0.18); }
   .bnav-item { border: 0.5px solid transparent; transition: background 0.18s, color 0.18s; }
   .bnav-home { width: 52px; height: 52px; border-radius: 50%; background: var(--amber-800); color: #fff; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; transform: translateY(-16px); box-shadow: 0 6px 18px rgba(0,0,0,0.3); flex-shrink: 0; }
   .bnav-home i { font-size: 25px; }
@@ -806,6 +806,23 @@
   /* ── Toast ── */
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #2E2A24; color: #F4F1E8; padding: 9px 20px; border-radius: 20px; font-size: 13px; display: none; z-index: 999; white-space: nowrap; }
 </style>
+<script>
+// Theme resolves BEFORE first paint (no flash): stored choice wins, Auto
+// follows the OS live. Also keeps the browser-chrome color in step.
+(function(){
+  function applyTheme(){
+    var pref = null; try { pref = localStorage.getItem('gc_theme'); } catch(e){}
+    var mode = (pref === 'light' || pref === 'dark') ? pref
+      : (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', mode);
+    var tc = document.querySelector('meta[name="theme-color"]');
+    if (tc) tc.setAttribute('content', mode === 'dark' ? '#1a1917' : '#efebdf');
+  }
+  applyTheme();
+  if (window.matchMedia) { try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme); } catch(e){} }
+  window.applyTheme = applyTheme;
+})();
+</script>
 </head>
 <body>
 
@@ -1142,6 +1159,7 @@
       <div class="setting-row" onclick="goProfile()"><div class="setting-icon"><i class="ti ti-id-badge-2"></i></div><div class="setting-label">Artist profile<div class="section-sub" style="margin-top:2px">EPK, rates, links — powers your outreach</div></div><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row"><div class="setting-icon"><i class="ti ti-bell"></i></div><div class="setting-label">Push notifications<div class="section-sub" style="margin-top:2px">Replies, sends &amp; reviews — on this device</div></div><label class="switch"><input type="checkbox" id="push-toggle" onchange="togglePush()"><span></span></label></div>
       <div class="setting-row"><div class="setting-icon"><i class="ti ti-map-pin"></i></div><div class="setting-label">Home market<div class="section-sub" style="margin-top:2px">Where you live — anchors routing &amp; the AI&rsquo;s sense of place</div></div><input class="pipe-search" id="home-market-input" style="margin:0;max-width:150px;font-size:12.5px" placeholder="e.g. Austin, TX" onchange="saveHomeMarket()"></div>
+      <div class="setting-row"><div class="setting-icon"><i class="ti ti-sun-moon"></i></div><div class="setting-label">Appearance<div class="section-sub" style="margin-top:2px">Auto follows your device</div></div><select class="pipe-sort" id="theme-select" onchange="setTheme(this.value)"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
       <div class="setting-row" id="google-row" onclick="googleRowClick()"><div class="setting-icon"><i class="ti ti-brand-google"></i></div><div class="setting-label">Gmail &amp; Calendar</div><span class="setting-value" id="google-conn-status">Connect</span><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row" onclick="startTour()"><div class="setting-icon"><i class="ti ti-route"></i></div><div class="setting-label">Replay the tour<div class="section-sub" style="margin-top:2px">Every screen and feature, step by step</div></div><i class="ti ti-chevron-right"></i></div>
       <div class="setting-row soon-dim" style="border:1px dashed var(--border-mid);border-radius:10px;margin:6px 8px"><div class="setting-icon"><i class="ti ti-robot"></i></div><div class="setting-label">Agent auto-replies <span class="soon">soon</span><div class="section-sub" style="margin-top:2px">The assistant answering routine emails itself — your scheduled sends already fire on their own</div></div></div>
@@ -1299,6 +1317,7 @@ function go(screen) {
   if (screen === 'settings') refreshPushToggle();
   if (screen === 'add') renderWizard(1, null, {});
   if (screen === 'profile') { renderMarkets(); renderNotables(); renderSigPreview(); updateProfilePreview(); updateCompleteness(); }
+  if (screen === 'settings') initThemeSelect();
   syncHash(screen);
 }
 
@@ -3542,6 +3561,17 @@ function updateCompleteness() {
   var pct = Math.round((filled/fields.length)*100);
   var bar = document.getElementById('pct-bar'); if (bar) bar.style.width = pct + '%';
   var lbl = document.getElementById('pct-label'); if (lbl) lbl.textContent = pct + '%';
+}
+
+// ── Theme switch: Auto (OS) / Light / Dark, persisted ──
+function setTheme(v){
+  if (v === 'light' || v === 'dark') lsSet('gc_theme', v);
+  else { try { localStorage.removeItem('gc_theme'); } catch(e){} }
+  window.applyTheme();
+}
+function initThemeSelect(){
+  var s = document.getElementById('theme-select');
+  if (s) s.value = lsGet('gc_theme') || 'auto';
 }
 
 // ── Toast ───────────────────────────────────────────────
