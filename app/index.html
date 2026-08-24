@@ -592,9 +592,10 @@
   .msg.you { align-self: flex-end; background: var(--pitched-bg); border-right: 3px solid var(--pitched-text); border-top-right-radius: 4px; }
   .msg .m-sum { font-weight: 600; margin-bottom: 3px; }
   .msg .m-raw { font-size: 12.5px; opacity: 0.75; margin-top: 3px; }
-  .msg .m-meta { font-size: 10px; color: var(--text-tertiary); margin-top: 5px; display: flex; gap: 8px; }
-  .msg.them .m-meta { color: var(--talks-text); opacity: 0.7; }
-  .msg.you .m-meta { color: var(--pitched-text); opacity: 0.7; justify-content: flex-end; }
+  .msg .m-meta { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 5px; display: flex; align-items: center; gap: 3px; }
+  .msg .m-meta i { font-size: 11px; }
+  .msg.them .m-meta { color: var(--talks-text); opacity: 0.75; }
+  .msg.you .m-meta { color: var(--pitched-text); opacity: 0.75; justify-content: flex-end; }
   .msg { position: relative; }
   .m-tools { position: absolute; top: 3px; right: 4px; display: flex; gap: 2px; opacity: 0.55; background: color-mix(in srgb, var(--bg-primary) 82%, transparent); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); border-radius: 8px; padding: 1px 2px; }
   .m-tools .note-ic { padding: 3px 5px; font-size: 13px; }
@@ -2504,7 +2505,7 @@ function openDetail(id) {
       var chKey = Object.keys(CH_TAGS).filter(function(k){ return text.indexOf(k) === 0; })[0];
       if (chKey) {
         text = text.slice(chKey.length).trim();
-        chanTag = '<div class="m-chan"><i class="ti ' + CH_TAGS[chKey][1] + '"></i>' + CH_TAGS[chKey][0] + (inbound ? ' from ' + esc(first) : '') + ' · logged by hand</div>';
+        chanTag = '<div class="m-chan"><i class="ti ' + CH_TAGS[chKey][1] + '"></i>' + CH_TAGS[chKey][0] + ' · logged by hand</div>';
       }
       var content = a.summary
         ? '<div class="m-sum">' + esc(a.summary) + '</div><div class="m-raw">' + esc(text) + '</div>'
@@ -2513,7 +2514,9 @@ function openDetail(id) {
         ? '<span class="m-tools"><button class="note-ic" onclick="event.stopPropagation();startNoteEdit(\'' + a.id + '\',' + id + ')" title="Edit"><i class="ti ti-pencil"></i></button>'
           + '<button class="note-ic" onclick="event.stopPropagation();deleteNote(\'' + a.id + '\',' + id + ',this)" title="Delete"><i class="ti ti-trash"></i></button></span>'
         : '';
-      return '<div class="msg ' + (inbound ? 'them' : 'you') + (manual ? ' manual' : '') + '" title="' + (inbound ? esc(first) : 'You') + ' · ' + a.time + (manual ? ' · logged by hand' : '') + '">' + tools + chanTag + content + '</div>';
+      // Every bubble says who said it — pastel backgrounds alone don't read.
+      var meta = '<div class="m-meta">' + (inbound ? '<i class="ti ti-arrow-down-left"></i>' + esc(first) : 'You<i class="ti ti-arrow-up-right"></i>') + ' · ' + a.time + '</div>';
+      return '<div class="msg ' + (inbound ? 'them' : 'you') + (manual ? ' manual' : '') + '">' + tools + chanTag + content + meta + '</div>';
     }
     return '<div class="sys-line"><span>' + esc(a.text) + '</span><span>· ' + a.time + '</span></div>';
   }).join('') || '<p style="color:var(--text-secondary);font-size:13px">No conversation yet — emails with ' + esc(first) + ' appear here automatically.</p>') + '</div>';
