@@ -2249,12 +2249,12 @@ function createAndLinkRoom(pid, name){
   if (name.length < 2) { showToast('Type the venue name first', true); return; }
   cnr = { pid: pid, name: name, city: '', state: '', address: '' };
   var out = document.getElementById('pp-room-results'); if (!out) return;
-  var typeOpts = function(t){ return (t==='hard' ? hardTypes : softTypes).map(function(x){ return '<option>' + x + '</option>'; }).join(''); };
+  var typeOpts = function(t){ return '<option value="" selected>Select type…</option>' + (t==='hard' ? hardTypes : softTypes).map(function(x){ return '<option>' + x + '</option>'; }).join(''); };
   out.innerHTML = '<div class="card" style="margin-top:6px">'
     + '<div class="form-field"><label class="form-label">Venue name</label><input class="form-input" id="cnr-name" value="' + esc(name) + '"></div>'
     + '<div id="cnr-loc" style="font-size:11.5px;color:var(--text-tertiary);margin:-4px 0 10px">Searching Maps for the address…</div>'
     + '<div class="form-row-2">'
-    + '<div class="form-field"><label class="form-label">Ticket (mostly)</label><select class="form-select" id="cnr-ticket" onchange="document.getElementById(\'cnr-type\').innerHTML=(this.value===\'hard\'?' + "hardTypes" + ':' + "softTypes" + ').map(function(x){return \'<option>\'+x+\'</option>\';}).join(\'\')"><option value="hard">Hard ticket</option><option value="soft">Soft ticket</option></select></div>'
+    + '<div class="form-field"><label class="form-label">Ticket (mostly)</label><select class="form-select" id="cnr-ticket" onchange="document.getElementById(\'cnr-type\').innerHTML=\'<option value=&quot;&quot; selected>Select type…</option>\'+(this.value===\'hard\'?' + "hardTypes" + ':' + "softTypes" + ').map(function(x){return \'<option>\'+x+\'</option>\';}).join(\'\')"><option value="hard">Hard ticket</option><option value="soft">Soft ticket</option></select></div>'
     + '<div class="form-field"><label class="form-label">Venue type</label><select class="form-select" id="cnr-type">' + typeOpts('hard') + '</select></div>'
     + '</div>'
     + '<button class="btn-primary btn-sm" style="width:100%" onclick="cnrCreate()"><i class="ti ti-plus"></i> Create &amp; link</button>'
@@ -2282,6 +2282,7 @@ function cnrCreate(){
   var nameNow = (document.getElementById('cnr-name') || {value: cnr.name}).value.trim();
   var ticket = (document.getElementById('cnr-ticket') || {value:'hard'}).value;
   var vtype = (document.getElementById('cnr-type') || {value:null}).value;
+  if (!vtype) { showToast('Pick a venue type first', true); return; }
   sb.from('venues').insert({ name: nameNow, city: cnr.city || null, state: cnr.state || null, address: cnr.address || null, phone: cnr.phone || null, website: cnr.website || null, ticket_type: ticket, venue_type: vtype, created_by_name: profile.name || null }).select().single().then(function(r){
     if (r.error) { showToast('Could not create: ' + r.error.message, true); return; }
     sb.from('venue_people').upsert({ venue_id: r.data.id, person_id: cnr.pid }).then(function(){
@@ -3389,7 +3390,8 @@ function renderWizard(step, ticket, data) {
     + '<div class="form-field"><label class="form-label">Venue name *</label><input class="form-input" id="wn" placeholder="e.g. Dosey Doe"></div>'
     + '<div class="form-row-2"><div class="form-field"><label class="form-label">City *</label><input class="form-input" id="wc" placeholder="Houston"></div>'
     + '<div class="form-field"><label class="form-label">State *</label><input class="form-input" id="ws" placeholder="TX"></div></div>'
-    + '<div class="form-field"><label class="form-label">Venue type</label><select class="form-select" id="wvt" onchange="checkOther()">'
+    + '<div class="form-field"><label class="form-label">Venue type *</label><select class="form-select" id="wvt" onchange="checkOther()">'
+    + '<option value="" selected>Select venue type…</option>'
     + types.map(function(t){ return '<option>' + t + '</option>'; }).join('') + '</select></div>'
     + '<div class="form-field" id="other-wrap" style="display:none"><label class="form-label">Describe the venue type</label><input class="form-input" id="wo" placeholder="Tell us more…"></div>'
     + '<div class="form-field"><label class="form-label">Address (optional)</label><input class="form-input" id="waddr" placeholder="Street address — powers maps later"></div>'
@@ -4126,6 +4128,7 @@ function setStatus(id, s){
 function wizNext(step, ticket){
   wizCapture(step, ticket);
   if(step===2 && (!wizData.name || !wizData.city || !wizData.state)){ alert('Venue name, city, and state are required.'); return; }
+  if(step===2 && !wizData.vtype){ alert('Pick a venue type — it decides how the AI pitches this room.'); return; }
   renderWizard(step+1, ticket, {});
 }
 function wizCapture(step, ticket){

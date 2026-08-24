@@ -1215,6 +1215,48 @@ function handleHttp(req, res, u) {
     });
     return;
   }
+  // One-off maintenance: re-type existing venues that wear the old Bar/Pub
+  // blanket default, using Google's verdict. Only touches null/'Bar / Pub'
+  // rows (never deliberate choices), requires a plausible name match, and
+  // reports every decision.
+  if (req.method === "POST" && u.pathname === "/admin/venue-type-backfill") {
+    (async () => {
+      const hdr = corsHeaders(req);
+      const uid = await verifyUser(req);
+      if (!uid) { res.writeHead(401, hdr); res.end(JSON.stringify({ error: "Not signed in" })); return; }
+      if (!PLACES_KEY) { res.writeHead(503, hdr); res.end(JSON.stringify({ error: "PLACES_API_KEY missing" })); return; }
+      try {
+        const venues = await sGet(`venues?select=id,name,city,state,venue_type,ticket_type&order=created_at.asc&limit=500`);
+        const suspects = venues.filter((v) => !v.venue_type || v.venue_type === "Bar / Pub");
+        const normName = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+        const changed = [], skipped = [];
+        for (const v of suspects) {
+          const q = [v.name, v.city, v.state].filter(Boolean).join(", ");
+          const r = await fetch("https://places.googleapis.com/v1/places:searchText", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Goog-Api-Key": PLACES_KEY, "X-Goog-FieldMask": "places.displayName,places.types,places.primaryType" },
+            body: JSON.stringify({ textQuery: q, maxResultCount: 1 }),
+          });
+          if (!r.ok) { skipped.push({ venue: v.name, why: "places " + r.status }); continue; }
+          const pl = ((await r.json()).places || [])[0];
+          if (!pl) { skipped.push({ venue: v.name, why: "no Maps match" }); continue; }
+          const gn = normName(pl.displayName && pl.displayName.text), vn = normName(v.name);
+          if (!gn || !(gn.includes(vn.slice(0, 10)) || vn.includes(gn.slice(0, 10)))) {
+            skipped.push({ venue: v.name, why: "name mismatch: Maps returned " + ((pl.displayName && pl.displayName.text) || "?") }); continue;
+          }
+          const vt = venueTypeFromGoogle(pl.primaryType, pl.types || []);
+          if (!vt) { skipped.push({ venue: v.name, why: "Google unsure — left as is" }); continue; }
+          if (vt.vtype === v.venue_type) { skipped.push({ venue: v.name, why: "confirmed Bar / Pub" }); continue; }
+          await sPatch(`venues?id=eq.${v.id}`, { venue_type: vt.vtype, ticket_type: vt.ticket });
+          changed.push({ venue: v.name, from: v.venue_type || "(none)", to: vt.vtype, ticket: vt.ticket });
+          await new Promise((rs) => setTimeout(rs, 120)); // gentle on the API
+        }
+        console.log("venue-type backfill:", changed.length, "changed,", skipped.length, "skipped");
+        res.writeHead(200, hdr); res.end(JSON.stringify({ checked: suspects.length, changed, skipped }));
+      } catch (e) { res.writeHead(500, hdr); res.end(JSON.stringify({ error: e.message.slice(0, 200) })); }
+    })();
+    return;
+  }
   res.writeHead(404); res.end("not found");
 }
 
