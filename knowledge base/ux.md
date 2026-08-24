@@ -168,8 +168,8 @@ Two large buttons titled with the REAL terms — **"Soft ticket"** (glass icon) 
 - Venue name*
 - City* + State* (2-column grid)
 - Venue type (select, options cascade from step 1 selection)
-  - Soft: Bar / Pub, Coffee shop, Restaurant, Hotel bar, Winery / Brewery, Casino floor, Festival stage, Other
-  - Hard: Listening room, Theater, Concert hall, Performing arts center, Music club (ticketed), Other
+  - Soft: Bar / Pub, Coffee shop, Restaurant, Hotel, Winery / Brewery, Casino, Festival, Corporate / private, Other
+  - Hard: Listening room, Theater, Concert hall, Performing arts center, Music club (ticketed), Other — Promoter / agency removed from both lists 2026-08-24 (the org path replaced it)
 - "Other" selection spawns a free-text input below the select
 - Address (optional)
 - Venue phone + Website (2-column grid — dedicated `venues.phone`/`venues.website` columns, migration 032; they used to be appended to notes)

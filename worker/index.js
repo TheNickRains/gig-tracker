@@ -1038,14 +1038,14 @@ function venueTypeFromGoogle(primary, types) {
   const all = [primary].concat(types || []).filter(Boolean);
   const has = (...t) => t.some((x) => all.includes(x));
   if (has("winery", "brewery", "distillery", "brewpub")) return { vtype: "Winery / Brewery", ticket: "soft" };
-  if (has("casino")) return { vtype: "Casino floor", ticket: "soft" };
+  if (has("casino")) return { vtype: "Casino", ticket: "soft" };
   if (has("performing_arts_theater", "auditorium", "opera_house", "philharmonic_hall")) return { vtype: "Theater", ticket: "hard" };
   if (has("concert_hall", "amphitheatre")) return { vtype: "Concert hall", ticket: "hard" };
   if (has("cultural_center", "community_center")) return { vtype: "Performing arts center", ticket: "hard" };
   if (has("night_club", "dance_hall")) return { vtype: "Music club (ticketed)", ticket: "hard" };
   if (has("banquet_hall", "wedding_venue", "event_venue", "convention_center")) return { vtype: "Corporate / private", ticket: "soft" };
   if (has("coffee_shop", "cafe")) return { vtype: "Coffee shop", ticket: "soft" };
-  if (has("hotel", "lodging", "resort_hotel", "extended_stay_hotel")) return { vtype: "Hotel bar", ticket: "soft" };
+  if (has("hotel", "lodging", "resort_hotel", "extended_stay_hotel")) return { vtype: "Hotel", ticket: "soft" };
   if (has("bar", "pub", "bar_and_grill", "wine_bar", "sports_bar")) return { vtype: "Bar / Pub", ticket: "soft" };
   if (has("restaurant") || all.some((t) => /_restaurant$/.test(t))) return { vtype: "Restaurant", ticket: "soft" };
   return null;
