@@ -790,6 +790,47 @@ async function tick() {
   } catch (e) { console.error("tick error", e.message); }
 }
 
+// ── Intake link readers ─────────────────────────────────
+// Spotify: full artist object (genres!) when client credentials are configured;
+// otherwise the public page's meta tags still carry name + monthly listeners.
+async function spotifyArtistInfo(url) {
+  try {
+    const m = (url || "").match(/artist\/([a-zA-Z0-9]+)/);
+    if (!m) return null;
+    const cid = process.env.SPOTIFY_CLIENT_ID, csec = process.env.SPOTIFY_CLIENT_SECRET;
+    if (cid && csec) {
+      const tok = await fetch("https://accounts.spotify.com/api/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: "Basic " + Buffer.from(cid + ":" + csec).toString("base64") },
+        body: "grant_type=client_credentials",
+      }).then((r) => r.json());
+      if (tok.access_token) {
+        const a = await fetch(`https://api.spotify.com/v1/artists/${m[1]}`, { headers: { Authorization: "Bearer " + tok.access_token } }).then((r) => r.json());
+        if (a && a.name) return `SPOTIFY: ${a.name} — genres: ${(a.genres || []).join(", ") || "none listed"}; followers: ${(a.followers || {}).total || "?"}; popularity ${a.popularity || "?"}/100.`;
+      }
+    }
+    const html = await fetch(`https://open.spotify.com/artist/${m[1]}`, { headers: { "User-Agent": "Mozilla/5.0" } }).then((r) => r.text());
+    const og = (html.match(/<meta property="og:description" content="([^"]*)"/) || [])[1] || "";
+    const title = (html.match(/<title>([^<]*)<\/title>/) || [])[1] || "";
+    return (title || og) ? ("SPOTIFY PAGE: " + (title + " — " + og).slice(0, 400)) : null;
+  } catch (e) { return null; }
+}
+async function fetchSiteText(url) {
+  try {
+    if (!url) return null;
+    const full = /^https?:\/\//i.test(url) ? url : "https://" + url;
+    const html = await fetch(full, { headers: { "User-Agent": "Mozilla/5.0" }, redirect: "follow" }).then((r) => r.text());
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&[a-z#0-9]+;/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return text.length > 100 ? text.slice(0, 6000) : null;
+  } catch (e) { return null; }
+}
+
 // ── /ai/draft: the app asks Gemini to write the outreach (Slice C) ──
 const pulseCache = new Map(); // venueId -> {summary, count, ts}
 const ALLOWED_ORIGINS = ["https://gig.nicholasrains.com", "https://gig-tracker-production.up.railway.app"];
@@ -997,6 +1038,75 @@ http.createServer((req, res) => {
   if (req.method === "GET" && u.pathname === "/push/pubkey") {
     res.writeHead(200, corsHeaders(req));
     res.end(JSON.stringify({ key: VAPID_PUB || "" }));
+    return;
+  }
+  // ── Intake: derive the artist profile from their links; they only correct it.
+  // Artists hate self-describing (genre especially) — so the AI reads Spotify /
+  // site / EPK and proposes; the human edits. Never asks for marketing copy.
+  if (req.method === "POST" && u.pathname === "/intake") {
+    (async () => {
+      const hdr = corsHeaders(req);
+      const uid = await verifyUser(req);
+      if (!uid) { res.writeHead(401, hdr); res.end(JSON.stringify({ error: "Not signed in" })); return; }
+      let body = "";
+      req.on("data", (d) => (body += d));
+      req.on("end", async () => {
+        try {
+          if (!GEMINI_KEY) { res.writeHead(503, hdr); res.end(JSON.stringify({ error: "AI isn’t configured yet" })); return; }
+          const { spotify, website, epk } = JSON.parse(body || "{}");
+          const sources = [];
+          const sp = await spotifyArtistInfo(spotify);
+          if (sp) sources.push(sp);
+          for (const [label, url] of [["WEBSITE", website], ["EPK", epk]]) {
+            const text = await fetchSiteText(url);
+            if (text) sources.push(`${label} (${url}):\n${text}`);
+          }
+          if (!sources.length) { res.writeHead(400, hdr); res.end(JSON.stringify({ error: "Couldn’t read any of those links — check the URLs" })); return; }
+          const raw = await gemini(
+            `You are building a booking profile for a working musician from their own public materials. Sources:\n\n` +
+            sources.join("\n\n---\n\n").slice(0, 12000) +
+            `\n\nDistill STRICT JSON with exactly these keys:\n` +
+            `"genre": how a venue booker would file them, max 4 plain words (e.g. "Americana / roots rock") — never a paragraph, never hedged;\n` +
+            `"oneliner": ONE sentence a booker skims — what the show IS and why a room wants it. Concrete, warm, zero hype-slop (ban: "unforgettable", "one-of-a-kind", "captivating");\n` +
+            `"notable": their single best concrete brag — rooms played, press quote, streaming/draw numbers — or "" if the sources show none. Never invent.`, true);
+          const parsed = JSON.parse(raw);
+          res.writeHead(200, hdr);
+          res.end(JSON.stringify({
+            genre: String(parsed.genre || "").slice(0, 80),
+            oneliner: String(parsed.oneliner || "").slice(0, 300),
+            notable: String(parsed.notable || "").slice(0, 300),
+            read: sources.length,
+          }));
+        } catch (e) { res.writeHead(500, hdr); res.end(JSON.stringify({ error: "Intake failed: " + e.message.slice(0, 120) })); }
+      });
+    })();
+    return;
+  }
+  // Voice seed: a pasted booking email becomes a starter tone card — but only
+  // when no learned card exists yet (never clobber real learning with a paste).
+  if (req.method === "POST" && u.pathname === "/intake/tone") {
+    (async () => {
+      const hdr = corsHeaders(req);
+      const uid = await verifyUser(req);
+      if (!uid) { res.writeHead(401, hdr); res.end(JSON.stringify({ error: "Not signed in" })); return; }
+      let body = "";
+      req.on("data", (d) => (body += d));
+      req.on("end", async () => {
+        try {
+          if (!GEMINI_KEY) { res.writeHead(503, hdr); res.end(JSON.stringify({ error: "AI isn’t configured yet" })); return; }
+          const { sample } = JSON.parse(body || "{}");
+          const text = String(sample || "").trim();
+          if (text.length < 80) { res.writeHead(400, hdr); res.end(JSON.stringify({ error: "Sample too short to learn from" })); return; }
+          const arts = await sGet(`artists?id=eq.${uid}&select=tone_profile`);
+          if (arts.length && arts[0].tone_profile) { res.writeHead(200, hdr); res.end(JSON.stringify({ ok: true, kept: "existing" })); return; }
+          const card = await gemini(
+            `This is a real booking email a working musician sent (their authentic voice):\n\n${text.slice(0, 2000)}\n\n` +
+            `Distill a TONE CARD (max 120 words) a ghostwriter would use to write as this person: greeting + sign-off style, sentence rhythm, formality, warmth, characteristic phrases (quote 2-3 verbatim), what they never do. Plain text.`, false);
+          if (card) await sPatch(`artists?id=eq.${uid}`, { tone_profile: card.slice(0, 2000), tone_updated_at: new Date().toISOString() });
+          res.writeHead(200, hdr); res.end(JSON.stringify({ ok: true }));
+        } catch (e) { res.writeHead(500, hdr); res.end(JSON.stringify({ error: e.message.slice(0, 120) })); }
+      });
+    })();
     return;
   }
   if (req.method === "POST" && u.pathname === "/thread/ingest") {

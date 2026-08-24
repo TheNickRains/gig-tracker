@@ -1142,10 +1142,13 @@
   <div class="welcome-card">
     <img src="/logo.png" alt="" class="logo-img" style="width:44px;height:44px;margin-bottom:14px">
     <div class="page-title" style="margin-bottom:4px">Welcome to Gig Collective</div>
-    <div style="font-size:14px;color:var(--text-secondary);margin-bottom:22px">Your booking assistant. Three steps and you're operational.</div>
+    <div style="font-size:14px;color:var(--text-secondary);margin-bottom:22px">Your booking assistant. A few steps and you're operational.</div>
     <div id="welcome-steps"></div>
     <div style="text-align:center;margin-top:18px"><button class="vc-btn" style="font-size:12px" onclick="finishOnboarding(true)">I'll explore on my own →</button></div>
   </div>
+</div>
+<div class="welcome-overlay" id="intake" style="display:none">
+  <div class="welcome-card" id="intake-card" style="text-align:left"></div>
 </div>
 <div class="toast" id="toast"><i class="ti ti-check" style="margin-right:6px"></i>Copied to clipboard</div>
 
@@ -1329,10 +1332,90 @@ function welcomeSteps(){
   var s2 = pipeline.length > 0;
   return [
     { done: lsGet('gc_tour_done') === '1', t: 'Take the 60-second tour', d: 'Every screen and feature, step by step — nothing assumed', act: function(){ startTour(); } },
-    { done: s1, t: 'Set up your artist profile', d: 'Name, sound, links, rates — this is what your outreach is built from', act: function(){ hideWelcome(); goProfile(); editSection('identity'); } },
+    { done: s1, t: 'Build your profile from your links', d: 'Drop your Spotify or site — the AI writes your pitch, you just correct it', act: function(){ openIntake(); } },
     { done: s2, t: 'Add your first venue', d: 'Got a business card? Put it in — contact and all', act: function(){ hideWelcome(); go('add'); } },
     { done: false, t: 'Enter the war room', d: 'Draft with AI, send, and let the assistant work your pipeline', act: function(){ finishOnboarding(false); } }
   ];
+}
+// ── Artist intake: derive & confirm — never ask an artist to self-describe. ──
+// The AI reads their links and PROPOSES the profile; the human corrects it.
+// Correcting is the first taste of the product's core loop (AI drafts → you
+// edit → it learns). Only home market and rates are typed from scratch.
+var intakeData = {};
+function openIntake(){ hideWelcome(); intakeData = {}; renderIntake(1); document.getElementById('intake').style.display = 'block'; }
+function hideIntake(){ document.getElementById('intake').style.display = 'none'; if (!profile.onboarded) showWelcome(); }
+function renderIntake(step){
+  var el = document.getElementById('intake-card'); if (!el) return;
+  if (step === 1) {
+    el.innerHTML = '<div class="page-title" style="margin-bottom:4px">Drop your links</div>'
+      + '<div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">No forms, no describing your own genre — the AI reads what’s already out there and writes your pitch. You just correct it.</div>'
+      + '<div class="form-field"><label class="form-label">Spotify artist link</label><input class="form-input" id="in-spotify" placeholder="open.spotify.com/artist/…" value="' + esc(intakeData.spotify || profile.spotify || '') + '"></div>'
+      + '<div class="form-field"><label class="form-label">Website</label><input class="form-input" id="in-website" placeholder="yoursite.com" value="' + esc(intakeData.website || profile.web || '') + '"></div>'
+      + '<div class="form-field"><label class="form-label">EPK <span style="font-weight:400;color:var(--text-tertiary)">(optional)</span></label><input class="form-input" id="in-epk" placeholder="yoursite.com/epk" value="' + esc(intakeData.epk || profile.epk || '') + '"></div>'
+      + '<div class="save-row"><button class="btn-primary" onclick="runIntake()"><i class="ti ti-sparkles"></i> Build my profile</button>'
+      + '<button class="btn-secondary" onclick="hideIntake();goProfile();editSection(\'identity\')">I’ll type it myself</button></div>';
+  } else if (step === 'loading') {
+    el.innerHTML = '<div class="page-title" style="margin-bottom:4px">Reading your links…</div>'
+      + '<div style="font-size:13px;color:var(--text-secondary)">Spotify, your site' + (intakeData.epk ? ', your EPK' : '') + ' — distilling how a booker should hear about you. ~10 seconds.</div>';
+  } else if (step === 2) {
+    el.innerHTML = '<div class="page-title" style="margin-bottom:4px">Here’s how I’d pitch you</div>'
+      + '<div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">Correct anything that’s off — your edits are the point. This is exactly how drafting works from here on: the AI writes, you make it yours.</div>'
+      + '<div class="form-field"><label class="form-label">Genre <span style="font-weight:400;color:var(--text-tertiary)">(how a booker files you)</span></label><input class="form-input" id="in-genre" value="' + esc(intakeData.genre || '') + '"></div>'
+      + '<div class="form-field"><label class="form-label">Your show, one sentence</label><textarea class="form-textarea" id="in-oneliner" style="min-height:64px">' + esc(intakeData.oneliner || '') + '</textarea></div>'
+      + '<div class="form-field"><label class="form-label">Best brag <span style="font-weight:400;color:var(--text-tertiary)">(rooms, press, numbers)</span></label><input class="form-input" id="in-notable" value="' + esc(intakeData.notable || '') + '"></div>'
+      + '<div class="section-label" style="margin-top:14px">Only you know these</div>'
+      + '<div class="form-field"><label class="form-label">Home market</label><input class="form-input" id="in-market" placeholder="e.g. Memphis, TN" value="' + esc(profile.home_market || '') + '"></div>'
+      + '<div class="form-row-2">'
+      + '<div class="form-field"><label class="form-label">Soft ticket rate<span class="info-tip" tabindex="0" data-tip="Flat rate the venue pays you (bar, restaurant, winery). The AI only ever quotes this if a booker asks about money — never in a pitch.">i</span></label><input class="form-input" id="in-rate-soft" placeholder="$150/hr" value="' + esc(profile.rate_soft || '') + '"></div>'
+      + '<div class="form-field"><label class="form-label">Hard ticket rate<span class="info-tip" tabindex="0" data-tip="Guarantee or door split for ticketed rooms (listening room, theater). Same rule: grounding for the AI, never volunteered.">i</span></label><input class="form-input" id="in-rate-hard" placeholder="$300–500" value="' + esc(profile.rate_hard || '') + '"></div>'
+      + '</div>'
+      + '<div class="form-field"><label class="form-label">Optional: paste a booking email you’ve sent that sounds like you</label><textarea class="form-textarea" id="in-voice" style="min-height:64px" placeholder="The AI starts learning your voice from it — every send after this teaches it more."></textarea></div>'
+      + '<div class="save-row"><button class="btn-primary" onclick="saveIntake()">Save my profile</button>'
+      + '<button class="btn-secondary" onclick="renderIntake(1)">← Back to links</button></div>';
+  }
+}
+function runIntake(){
+  var g = function(i){ var e = document.getElementById(i); return e ? e.value.trim() : ''; };
+  intakeData.spotify = g('in-spotify'); intakeData.website = g('in-website'); intakeData.epk = g('in-epk');
+  if (!intakeData.spotify && !intakeData.website && !intakeData.epk) { showToast('Drop at least one link — Spotify works best', true); return; }
+  renderIntake('loading');
+  sb.auth.getSession().then(function(s){
+    var tok = s.data && s.data.session && s.data.session.access_token;
+    if (!tok) { showToast('Not signed in', true); renderIntake(1); return; }
+    fetch(WORKER_URL + '/intake', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+      body: JSON.stringify({ spotify: intakeData.spotify, website: intakeData.website, epk: intakeData.epk })
+    }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
+      .then(function(x){
+        if (!x.ok) { showToast(x.j.error || 'Couldn’t read those links', true); renderIntake(1); return; }
+        intakeData.genre = x.j.genre || ''; intakeData.oneliner = x.j.oneliner || ''; intakeData.notable = x.j.notable || '';
+        renderIntake(2);
+      })
+      .catch(function(e){ showToast('Intake failed: ' + e.message, true); renderIntake(1); });
+  });
+}
+function saveIntake(){
+  var g = function(i){ var e = document.getElementById(i); return e ? e.value.trim() : ''; };
+  if (!g('in-genre') && !g('in-oneliner')) { showToast('Give the AI at least a genre or a sentence to work with', true); return; }
+  var patch = {
+    genre: g('in-genre') || null, oneliner: g('in-oneliner') || null, notable: g('in-notable') || null,
+    spotify: intakeData.spotify || null, website: intakeData.website || null, epk: intakeData.epk || null,
+    home_market: g('in-market') || null, rate_soft: g('in-rate-soft') || null, rate_hard: g('in-rate-hard') || null
+  };
+  var voice = g('in-voice');
+  sb.from('artists').update(patch).eq('id', ME).then(function(r){
+    if (r.error) { showToast('Could not save: ' + r.error.message, true); return; }
+    if (voice.length >= 80) {
+      sb.auth.getSession().then(function(s){
+        var tok = s.data && s.data.session && s.data.session.access_token; if (!tok) return;
+        fetch(WORKER_URL + '/intake/tone', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok }, body: JSON.stringify({ sample: voice }) }).catch(function(){});
+      });
+    }
+    loadProfile(); // re-sync everything the profile screen derives
+    document.getElementById('intake').style.display = 'none';
+    if (!profile.onboarded) { showWelcome(); }
+    showToast('Profile built — the AI knows who you are ✓');
+  });
 }
 // ── Guided tour: coach marks across every screen. Educate, never assume. ──
 var TOUR_STEPS = [
