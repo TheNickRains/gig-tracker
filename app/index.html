@@ -1032,14 +1032,14 @@
         <button class="edit-btn" onclick="editSection('draw')"><i class="ti ti-pencil"></i> Edit</button>
       </div>
       <div id="view-draw">
-        <div class="field-row"><span class="field-label">Draw claim</span><span class="field-value" id="fv-draw">Strong draw in Houston and Austin, building Nashville</span></div>
+        <div class="field-row"><span class="field-label">Max tickets (one show)<span class="info-tip" tabindex="0" data-tip="Hard-ticket rooms ask exactly this: what&rsquo;s the most tickets you&rsquo;ve sold to a single show? Verified number only — blank reads as Unverified, and the AI never claims numbers it can&rsquo;t back. Irrelevant to soft-ticket rooms.">i</span></span><span class="field-value" id="fv-draw">Strong draw in Houston and Austin, building Nashville</span></div>
         <div class="field-row"><span class="field-label">Typical crowd</span><span class="field-value" id="fv-crowd">35–55, seated, attentive — good fit for listening rooms</span></div>
         <div class="field-row"><span class="field-label">Lineup options</span><span class="field-value" id="fv-formats">Solo acoustic · Full band</span></div>
         <div class="field-row"><span class="field-label">Soft-ticket rate</span><span class="field-value" id="fv-rate-soft">Not set</span></div>
         <div class="field-row"><span class="field-label">Hard-ticket pricing</span><span class="field-value" id="fv-rate-hard">Not set</span></div>
       </div>
       <div id="edit-draw" style="display:none">
-        <div class="field-row"><span class="field-label">Draw claim</span><input class="form-input" id="fi-draw" placeholder="e.g. 60–80 heads in Austin, growing in Houston" value="Strong draw in Houston and Austin, building Nashville"></div>
+        <div class="field-row"><span class="field-label">Max tickets (one show)</span><input class="form-input" id="fi-draw" placeholder="e.g. 85 — most tickets you've sold to one show (blank = unverified)" value="Strong draw in Houston and Austin, building Nashville"></div>
         <div class="field-row"><span class="field-label">Typical crowd</span><input class="form-input" id="fi-crowd" placeholder="e.g. 25–45, drinks well, sings along" value="35–55, seated, attentive — good fit for listening rooms"></div>
         <div class="field-row"><span class="field-label">Lineup options <span style="font-weight:400;color:var(--text-tertiary)">(solo / duo / full band)</span></span><input class="form-input" id="fi-formats" placeholder="e.g. Solo acoustic · Duo · Full band" value="Solo acoustic · Full band"></div>
         <div class="field-row"><span class="field-label">Soft-ticket rate <span style="font-weight:400;color:var(--text-tertiary)">($/hr or flat — the AI quotes this, never invents)</span></span><input class="form-input" id="fi-rate-soft" placeholder="e.g. $200/hr · 3hr min"></div>
@@ -1059,6 +1059,19 @@
         <input class="form-input" id="new-notable" placeholder="e.g. 3rd & Lindsley" style="width:200px;display:inline-block;margin-right:8px">
         <button class="btn-primary btn-sm" onclick="confirmAddNotable()">Add</button>
       </div>
+    </div>
+
+    <!-- Email signature -->
+    <div class="card" style="margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+        <div><div class="section-title">Email signature</div><div class="section-sub">Appended automatically to every email the app sends — never sign your drafts by hand</div></div>
+        <label class="switch"><input type="checkbox" id="sig-on" onchange="saveSigToggle('sig_enabled',this.checked)"><span></span></label>
+      </div>
+      <div id="sig-preview" style="background:var(--bg-secondary);border:0.5px solid var(--border-light);border-radius:10px;padding:14px;margin-bottom:8px"></div>
+      <div class="field-row"><span class="field-label">Show website</span><label class="switch"><input type="checkbox" id="sig-web" onchange="saveSigToggle('sig_show_website',this.checked)"><span></span></label></div>
+      <div class="field-row"><span class="field-label">Show phone</span><label class="switch"><input type="checkbox" id="sig-phone" onchange="saveSigToggle('sig_show_phone',this.checked)"><span></span></label></div>
+      <div class="field-row"><span class="field-label">Logo</span><button class="vc-btn" onclick="document.getElementById('sig-logo-file').click()"><i class="ti ti-upload"></i> Upload logo</button></div>
+      <input type="file" id="sig-logo-file" accept="image/*" style="display:none" onchange="uploadSigLogo(event)">
     </div>
 
     <!-- Live template preview -->
@@ -1216,18 +1229,39 @@ var hardTypes = ['Listening room','Theater','Concert hall','Performing arts cent
 var activeTpl = {};
 var selectedFollowup = {};
 
+// ONE link per message — offer a human two options and they take neither.
+// Hierarchy: EPK > website > streaming. The label says what it actually IS
+// ("listen" is only honest for a streaming link).
+function bestLinkLine(){
+  if (profile.epk) return 'Here’s my EPK: ' + profile.epk;
+  if (profile.web) return 'Here’s my site: ' + profile.web;
+  if (profile.spotify) return 'Here’s a quick listen: ' + profile.spotify;
+  return '';
+}
+// Draw is a HARD-TICKET fact: max tickets sold to a single show. No draw ≠
+// zero — it's unverified, and unverified numbers never enter a pitch.
+function drawLine(t){
+  return (t === 'hard' && profile.draw) ? 'Best single-show ticket count so far: ' + profile.draw + '.\n\n' : '';
+}
+// Templates never sign with phone — the app appends the real signature on send.
 var templates = {
   outreach: function(p) {
-    return 'Hi ' + p.contact.split(' ')[0] + ',\n\nMy name is ' + profile.name + ' — I\'m a ' + profile.genre + ' based in ' + (markets[0]||'Houston') + '. ' + profile.oneliner + '.\n\nI\'d love to get on your calendar for a date at ' + p.venue + '. Here\'s a quick listen: ' + profile.web + (profile.epk ? '\nEPK: ' + profile.epk : '') + '.\n\n' + (profile.draw ? profile.draw + '.\n\n' : '') + 'Are you the right person to reach for bookings?\n\nThanks,\n' + profile.name + '\n' + profile.phone;
+    var link = bestLinkLine();
+    return 'Hi ' + p.contact.split(' ')[0] + ',\n\nMy name is ' + profile.name + ' — I\'m a ' + (profile.genre || 'musician') + (markets[0] ? ' based in ' + markets[0] : '') + '.\n\nI\'d love to get on your calendar for a date at ' + p.venue + '.' + (link ? ' ' + link + '.' : '') + '\n\n' + drawLine(p.t) + 'Are you the right person to reach for bookings?\n\nThanks,\n' + profile.name;
   },
   followup: function(p) {
-    return 'Hi ' + p.contact.split(' ')[0] + ',\n\nCircling back on my note from ' + p.days + ' days ago. I know your inbox is full — no hard feelings if the timing isn\'t right.\n\nI\'ll be in ' + p.city + ' anyway and would love to make it work. Happy to send available dates if that\'s easier.\n\n' + profile.name + '\n' + profile.phone;
+    return 'Hi ' + p.contact.split(' ')[0] + ',\n\nCircling back on my note from ' + p.days + ' days ago. I know your inbox is full — no hard feelings if the timing isn\'t right.\n\n' + (p.city ? 'I\'ll be in ' + p.city + ' anyway and would love to make it work. ' : '') + 'Happy to send available dates if that\'s easier.\n\n' + profile.name;
   },
   pitch: function(p) {
-    return 'Hi ' + p.contact.split(' ')[0] + ',\n\nQuick pitch:\n\n→ ' + profile.genre + '\n→ ' + (profile.draw || '[draw claim]') + '\n→ ' + (profile.formats || 'Solo acoustic · Full band') + '\n→ Target: ' + p.pay + '\n→ EPK: ' + (profile.epk || profile.web) + '\n\nAvailable dates: [add your dates]\n\nLet me know what you\'re thinking.\n\n' + profile.name;
+    var lines = ['→ ' + (profile.genre || 'Live original music')];
+    if (p.t === 'hard' && profile.draw) lines.push('→ Best single-show ticket count: ' + profile.draw);
+    if (profile.formats) lines.push('→ ' + profile.formats);
+    if (p.pay && p.pay !== '—') lines.push('→ Target: ' + p.pay);
+    var link = bestLinkLine(); if (link) lines.push('→ ' + link);
+    return 'Hi ' + p.contact.split(' ')[0] + ',\n\nQuick pitch:\n\n' + lines.join('\n') + '\n\nAvailable dates: [add your dates]\n\nLet me know what you\'re thinking.\n\n' + profile.name;
   },
   checkin: function(p) {
-    return 'Hey ' + p.contact.split(' ')[0] + ',\n\nHope things are going well at ' + p.venue + '. Staying on your radar — I have a run of dates coming up and ' + p.city + ' is high on the list.\n\nAnything open worth exploring?\n\n' + profile.name;
+    return 'Hey ' + p.contact.split(' ')[0] + ',\n\nHope things are going well at ' + p.venue + '. Staying on your radar — I have a run of dates coming up and ' + (p.city || 'your area') + ' is high on the list.\n\nAnything open worth exploring?\n\n' + profile.name;
   }
 };
 // Feature flags. staticTemplates: canned templates are the no-AI fallback —
@@ -1264,7 +1298,7 @@ function go(screen) {
   if (screen === 'calendar') { renderCalendar(); loadAvail(); }
   if (screen === 'settings') refreshPushToggle();
   if (screen === 'add') renderWizard(1, null, {});
-  if (screen === 'profile') { renderMarkets(); renderNotables(); updateProfilePreview(); updateCompleteness(); }
+  if (screen === 'profile') { renderMarkets(); renderNotables(); renderSigPreview(); updateProfilePreview(); updateCompleteness(); }
   syncHash(screen);
 }
 
@@ -3394,7 +3428,7 @@ function saveSection(s) {
     profile.formats = document.getElementById('fi-formats').value.trim();
     profile.rate_soft = document.getElementById('fi-rate-soft').value.trim();
     profile.rate_hard = document.getElementById('fi-rate-hard').value.trim();
-    document.getElementById('fv-draw').textContent = profile.draw;
+    document.getElementById('fv-draw').textContent = profile.draw || 'Unverified';
     document.getElementById('fv-crowd').textContent = profile.crowd;
     document.getElementById('fv-formats').textContent = profile.formats;
     document.getElementById('fv-rate-soft').textContent = profile.rate_soft || 'Not set';
@@ -3454,15 +3488,54 @@ function confirmAddNotable() {
 function updateProfilePreview() {
   var el = document.getElementById('profile-tpl-preview');
   if (!el) return;
-  var t = 'Hi [Contact],\n\nMy name is ' + profile.name + ' — I\'m a ' + profile.genre + ' based in ' + (markets[0]||'[city]') + '. ' + profile.oneliner + '.\n\nI\'d love to get on your calendar. Here\'s a quick listen: ' + profile.web + (profile.epk ? '\nEPK: ' + profile.epk : '') + '.\n\n' + (profile.draw ? profile.draw + '.\n\n' : '') + 'Are you the right person to reach for bookings?\n\nThanks,\n' + profile.name + '\n' + profile.phone;
-  el.textContent = t;
+  // Same generator the composer uses — the preview can't drift from reality.
+  el.textContent = templates.outreach({ contact: '[Contact]', venue: '[venue]', t: profile.draw ? 'hard' : 'soft' });
   var lg = document.getElementById('profile-merge-legend');
   if (lg) lg.innerHTML = [
     {tag:'{{name}}',val:profile.name},{tag:'{{genre}}',val:profile.genre},
-    {tag:'{{market}}',val:markets[0]||'—'},{tag:'{{website}}',val:profile.web},{tag:'{{phone}}',val:profile.phone}
+    {tag:'{{market}}',val:markets[0]||'—'},{tag:'{{link}}',val:(bestLinkLine()||'— add EPK, site, or Spotify').replace(/^Here.s (my |a quick )?/,'')}
   ].map(function(x){ return '<div class="merge-item"><span class="merge-tag">' + x.tag + '</span><span>' + x.val + '</span></div>'; }).join('');
 }
 
+// ── Email signature manager: preview exactly what gmailSend appends ──
+function renderSigPreview(){
+  var on = document.getElementById('sig-on'); if (on) on.checked = profile.sig_enabled !== false;
+  var w = document.getElementById('sig-web'); if (w) w.checked = profile.sig_show_website !== false;
+  var ph = document.getElementById('sig-phone'); if (ph) ph.checked = profile.sig_show_phone !== false;
+  var el = document.getElementById('sig-preview'); if (!el) return;
+  if (profile.sig_enabled === false) {
+    el.innerHTML = '<span style="font-size:12px;color:var(--text-tertiary)">Signature off — emails go out with just your message.</span>';
+    return;
+  }
+  var bits = [];
+  if (profile.sig_show_phone !== false && profile.phone) bits.push(esc(profile.phone));
+  if (profile.sig_show_website !== false && profile.web) bits.push(esc(profile.web));
+  el.innerHTML = '<div style="border-top:1px solid var(--border-mid);padding-top:10px">'
+    + (profile.sig_logo_url ? '<img src="' + esc(profile.sig_logo_url) + '" style="width:110px;display:block;margin-bottom:6px" alt="">' : '')
+    + '<div style="font-size:13.5px;font-weight:600">' + esc(profile.name || '') + '</div>'
+    + (bits.length ? '<div style="font-size:12px;color:var(--text-secondary)">' + bits.join(' · ') + '</div>' : '')
+    + '</div>';
+}
+function saveSigToggle(k, v){
+  profile[k] = v;
+  var patch = {}; patch[k] = v;
+  sb.from('artists').update(patch).eq('id', ME).then(function(r){
+    if (r.error) { showToast('Could not save: ' + r.error.message, true); return; }
+    renderSigPreview();
+  });
+}
+function uploadSigLogo(e){
+  var f = e.target.files && e.target.files[0]; if (!f) return;
+  sb.storage.from('avatars').upload(ME + '/siglogo', f, { upsert: true, contentType: f.type }).then(function(r){
+    if (r.error) { showToast('Upload failed: ' + r.error.message, true); return; }
+    var url = sb.storage.from('avatars').getPublicUrl(ME + '/siglogo').data.publicUrl + '?t=' + Date.now();
+    profile.sig_logo_url = url;
+    sb.from('artists').update({ sig_logo_url: url }).eq('id', ME).then(function(ur){
+      if (ur.error) { showToast('Logo uploaded but not saved: ' + ur.error.message, true); return; }
+      renderSigPreview(); showToast('Logo added to your signature');
+    });
+  });
+}
 function updateCompleteness() {
   var fields = [profile.name,profile.genre,profile.oneliner,profile.phone,profile.web,profile.epk,profile.spotify,profile.draw,(notables.length?'y':'')];
   var filled = fields.filter(function(f){ return f&&f.trim(); }).length;
@@ -3717,11 +3790,15 @@ function loadProfile(){
     notables = (profile.notable||'').split(',').map(function(s){ return s.trim(); }).filter(Boolean);
     setGoogleConnectedUI(!!a.gmail_connected);
     profile.avatar_url = a.avatar_url || '';
+    profile.sig_logo_url = a.sig_logo_url || '';
+    profile.sig_enabled = a.sig_enabled !== false; // columns may predate migration 034
+    profile.sig_show_website = a.sig_show_website !== false;
+    profile.sig_show_phone = a.sig_show_phone !== false;
     var ast = document.getElementById('auto-send-toggle'); if(ast) ast.checked = !!a.allow_auto_send;
     profile.onboarded = (a.onboarded !== false); // column may predate migration 022
     if (a.onboarded === false) showWelcome();
     profile.allow_auto_send = !!a.allow_auto_send;
-    fillProfileDom(); renderMarkets(); renderNotables(); updateProfilePreview(); updateHomeStats();
+    fillProfileDom(); renderMarkets(); renderNotables(); renderSigPreview(); updateProfilePreview(); updateHomeStats();
   });
 }
 function fillProfileDom(){
@@ -3729,7 +3806,7 @@ function fillProfileDom(){
   setText('fv-web',profile.web); setText('fv-epk',profile.epk);
   var sp=document.getElementById('fv-spotify'); if(sp){ sp.textContent=profile.spotify||'Not set'; sp.className='field-value fv-ell'+(profile.spotify?'':' empty'); }
   var sph=document.getElementById('fv-spotify-hint'); if(sph) sph.style.display = profile.spotify ? 'none' : '';
-  setText('fv-draw',profile.draw); setText('fv-crowd',profile.crowd); setText('fv-formats',profile.formats);
+  setText('fv-draw',profile.draw || 'Unverified'); setText('fv-crowd',profile.crowd); setText('fv-formats',profile.formats);
   setText('fv-rate-soft', profile.rate_soft || 'Not set'); setText('fv-rate-hard', profile.rate_hard || 'Not set');
   setVal('fi-rate-soft', profile.rate_soft); setVal('fi-rate-hard', profile.rate_hard);
   setVal('fi-name',profile.name); setVal('fi-genre',profile.genre); setVal('fi-oneliner',profile.oneliner); setVal('fi-phone',profile.phone);

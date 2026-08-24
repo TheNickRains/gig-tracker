@@ -202,14 +202,16 @@ Opened by tapping the avatar in nav. Tapping again closes it (returns to previou
 
 | Section | Fields |
 |---|---|
-| Artist identity | Display name, Genre / style, One-liner, Phone |
+| Artist identity | Display name, Genre / style, **Hook** (renamed from One-liner 2026-08-24 — info-tip teaches the wording rule: what your show DOES to a room, must survive first person, never self-praise), Phone |
 | Links | Website, EPK URL, Spotify |
 | Active markets | Chip list (removable in edit mode, + Add chip) |
-| Draw & experience | Draw claim, Typical crowd, Set formats, Notable venues |
+| Draw & experience | **Max tickets (one show)** (renamed from Draw claim — a verified hard-ticket fact; blank displays "Unverified"; info-tip explains the AI never claims unverified numbers), Typical crowd, Set formats, Notable venues |
 
-Missing fields show an amber warning: "Missing — [consequence]".
+Missing fields show an amber warning: "Missing — [consequence]". Section subtitles describe what the AI does with each field (template-era wording removed 2026-08-24).
 
-**Live template preview** — renders a cold outreach email in real time using current profile field values. Merge tag legend below shows each variable and its current value.
+**Email signature** (2026-08-24) — card with live preview of exactly what `gmailSend` appends (logo → bold name → phone · site), a master on/off switch, Show website / Show phone toggles (each saves instantly to `artists.sig_enabled/sig_show_website/sig_show_phone`, migration 034), and Upload logo (storage `avatars/{id}/siglogo` → `sig_logo_url`). Off = emails send with message text only. Templates and AI drafts never sign with phone/name-tails — the signature is the single source of sign-off.
+
+**Live template preview** — renders the REAL `templates.outreach` generator (preview can't drift from the composer; `t` = hard when a verified draw exists so the draw line shows). Template rules (2026-08-24, from Nick's unusable-template review): smart fallbacks — clauses OMIT themselves when data is missing (no "[city]" ever renders); **one link only** via `bestLinkLine()` hierarchy EPK > website > Spotify, labeled as what it IS ("listen" only for streaming); **draw** appears only on hard-ticket deals with a verified count ("Best single-show ticket count so far: N"), never floats alone, never zero; no phone/name signature tails. Merge legend shows name/genre/market/link.
 
 **The collective** — roster of all 7 members. Each row: avatar, name, markets, gig count this year.
 

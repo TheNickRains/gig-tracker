@@ -745,9 +745,16 @@ async function processScheduled() {
       }
       const token = await refreshAccessToken(conns[0].refresh_token);
       const thread = await findThread(token, m.to_email).catch(() => null);
-      const sigRows = await sGet(`artists?id=eq.${m.artist_id}&select=display_name,phone,website,sig_logo_url`);
+      const sigRows = await sGet(`artists?id=eq.${m.artist_id}&select=display_name,phone,website,sig_logo_url,sig_enabled,sig_show_website,sig_show_phone`);
       const sa = sigRows[0] || {};
-      const sig = { name: sa.display_name, phone: sa.phone, site: sa.website, logo: sa.sig_logo_url };
+      // Artist-controlled signature: master toggle kills it entirely; the
+      // website/phone toggles trim it. Columns default true (migration 034).
+      const sig = sa.sig_enabled === false ? null : {
+        name: sa.display_name,
+        phone: sa.sig_show_phone === false ? "" : sa.phone,
+        site: sa.sig_show_website === false ? "" : sa.website,
+        logo: sa.sig_logo_url,
+      };
       const gid = await gmailSend(token, m.to_email, (thread && thread.subject) || m.subject, m.body, thread, sig);
       await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "sent", sent_at: new Date().toISOString() });
       await logActivity({ pipeline_entry_id: m.pipeline_entry_id, kind: "email_out", body: m.body.slice(0, 600), source: "email_sync", email_message_id: gid });
@@ -935,8 +942,10 @@ async function handleAiDraft(req, res, bodyStr) {
       `CONTACT: ${c.name || "the booker"}${c.title ? " (" + c.title + ")" : ""}${c.org ? " of " + c.org : ""}${otherRooms}\n` +
       rateLine +
       (firstTouch
-        ? `ARTIST (use what's relevant — this is a first touch): ${a.display_name || ""} — ${a.genre || ""}. HOOK: ${a.oneliner || "n/a"}. Draw: ${a.draw_claim || "n/a"}. Crowd: ${a.typical_crowd || "n/a"}. Formats: ${a.set_formats || "n/a"}. Notable rooms: ${a.notable || "n/a"}. Home market: ${a.home_market || "n/a"}. Site: ${a.website || ""} ${a.epk ? "EPK: " + a.epk : ""} ${a.spotify ? "Spotify: " + a.spotify : ""} Phone: ${a.phone || ""}\n` +
-          `HOOK RULE: the message is written in FIRST PERSON as the artist — NEVER render the hook (or any profile praise) as first-person self-praise ("I have a voice that pulls people in" is cringe and gets deleted). Convert it to observable outcomes ("my sets tend to quiet the room"), attributed praise ("bookers keep telling me…"), or let the venue-fit argument carry it. If it can't be said naturally in first person, leave it out entirely.\n`
+        ? `ARTIST (use what's relevant — this is a first touch): ${a.display_name || ""} — ${a.genre || ""}. HOOK: ${a.oneliner || "n/a"}. Crowd: ${a.typical_crowd || "n/a"}. Formats: ${a.set_formats || "n/a"}. Notable rooms: ${a.notable || "n/a"}. Home market: ${a.home_market || "n/a"}. Site: ${a.website || ""} ${a.epk ? "EPK: " + a.epk : ""} ${a.spotify ? "Spotify: " + a.spotify : ""} Phone: ${a.phone || ""}\n` +
+          `HOOK RULE: the message is written in FIRST PERSON as the artist — NEVER render the hook (or any profile praise) as first-person self-praise ("I have a voice that pulls people in" is cringe and gets deleted). Convert it to observable outcomes ("my sets tend to quiet the room"), attributed praise ("bookers keep telling me…"), or let the venue-fit argument carry it. If it can't be said naturally in first person, leave it out entirely.\n` +
+          `DRAW (max tickets the artist has sold to ONE show — a verified fact, not a vibe): ${a.draw_claim || "unverified"}. Mention draw ONLY when pitching a hard/ticketed room${ticket === "hard" ? " (this IS one)" : " (this is NOT one — omit draw entirely)"}, and ONLY if verified — "unverified" means say nothing about numbers, never say zero, never estimate.\n` +
+          `LINK RULE: at most ONE link in the whole message. Hierarchy: EPK > website > Spotify/streaming > a social video. Label it as what it IS — "listen" is only honest for a streaming link; an EPK is called an EPK. Never offer two links: a booker given two options clicks neither.\n`
         : `ARTIST (background only — do NOT pitch credentials mid-conversation): ${a.display_name || ""}, ${a.genre || ""}. Phone: ${a.phone || ""}\n`) +
       (a.tone_profile ? `\nTONE CARD — write indistinguishably in THIS voice:\n${a.tone_profile}\n` : "") +
       (function () {
