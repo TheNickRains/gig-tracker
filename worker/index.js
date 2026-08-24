@@ -772,7 +772,8 @@ async function processScheduled() {
       const patch = { last_activity_at: new Date().toISOString() };
       if (entries.length && ["lead", "outreach"].includes(entries[0].status)) patch.status = "pitched";
       await sPatch(`pipeline_entries?id=eq.${m.pipeline_entry_id}`, patch);
-      notify(m.artist_id, "Sent ✓ " + m.to_email.split("@")[0], m.subject, "/app#entry/" + m.pipeline_entry_id).catch(() => {});
+      // No push for successful sends — push is for things that NEED you
+      // (replies, bounces, new leads); the activity log records the send.
       console.log("scheduled: SENT", m.id, "->", m.to_email);
       // Incremental learning: this send carries a generation->sent diff — retrain now.
       if (m.ai_draft) refreshToneProfile(m.artist_id, token, true).then(() => console.log("tone: incremental retrain after diff-send")).catch(() => {});
