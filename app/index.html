@@ -1233,9 +1233,16 @@ function stagesFor(p){ return p.t==='hard' ? happyPath : happyPath.filter(functi
 // dismiss kills the nag outright; a FRESH outbound after it re-arms (you re-engaged).
 function followupDue(p){
   if (p.s !== 'pitched') return false;
+  if (isCold(p)) return false; // cold leads stop nagging — this is a numbers game
   if (p.fuKillTs && p.fuKillTs > (p.lastOutboundTs || 0)) return false;
   var quiet = p.fuSnoozeTs ? Math.min(p.days, Math.floor((Date.now() - p.fuSnoozeTs) / 86400000)) : p.days;
   return quiet >= 7;
+}
+// A lead quiet this long isn't active anymore — it's cold. Not a stage (any
+// activity thaws it automatically since days resets), just arithmetic.
+var COLD_DAYS = 45;
+function isCold(p){
+  return ['lead','pitched','talks','outreach','waiting','followup'].indexOf(p.s) >= 0 && p.days >= COLD_DAYS;
 }
 // Venue-type glyphs — rows scan by SHAPE, not just words.
 function venueIcon(vt){
@@ -1336,7 +1343,7 @@ function go(screen) {
   }
   if (screen === 'calendar') { renderCalendar(); loadAvail(); }
   if (screen === 'settings') refreshPushToggle();
-  if (screen === 'add') renderWizard(1, null, {});
+  if (screen === 'add') { wizData = {}; renderWizard(1, null, {}); } // fresh entry resets; in-wizard nav never does
   if (screen === 'profile') { renderMarkets(); renderNotables(); renderSigPreview(); updateProfilePreview(); updateCompleteness(); }
   if (screen === 'settings') initThemeSelect();
   syncHash(screen);
@@ -1636,7 +1643,8 @@ function renderPipeline() {
   renderPipeFilterSelect();
   var q = (pipeQuery || '').toLowerCase();
   var rows = pipeline.filter(function(p){
-    if (pipeFilter !== 'all' && p.s !== pipeFilter) return false;
+    if (pipeFilter === 'cold') { if (!isCold(p)) return false; }
+    else if (pipeFilter !== 'all' && p.s !== pipeFilter) return false;
     if (!pipeLocMatch(p)) return false;
     if (!q) return true;
     // Searches the whole deal: venue, contact, place, stage name, notes + conversation.
@@ -1647,6 +1655,7 @@ function renderPipeline() {
   orderRows(rows);
   function dLabel(d){ return d===0 ? 'today' : (d===1 ? 'yesterday' : d + 'd ago'); }
   function metaFor(p){
+    if (isCold(p)) return '<div style="font-size:11px;font-weight:500;color:var(--text-tertiary)">❄ Cold</div><div class="pipe-date">' + p.days + 'd quiet</div>';
     if (followupDue(p)) return '<div style="font-size:11px;font-weight:500;color:var(--pitched-text)">Follow up</div><div class="pipe-date">' + (p.days-7) + 'd overdue</div>';
     if (p.bounced) return '<div style="font-size:11px;font-weight:500;color:var(--dead-text)">Bounced ⚠️</div><div class="pipe-date">fix address</div>';
     if (needsReply(p)) return '<div style="font-size:11px;font-weight:500;color:var(--talks-text)">Reply waiting</div><div class="pipe-date">' + dLabel(p.days) + '</div>';
@@ -1996,6 +2005,7 @@ function renderHome(){
   var el = document.getElementById('war-needs'); if (!el) return;
   var items = [];
   pipeline.forEach(function(p){
+    if (p.reminderAt && new Date(p.reminderAt) <= new Date()) items.push({p:p, tier:0, ic:'ti-alarm', c:'var(--hold-text)', bg:'var(--hold-bg)', t:'Reminder — ' + (p.reminderNote || 'you asked to come back to this'), sub:'You set this ' + relTime(p.reminderAt), btns:[{fn:'wrClearReminder', label:'Done', title:'Handled — clear the reminder'}]});
     if (p.bounced) items.push({p:p, tier:0, ic:'ti-mail-x', c:'var(--dead-text)', bg:'var(--dead-bg)', t:'Email bounced — fix the address', sub:'The pitch never arrived; edit the contact and re-send', marker:'✓ Bounce dismissed', btns:[{fn:'dismissBounce', label:'Dismiss', title:'I’ve handled this another way'}]});
     else if (p.sched && p.sched.status==='ready') items.push({p:p, tier:0, ic:'ti-bell-ringing', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Send awaiting your review', sub:'Auto-send is off — review & fire'});
     else if (needsReply(p)) items.push({p:p, tier:1, ic:'ti-mail', c:'var(--talks-text)', bg:'var(--talks-bg)', t:'You\u2019ve got mail — ' + ((p.contact||'').split(' ')[0]||'they') + ' replied', sub:lastInboundPreview(p), marker:'✓ Reply dismissed', btns:[{fn:'dismissReply', label:'Dismiss', title:'No reply needed'}]});
@@ -2070,8 +2080,10 @@ function renderHome(){
 // Urgency model: who needs attention right now?
 function priorityScore(p) {
   if (p.bounced) return 125;                                // the pitch never arrived
+  if (p.reminderAt && new Date(p.reminderAt) <= new Date()) return 122; // you promised to call back
   if (p.sched && p.sched.status === 'ready') return 120;   // send awaiting review
   if (needsReply(p))                  return 100 + p.days; // their word is the last word
+  if (isCold(p))                      return 1;            // cold — above the graveyard, below everything live
   if (followupDue(p))                 return 80 + p.days;  // pitched, gone quiet
   if (p.s === 'pitched')              return 60 + p.days;  // clock running
   if (p.s === 'talks')                return 55;
@@ -2175,6 +2187,8 @@ function renderPipeFilterSelect(){
   var order = ['talks','hold','pitched','lead','booked','played','passed','dead'].filter(function(s){ return present[s]; });
   var html = '<option value="all">All · ' + base.length + '</option>';
   order.forEach(function(s){ html += '<option value="' + s + '">' + statusLabel[s] + ' · ' + present[s] + '</option>'; });
+  var coldN = base.filter(isCold).length;
+  if (coldN) html += '<option value="cold">❄ Cold · ' + coldN + '</option>';
   el.innerHTML = html;
   el.value = pipeFilter;
   if (el.value !== pipeFilter) { pipeFilter = 'all'; el.value = 'all'; } // stage empty in this location scope
@@ -2487,6 +2501,23 @@ function openDetail(id) {
       + '<button class="btn-primary btn-sm" onclick="saveGigDate(' + id + ')" title="Save gig date"><i class="ti ti-check"></i></button>'
       + '</div></div>';
   }
+  // "Call back Tuesday" → a reminder, not follow-up automation. One per deal;
+  // due reminders take the top of the war room.
+  var remBlock;
+  if (p.reminderAt) {
+    var remDue = new Date(p.reminderAt) <= new Date();
+    remBlock = '<div class="card" style="margin-bottom:12px;display:flex;gap:9px;align-items:center' + (remDue ? ';border:1px solid var(--hold-text)' : '') + '">'
+      + '<i class="ti ti-alarm" style="color:var(--hold-text);font-size:17px"></i>'
+      + '<div style="flex:1;font-size:12.5px;min-width:0">' + (remDue ? '<strong>Reminder due</strong>' : 'Reminder · <strong>' + fmtWhen(p.reminderAt) + '</strong>')
+      + (p.reminderNote ? ' — ' + esc(p.reminderNote) : '') + '</div>'
+      + '<button class="war-x" onclick="clearReminder(' + id + ')" title="Handled — clear it">Done</button></div>';
+  } else {
+    remBlock = '<div class="card" style="margin-bottom:12px;display:flex;gap:8px;align-items:center">'
+      + '<i class="ti ti-alarm" style="color:var(--text-tertiary);flex-shrink:0" title="They said call back? Set a reminder — it lands in your war room when due"></i>'
+      + '<input type="datetime-local" class="pipe-search" style="margin:0;flex:1;min-width:150px" id="rem-at-' + id + '">'
+      + '<input class="pipe-search" style="margin:0;flex:1.3;min-width:120px" id="rem-note-' + id + '" placeholder="Remind me — e.g. call ' + esc(first) + ' back">'
+      + '<button class="btn-secondary btn-sm" onclick="setReminder(' + id + ')" title="Set the reminder"><i class="ti ti-alarm-plus"></i></button></div>';
+  }
   var convo = p.activity.filter(function(a){ return a.kind!=='note'; });
   var notes = p.activity.filter(function(a){ return a.kind==='note'; });
   // Two-way thread: their bubbles left (blue rail), yours right (amber rail).
@@ -2666,6 +2697,7 @@ function openDetail(id) {
     + (addRoomOpen[p.uuid] ? '<div class="card" style="margin-bottom:12px"><div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Add a room to this opportunity (the AI pitches the set; lock one later):</div><input class="pipe-search" id="ar-room-q" placeholder="Search your venues…" autocomplete="off" oninput="addRoomSearch(' + id + ',this.value)" style="margin:0"><div id="ar-room-results"></div></div>' : '')
     + attnCard
     + gigDateBlock
+    + remBlock
     + contactSection(p, id)
     + '<div class="section-label">Notes</div>'
     + '<div class="card card-flush" style="margin-bottom:12px">' + notesHtml
@@ -2978,6 +3010,33 @@ function toggleCompose(id){
   if (composeOpen[p.uuid]) { var inp = document.getElementById('qlog-in-' + id); if (inp) inp.focus(); }
 }
 var quickLogChannel = {};
+function setReminder(id){
+  var p = pipeline[id];
+  var at = (document.getElementById('rem-at-' + id) || {value:''}).value;
+  var note = (document.getElementById('rem-note-' + id) || {value:''}).value.trim();
+  if (!at) { showToast('Pick when to be reminded', true); return; }
+  var iso = new Date(at).toISOString();
+  sb.from('pipeline_entries').update({ reminder_at: iso, reminder_note: note || null }).eq('id', p.uuid).then(function(r){
+    if (r.error) { showToast('Could not set: ' + r.error.message, true); return; }
+    p.reminderAt = iso; p.reminderNote = note;
+    sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: 'system', body: '⏰ Reminder set — ' + fmtWhen(iso) + (note ? ': ' + note : ''), source: 'manual' }).then(function(){});
+    openDetail(id);
+    showToast('Reminder set — it’ll be in your war room ' + fmtWhen(iso));
+  });
+}
+function clearReminder(id){
+  var p = pipeline[id];
+  sb.from('pipeline_entries').update({ reminder_at: null, reminder_note: null }).eq('id', p.uuid).then(function(r){
+    if (r.error) { showToast('Could not clear: ' + r.error.message, true); return; }
+    p.reminderAt = null; p.reminderNote = '';
+    sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: 'system', body: '✓ Reminder done', source: 'manual' }).then(function(){});
+    if (currentScreen === 'detail') openDetail(id); else renderHome();
+    showToast('Reminder cleared');
+  });
+}
+function wrClearReminder(uuid){
+  for (var i = 0; i < pipeline.length; i++) if (pipeline[i].uuid === uuid) { clearReminder(i); return; }
+}
 function logCallTap(id){
   var p = pipeline[id];
   sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: 'call', body: 'Called ' + ((p.contact||'').split(' ')[0] || 'contact'), source: 'manual' }).then(function(r){
@@ -3467,7 +3526,6 @@ function renderWizard(step, ticket, data) {
   for (var i=1; i<=4; i++) dots += '<div class="wiz-dot' + (i<step?' done':(i===step?' active':'')) + '"></div>';
   var html = '';
   if (step===1) {
-    wizData = {};
     html = '<div class="wiz-header"><div class="wiz-step-label">Step 1 of 4</div><div class="wiz-title">How does this room usually pay?</div></div>'
     + '<div class="wiz-dots">' + dots + '</div>'
     + '<div class="ticket-grid">'
@@ -3485,65 +3543,66 @@ function renderWizard(step, ticket, data) {
   } else if (step===2 && ticket==='org') {
     html = '<div class="wiz-header"><div class="wiz-step-label">Step 2 of 4</div><div class="wiz-title">Who are they?</div></div>'
     + '<div class="wiz-dots">' + dots + '</div>'
-    + '<div class="form-field"><label class="form-label">Company name *</label><input class="form-input" id="won" placeholder="e.g. Red Clay Entertainment"></div>'
+    + '<div class="form-field"><label class="form-label">Company name *</label><input class="form-input" id="won" placeholder="e.g. Red Clay Entertainment" value="' + esc(wizData.orgName||'') + '"></div>'
     + '<div class="form-field"><label class="form-label">What are they? *</label><select class="form-select" id="wot">'
-    + '<option value="" selected>Select…</option>'
-    + ['Booking agency','Promoter','Festival organizer','Management','Other'].map(function(t){ return '<option>' + t + '</option>'; }).join('') + '</select></div>'
-    + '<div class="form-row-2"><div class="form-field"><label class="form-label">City</label><input class="form-input" id="wc" placeholder="Nashville"></div>'
-    + '<div class="form-field"><label class="form-label">State</label><input class="form-input" id="ws" placeholder="TN"></div></div>'
-    + '<div class="form-row-2"><div class="form-field"><label class="form-label">Phone</label><input class="form-input" id="wvph" type="tel" placeholder="(615) 555-0182"></div>'
-    + '<div class="form-field"><label class="form-label">Website</label><input class="form-input" id="wvwb" placeholder="agency.com"></div></div>'
+    + '<option value=""' + (wizData.orgType ? '' : ' selected') + '>Select…</option>'
+    + ['Booking agency','Promoter','Festival organizer','Management','Other'].map(function(t){ return '<option' + (wizData.orgType===t ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select></div>'
+    + '<div class="form-row-2"><div class="form-field"><label class="form-label">City</label><input class="form-input" id="wc" placeholder="Nashville" value="' + esc(wizData.city||'') + '"></div>'
+    + '<div class="form-field"><label class="form-label">State</label><input class="form-input" id="ws" placeholder="TN" value="' + esc(wizData.state||'') + '"></div></div>'
+    + '<div class="form-row-2"><div class="form-field"><label class="form-label">Phone</label><input class="form-input" id="wvph" type="tel" placeholder="(615) 555-0182" value="' + esc(wizData.phone||'') + '"></div>'
+    + '<div class="form-field"><label class="form-label">Website</label><input class="form-input" id="wvwb" placeholder="agency.com" value="' + esc(wizData.website||'') + '"></div></div>'
     + '<div class="form-field"><label class="form-label">They mostly book</label><select class="form-select" id="wob">'
-    + '<option value="soft">Flat-rate rooms (soft ticket)</option><option value="hard">Ticketed shows (hard ticket)</option><option value="both">Both</option></select></div>'
-    + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(1,\'org\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(2,\'org\')">Continue</button></div>';
+    + ['soft','hard','both'].map(function(b){ return '<option value="' + b + '"' + ((wizData.books||'soft')===b ? ' selected' : '') + '>' + (b==='soft' ? 'Flat-rate rooms (soft ticket)' : b==='hard' ? 'Ticketed shows (hard ticket)' : 'Both') + '</option>'; }).join('') + '</select></div>'
+    + '<div class="wiz-nav"><button class="btn-secondary" onclick="wizBack(2,\'org\')"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(2,\'org\')">Continue</button></div>';
   } else if (step===2) {
     wizTicket = ticket; // remembered so the collective-confirm card's "back to search" can return here
     var types = ticket==='hard' ? hardTypes : softTypes;
+    var vtSel = wizData.vtype || '', vtInList = types.indexOf(vtSel) >= 0, vtOther = (vtSel && !vtInList) ? vtSel : '';
     html = '<div class="wiz-header"><div class="wiz-step-label">Step 2 of 4</div><div class="wiz-title">Venue details</div></div>'
     + '<div class="wiz-dots">' + dots + '</div>'
     + '<div class="form-field"><label class="form-label"><i class="ti ti-map-search" style="margin-right:4px;color:var(--text-primary)"></i>Find the venue</label>'
     + '<input class="form-input" id="wsearch" placeholder="Type a venue name… (fills everything below)" autocomplete="off" oninput="venueSearch(this.value)">'
     + '<div id="wsearch-results"></div></div>'
-    + '<div class="form-field"><label class="form-label">Venue name *</label><input class="form-input" id="wn" placeholder="e.g. Dosey Doe"></div>'
-    + '<div class="form-row-2"><div class="form-field"><label class="form-label">City *</label><input class="form-input" id="wc" placeholder="Houston"></div>'
-    + '<div class="form-field"><label class="form-label">State *</label><input class="form-input" id="ws" placeholder="TX"></div></div>'
+    + '<div class="form-field"><label class="form-label">Venue name *</label><input class="form-input" id="wn" placeholder="e.g. Dosey Doe" value="' + esc(wizData.name||'') + '"></div>'
+    + '<div class="form-row-2"><div class="form-field"><label class="form-label">City *</label><input class="form-input" id="wc" placeholder="Houston" value="' + esc(wizData.city||'') + '"></div>'
+    + '<div class="form-field"><label class="form-label">State *</label><input class="form-input" id="ws" placeholder="TX" value="' + esc(wizData.state||'') + '"></div></div>'
     + '<div class="form-field"><label class="form-label">Venue type *</label><select class="form-select" id="wvt" onchange="checkOther()">'
-    + '<option value="" selected>Select venue type…</option>'
-    + types.map(function(t){ return '<option>' + t + '</option>'; }).join('') + '</select></div>'
-    + '<div class="form-field" id="other-wrap" style="display:none"><label class="form-label">Describe the venue type</label><input class="form-input" id="wo" placeholder="Tell us more…"></div>'
-    + '<div class="form-field"><label class="form-label">Address (optional)</label><input class="form-input" id="waddr" placeholder="Street address — powers maps later"></div>'
-    + '<div class="form-row-2"><div class="form-field"><label class="form-label">Venue phone</label><input class="form-input" id="wvph" type="tel" placeholder="(713) 555-0182"></div>'
-    + '<div class="form-field"><label class="form-label">Website</label><input class="form-input" id="wvwb" placeholder="venue.com"></div></div>'
-    + '<div class="form-field"><label class="form-label">Booking form URL <span style="font-weight:400;color:var(--text-tertiary)">(if they book via web form)</span></label><input class="form-input" id="wform" placeholder="venue.com/booking"></div>'
-    + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(1,\'' + ticket + '\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(2,\'' + ticket + '\')">Continue</button></div>';
+    + '<option value=""' + (vtSel ? '' : ' selected') + '>Select venue type…</option>'
+    + types.map(function(t){ return '<option' + (((vtInList && t===vtSel) || (vtOther && t==='Other')) ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select></div>'
+    + '<div class="form-field" id="other-wrap" style="display:' + (vtOther ? 'block' : 'none') + '"><label class="form-label">Describe the venue type</label><input class="form-input" id="wo" placeholder="Tell us more…" value="' + esc(vtOther) + '"></div>'
+    + '<div class="form-field"><label class="form-label">Address (optional)</label><input class="form-input" id="waddr" placeholder="Street address — powers maps later" value="' + esc(wizData.address||'') + '"></div>'
+    + '<div class="form-row-2"><div class="form-field"><label class="form-label">Venue phone</label><input class="form-input" id="wvph" type="tel" placeholder="(713) 555-0182" value="' + esc(wizData.phone||'') + '"></div>'
+    + '<div class="form-field"><label class="form-label">Website</label><input class="form-input" id="wvwb" placeholder="venue.com" value="' + esc(wizData.website||'') + '"></div></div>'
+    + '<div class="form-field"><label class="form-label">Booking form URL <span style="font-weight:400;color:var(--text-tertiary)">(if they book via web form)</span></label><input class="form-input" id="wform" placeholder="venue.com/booking" value="' + esc(wizData.form||'') + '"></div>'
+    + '<div class="wiz-nav"><button class="btn-secondary" onclick="wizBack(2,\'' + ticket + '\')"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(2,\'' + ticket + '\')">Continue</button></div>';
   } else if (step===3) {
     var payFields = ticket==='org' ? ''
       : ticket==='soft'
-      ? '<div class="form-field"><label class="form-label">Rate ($ per hour)</label><input class="form-input" id="wrate" placeholder="150" inputmode="decimal"></div>'
-      : '<div class="form-row-2"><div class="form-field"><label class="form-label">Pay low ($)</label><input class="form-input" id="wpl" placeholder="300" inputmode="decimal"></div><div class="form-field"><label class="form-label">Pay high ($)</label><input class="form-input" id="wph" placeholder="500" inputmode="decimal"></div></div>';
+      ? '<div class="form-field"><label class="form-label">Rate ($ per hour)</label><input class="form-input" id="wrate" placeholder="150" inputmode="decimal" value="' + esc(wizData.rateRaw||'') + '"></div>'
+      : '<div class="form-row-2"><div class="form-field"><label class="form-label">Pay low ($)</label><input class="form-input" id="wpl" placeholder="300" inputmode="decimal" value="' + esc(wizData.payLo||'') + '"></div><div class="form-field"><label class="form-label">Pay high ($)</label><input class="form-input" id="wph" placeholder="500" inputmode="decimal" value="' + esc(wizData.payHi||'') + '"></div></div>';
     html = '<div class="wiz-header"><div class="wiz-step-label">Step 3 of 4</div><div class="wiz-title">' + (ticket==='org' ? 'Your person there — the contact IS the relationship' : 'Pay & booking contact') + '</div></div>'
     + '<div class="wiz-dots">' + dots + '</div>'
     + payFields
-    + '<div class="form-row-2"><div class="form-field"><label class="form-label">Contact first name</label><input class="form-input" id="wcf" placeholder="Mike"></div>'
-    + '<div class="form-field"><label class="form-label">Last name</label><input class="form-input" id="wcl" placeholder="Dosey"></div></div>'
-    + '<div class="form-field"><label class="form-label">Role / title</label><input class="form-input" id="wctitle" placeholder="Booking manager · GM · Owner"></div>'
-    + '<div class="form-field"><label class="form-label">Email</label><input class="form-input" id="wcemail" type="email" placeholder="booking@venue.com"></div>'
-    + '<div class="form-field"><label class="form-label">Phone</label><input class="form-input" id="wcphone" type="tel" placeholder="(713) 555-0182"></div>'
-    + '<div class="form-row-2"><div class="form-field"><label class="form-label">LinkedIn <span style="font-weight:400;color:var(--text-tertiary)">(optional)</span></label><input class="form-input" id="wclinkedin" placeholder="linkedin.com/in/…"></div>'
-    + '<div class="form-field"><label class="form-label">Instagram <span style="font-weight:400;color:var(--text-tertiary)">(optional)</span></label><input class="form-input" id="wcinstagram" placeholder="@handle"></div></div>'
-    + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(2,\'' + ticket + '\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(3,\'' + ticket + '\')">Continue</button></div>';
+    + '<div class="form-row-2"><div class="form-field"><label class="form-label">Contact first name</label><input class="form-input" id="wcf" placeholder="Mike" value="' + esc(wizData.contactFirst||'') + '"></div>'
+    + '<div class="form-field"><label class="form-label">Last name</label><input class="form-input" id="wcl" placeholder="Dosey" value="' + esc(wizData.contactLast||'') + '"></div></div>'
+    + '<div class="form-field"><label class="form-label">Role / title</label><input class="form-input" id="wctitle" placeholder="Booking manager · GM · Owner" value="' + esc(wizData.contactTitle||'') + '"></div>'
+    + '<div class="form-field"><label class="form-label">Email</label><input class="form-input" id="wcemail" type="email" placeholder="booking@venue.com" value="' + esc(wizData.contactEmail||'') + '"></div>'
+    + '<div class="form-field"><label class="form-label">Phone</label><input class="form-input" id="wcphone" type="tel" placeholder="(713) 555-0182" value="' + esc(wizData.contactPhone||'') + '"></div>'
+    + '<div class="form-row-2"><div class="form-field"><label class="form-label">LinkedIn <span style="font-weight:400;color:var(--text-tertiary)">(optional)</span></label><input class="form-input" id="wclinkedin" placeholder="linkedin.com/in/…" value="' + esc(wizData.contactLinkedin||'') + '"></div>'
+    + '<div class="form-field"><label class="form-label">Instagram <span style="font-weight:400;color:var(--text-tertiary)">(optional)</span></label><input class="form-input" id="wcinstagram" placeholder="@handle" value="' + esc(wizData.contactInstagram||'') + '"></div></div>'
+    + '<div class="wiz-nav"><button class="btn-secondary" onclick="wizBack(3,\'' + ticket + '\')"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(3,\'' + ticket + '\')">Continue</button></div>';
   } else if (step===4) {
     html = '<div class="wiz-header"><div class="wiz-step-label">Step 4 of 4</div><div class="wiz-title">Notes for the collective</div></div>'
     + '<div class="wiz-dots">' + dots + '</div>'
-    + (ticket==='org' ? '' : '<div class="form-field"><label class="form-label">Typical clientele</label><input class="form-input" id="wkl" placeholder="e.g. Americana fans, 35–55, seated"></div>')
-    + '<div class="form-field"><label class="form-label">Notes</label><textarea class="form-textarea" id="wnt" placeholder="Load-in details, who to name-drop, what they\'re looking for…"></textarea></div>'
-    + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(3,\'' + ticket + '\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizSubmit(\'' + ticket + '\')">Add to collective ↗</button></div>';
+    + (ticket==='org' ? '' : '<div class="form-field"><label class="form-label">Typical clientele</label><input class="form-input" id="wkl" placeholder="e.g. Americana fans, 35–55, seated" value="' + esc(wizData.clientele||'') + '"></div>')
+    + '<div class="form-field"><label class="form-label">Notes</label><textarea class="form-textarea" id="wnt" placeholder="Load-in details, who to name-drop, what they\'re looking for…">' + esc(wizData.notes||'') + '</textarea></div>'
+    + '<div class="wiz-nav"><button class="btn-secondary" onclick="wizBack(4,\'' + ticket + '\')"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizSubmit(\'' + ticket + '\')">Add to collective ↗</button></div>';
   } else if (step===5) {
     html = '<div class="success-screen"><div class="success-icon"><i class="ti ti-check"></i></div>'
     + '<h3 style="font-size:18px;font-weight:500;margin-bottom:8px">Added to the collective</h3>'
     + '<p style="font-size:14px;color:var(--text-secondary);margin-bottom:24px">Your venue is now visible to everyone. Every artist who canvasses it adds to what you just built.</p>'
     + '<button class="btn-primary btn-full" onclick="go(\'discover\')">Browse venues</button>'
-    + '<button class="btn-secondary btn-full" onclick="renderWizard(1,null,{})">Add another</button></div>';
+    + '<button class="btn-secondary btn-full" onclick="wizData={};renderWizard(1,null,{})">Add another</button></div>';
   }
   document.getElementById('wiz-container').innerHTML = html;
 }
@@ -4018,7 +4077,7 @@ function loadVenues(){
 
 function loadPipeline(){
   sb.from('pipeline_entries')
-    .select('id,status,prev_status,venue_id,org_id,contact_id,person_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs,ticket_type, venue:venues!pipeline_entries_venue_id_fkey(name,city,state,venue_type,pay_range,ticket_type,booking_form_url), org:orgs(name,city,state,org_type,books), person:people(name,title,org,email,phone,linkedin,instagram), contact:contacts(name,title,email,phone,linkedin,instagram)')
+    .select('id,status,prev_status,venue_id,org_id,contact_id,person_id,followup_date,reminder_at,reminder_note,last_activity_at,created_at,gig_date,gig_pay,gig_costs,ticket_type, venue:venues!pipeline_entries_venue_id_fkey(name,city,state,venue_type,pay_range,ticket_type,booking_form_url), org:orgs(name,city,state,org_type,books), person:people(name,title,org,email,phone,linkedin,instagram), contact:contacts(name,title,email,phone,linkedin,instagram)')
     .order('last_activity_at',{ascending:false}).then(function(r){
       if(r.error){
         console.error('loadPipeline', r.error);
@@ -4035,7 +4094,7 @@ function loadPipeline(){
         var v=e.venue||{}, o=e.org||{}, c=e.person||e.contact||{};
         return {id:i, uuid:e.id, venue:v.name||o.name||'(unknown venue)', city:v.city||o.city||'', state:v.state||o.state||'',
                 contact:c.name||'(no contact)', title:c.title||'', org:c.org||'', email:c.email||'', phone:c.phone||'', linkedin:c.linkedin||'', instagram:c.instagram||'', personId:e.person_id||null,
-                vtype:v.venue_type||o.org_type||'', pay:v.pay_range||'—', form:v.booking_form_url||'', t:(e.ticket_type||v.ticket_type||(o.books==='hard'?'hard':'soft')), tOverride:e.ticket_type||null, s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, orgId:e.org_id||null, contactId:e.contact_id||null, gig_date:e.gig_date||null, gigPay:e.gig_pay||'', gigCosts:e.gig_costs||'', days:daysAgo(e.last_activity_at), activity:[]};
+                vtype:v.venue_type||o.org_type||'', pay:v.pay_range||'—', form:v.booking_form_url||'', t:(e.ticket_type||v.ticket_type||(o.books==='hard'?'hard':'soft')), tOverride:e.ticket_type||null, s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, orgId:e.org_id||null, contactId:e.contact_id||null, gig_date:e.gig_date||null, gigPay:e.gig_pay||'', gigCosts:e.gig_costs||'', reminderAt:e.reminder_at||null, reminderNote:e.reminder_note||'', days:daysAgo(e.last_activity_at), activity:[]};
       });
       updateHomeStats();
       backfillWins();
@@ -4115,7 +4174,7 @@ function rerenderOpenDetail(){
 }
 
 function updateHomeStats(){
-  var active = pipeline.filter(function(p){ return ['lead','pitched','talks','hold','outreach','waiting','followup'].indexOf(p.s)>=0; }).length;
+  var active = pipeline.filter(function(p){ return ['lead','pitched','talks','hold','outreach','waiting','followup'].indexOf(p.s)>=0 && !isCold(p); }).length;
   var won = pipeline.filter(function(p){ return p.s==='booked'||p.s==='played'||p.s==='won'; }).length;
   setText('stat-active', active);
   setText('stat-booked', won);
@@ -4246,6 +4305,12 @@ function setStatus(id, s){
 }
 
 // ── Add venue wizard persistence ────────────────────────
+// Back never loses work: capture the current step's fields, THEN step back
+// (renders prefill from wizData, so forward returns intact too).
+function wizBack(fromStep, ticket){
+  wizCapture(fromStep, ticket);
+  renderWizard(fromStep - 1, ticket, {});
+}
 function wizNext(step, ticket){
   wizCapture(step, ticket);
   if(step===2 && ticket==='org' && (!wizData.orgName || !wizData.orgType)){ alert('Company name and what they are — both required.'); return; }
@@ -4280,6 +4345,8 @@ function wizCapture(step, ticket){
       var lo=val('wpl').trim(), hi=val('wph').trim();
       wizData.pay = (lo&&hi) ? ('$'+lo+'–'+hi) : (lo ? ('$'+lo+'+') : (hi ? ('up to $'+hi) : ''));
     }
+    wizData.rateRaw=val('wrate').trim(); wizData.payLo=val('wpl').trim(); wizData.payHi=val('wph').trim();
+    wizData.contactFirst=val('wcf').trim(); wizData.contactLast=val('wcl').trim();
     wizData.contactName=(val('wcf').trim()+' '+val('wcl').trim()).trim();
     wizData.contactTitle=val('wctitle').trim();
     wizData.contactEmail=val('wcemail').trim();
