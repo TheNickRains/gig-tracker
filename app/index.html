@@ -2818,12 +2818,24 @@ function openBookingForm(id){
   });
 }
 
-// ── Venue lookup: search Maps once, fill everything (no typo addresses) ──
-var wsTimer = null, wsResults = [];
+// ── Venue lookup: the collective first, then Maps (no typo addresses) ──
+var wsTimer = null, wsResults = [], wsCollective = [], wizTicket = 'soft';
 function venueSearch(q){
   clearTimeout(wsTimer);
   var box = document.getElementById('wsearch-results');
   if (!q || q.trim().length < 3) { if (box) box.innerHTML = ''; return; }
+  // The collective answers FIRST — if a member already worked this room, you
+  // get their record (booker included) instead of creating a duplicate.
+  var qn = q.trim().toLowerCase();
+  var known = venues.filter(function(v){ return (v.name||'').toLowerCase().indexOf(qn) >= 0; }).slice(0, 4);
+  wsCollective = known;
+  var knownHtml = known.length
+    ? '<div style="font-size:10px;font-weight:600;color:var(--booked-text);text-transform:uppercase;letter-spacing:.05em;padding:6px 2px 2px">Already in the collective</div>'
+      + known.map(function(v, i){
+          return '<div class="ws-row" onclick="pickCollectiveVenue(' + i + ')"><div class="ws-name"><i class="ti ti-circle-check-filled" style="color:var(--booked-text);margin-right:5px"></i>' + esc(v.name) + '</div><div class="ws-addr">' + esc([v.city, v.state].filter(Boolean).join(', ')) + (v.contact && v.contact !== '—' ? ' · knows ' + esc(v.contact) : '') + '</div></div>';
+        }).join('')
+    : '';
+  if (box && knownHtml) box.innerHTML = knownHtml;
   wsTimer = setTimeout(function(){
     sb.auth.getSession().then(function(ss){
       var tok = ss.data && ss.data.session && ss.data.session.access_token; if (!tok) return;
@@ -2831,14 +2843,59 @@ function venueSearch(q){
         .then(function(r){ return r.json(); })
         .then(function(j){
           var b2 = document.getElementById('wsearch-results'); if (!b2) return;
-          if (j.error) { b2.innerHTML = '<div class="ws-row" style="cursor:default;color:var(--text-secondary);font-size:12px">' + esc(j.error) + '</div>'; return; }
+          if (j.error) { b2.innerHTML = knownHtml + '<div class="ws-row" style="cursor:default;color:var(--text-secondary);font-size:12px">' + esc(j.error) + '</div>'; return; }
           wsResults = j.results || [];
-          b2.innerHTML = wsResults.length ? wsResults.map(function(x, i){
+          var placesHtml = wsResults.length ? wsResults.map(function(x, i){
             return '<div class="ws-row" onclick="pickVenueResult(' + i + ')"><div class="ws-name">' + esc(x.name) + '</div><div class="ws-addr">' + esc(x.address) + '</div></div>';
-          }).join('') : '<div class="ws-row" style="cursor:default;color:var(--text-secondary);font-size:12px">No matches — fill it in by hand below.</div>';
+          }).join('') : (known.length ? '' : '<div class="ws-row" style="cursor:default;color:var(--text-secondary);font-size:12px">No matches — fill it in by hand below.</div>');
+          b2.innerHTML = knownHtml
+            + (wsResults.length && known.length ? '<div style="font-size:10px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.05em;padding:6px 2px 2px">From Maps — new to the collective</div>' : '')
+            + placesHtml;
         }).catch(function(){});
     });
   }, 350);
+}
+// On the phone with the venue? Pick the collective's record, eyeball it, and
+// one tap confirms it (+1 verifies for everyone) and starts your deal with
+// the known booker attached.
+function pickCollectiveVenue(i){
+  var v = wsCollective[i]; if (!v) return;
+  sb.from('venue_people').select('person:people(id,name,title,email,phone)').eq('venue_id', v.id).then(function(r){
+    var ppl = ((r.data)||[]).map(function(x){ return x.person; }).filter(Boolean);
+    var row = function(label, val){ return val ? '<div class="field-row"><span class="field-label">' + label + '</span><span class="field-value">' + esc(val) + '</span></div>' : ''; };
+    document.getElementById('wiz-container').innerHTML =
+      '<div class="wiz-header"><div class="wiz-step-label">Already in the collective</div><div class="wiz-title">' + esc(v.name) + '</div></div>'
+      + '<div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px">A member already worked this room. You’re the freshest eyes on it — if this looks right, confirm it and your deal starts with the booker attached.</div>'
+      + '<div class="card card-flush" style="margin-bottom:12px">'
+      + row('Type', v.vtype) + row('Where', [v.city, v.state].filter(Boolean).join(', '))
+      + row('Pay', v.pay !== '—' ? v.pay : '') + row('Phone', v.phone) + row('Website', v.website)
+      + '</div>'
+      + (ppl.length ? '<div class="section-label">Known booker' + (ppl.length > 1 ? 's' : '') + '</div><div class="card card-flush" style="margin-bottom:14px">'
+          + ppl.map(function(pp){ return '<div class="field-row"><span class="field-label">' + esc(pp.name || '?') + '</span><span class="field-value">' + esc([pp.title, pp.email, pp.phone].filter(Boolean).join(' · ')) + '</span></div>'; }).join('') + '</div>'
+        : '<div class="card placeholder" style="margin-bottom:14px;font-size:12.5px;color:var(--text-tertiary)">No booker on file yet — you might be the one to add them.</div>')
+      + '<div class="save-row"><button class="btn-primary" onclick="confirmCollectiveVenue(' + i + ')"><i class="ti ti-thumb-up"></i> Looks right — start my deal (+1)</button>'
+      + '<button class="btn-secondary" onclick="hideWizardToVenue(\'' + v.id + '\')">Something’s off — open &amp; fix</button></div>'
+      + '<div style="text-align:center;margin-top:10px"><button class="vc-btn" style="font-size:12px" onclick="renderWizard(2, wizTicket, {})">← Back to search</button></div>';
+  });
+}
+function hideWizardToVenue(venueId){ openVenueDetail(venueId); }
+function confirmCollectiveVenue(i){
+  var v = wsCollective[i]; if (!v) return;
+  addVenueToPipeline(v.id, true);
+  // The +1: venue and its people get a freshness stamp from your confirmation.
+  sb.from('venues').select('verify_count').eq('id', v.id).single().then(function(r){
+    var n = ((r.data && r.data.verify_count) || 0) + 1;
+    sb.from('venues').update({ verify_count: n, verified_at: new Date().toISOString(), verified_by: ME }).eq('id', v.id).then(function(ur){
+      if (!ur.error) { v.verifyCount = n; v.verifiedAt = new Date().toISOString(); }
+    });
+  });
+  sb.from('venue_people').select('person_id').eq('venue_id', v.id).then(function(r){
+    ((r.data)||[]).forEach(function(x){
+      sb.from('people').select('verify_count').eq('id', x.person_id).single().then(function(pr){
+        sb.from('people').update({ verify_count: ((pr.data && pr.data.verify_count) || 0) + 1, verified_at: new Date().toISOString(), verified_by: ME }).eq('id', x.person_id).then(function(){});
+      });
+    });
+  });
 }
 function pickVenueResult(i){
   var x = wsResults[i]; if (!x) return;
@@ -3440,6 +3497,7 @@ function renderWizard(step, ticket, data) {
     + '<option value="soft">Flat-rate rooms (soft ticket)</option><option value="hard">Ticketed shows (hard ticket)</option><option value="both">Both</option></select></div>'
     + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(1,\'org\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(2,\'org\')">Continue</button></div>';
   } else if (step===2) {
+    wizTicket = ticket; // remembered so the collective-confirm card's "back to search" can return here
     var types = ticket==='hard' ? hardTypes : softTypes;
     html = '<div class="wiz-header"><div class="wiz-step-label">Step 2 of 4</div><div class="wiz-title">Venue details</div></div>'
     + '<div class="wiz-dots">' + dots + '</div>'
@@ -3950,7 +4008,8 @@ function loadVenues(){
     venues = rows.map(function(v){
       return {id:v.id, name:v.name, city:v.city||'', state:v.state||'', type:v.ticket_type||'soft', createdAt:v.created_at||null, createdBy:v.created_by||null, createdByName:v.created_by_name||'',
               vtype:v.venue_type||'', pay:v.pay_range||'—', contact:((v.venue_people&&v.venue_people[0]&&v.venue_people[0].person&&v.venue_people[0].person.name) || (v.contacts&&v.contacts[0]?v.contacts[0].name:'—')),
-              address:v.address||'', phone:v.phone||'', website:v.website||'', clientele:v.clientele||'', notes:v.notes||'', form:v.booking_form_url||''};
+              address:v.address||'', phone:v.phone||'', website:v.website||'', clientele:v.clientele||'', notes:v.notes||'', form:v.booking_form_url||'',
+              verifyCount:v.verify_count||0, verifiedAt:v.verified_at||null};
     });
     if(currentScreen==='discover') renderDiscover();
     retryPendingRoute();
@@ -4423,6 +4482,7 @@ function openVenueDetail(id){
     + '<span class="badge badge-' + v.type + '" style="margin-top:6px">' + (v.type==='hard'?'Hard ticket':'Soft ticket') + '</span></div>'
     + '</div></div>'
     + '<div class="card card-flush" style="margin-bottom:20px">'
+    + (v.verifyCount ? '<div class="field-row"><span class="field-label">Verified</span><span class="field-value" style="color:var(--booked-text)"><i class="ti ti-circle-check-filled" style="margin-right:4px"></i>' + v.verifyCount + '× by members · last ' + relTime(v.verifiedAt) + '</span></div>' : '')
     + (v.contact && v.contact!=='—' ? '<div class="field-row"><span class="field-label">Booking contact</span><span class="field-value">' + esc(v.contact) + '</span></div>' : '')
     + vrow('phone')
     + vrow('website')
@@ -4585,7 +4645,7 @@ function deleteVenueArmed(venueId){
 }
 
 // Discover → pipeline, one tap. Uses the venue's first contact when there is one.
-function addVenueToPipeline(venueId){
+function addVenueToPipeline(venueId, gotoDeal){
   // The collective's whole point: the second member to work this room starts
   // with the known booker PRE-LOADED, not a blank contact card.
   sb.from('venue_people').select('person:people(id,name)').eq('venue_id', venueId).then(function(vp){
@@ -4593,11 +4653,12 @@ function addVenueToPipeline(venueId){
     var personId = ppl.length === 1 ? ppl[0].id : null; // several known → pick on the deal, don't guess
     sb.from('contacts').select('id').eq('venue_id', venueId).limit(1).then(function(cr){
       var contactId = (cr.data && cr.data[0] && cr.data[0].id) || null;
-      sb.from('pipeline_entries').insert({ artist_id: ME, venue_id: venueId, person_id: personId, contact_id: personId ? null : contactId, status: 'lead' }).then(function(r){
+      sb.from('pipeline_entries').insert({ artist_id: ME, venue_id: venueId, person_id: personId, contact_id: personId ? null : contactId, status: 'lead' }).select().single().then(function(r){
         if (r.error) { showToast('Could not add: ' + r.error.message, true); return; }
         showToast(personId ? ('Added — ' + (ppl[0].name || 'the booker') + ' pre-loaded from the collective') :
                   ppl.length > 1 ? ('Added — ' + ppl.length + ' known contacts, pick one on the deal') : 'Added to your pipeline');
         loadPipeline();
+        if (gotoDeal && r.data) { location.hash = 'entry/' + r.data.id; return; }
         setTimeout(function(){ if (currentScreen==='venue') openVenueDetail(venueId); }, 350); // refresh the button state
       });
     });
