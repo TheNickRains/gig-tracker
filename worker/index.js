@@ -806,9 +806,21 @@ async function processScheduled() {
   }
 }
 
+// Due reminders push ONCE (your own promise deserves a buzz — this is
+// exactly the "needs you" bar that sends-confirmations failed).
+async function pushDueReminders() {
+  const due = await sGet(`pipeline_entries?reminder_at=lte.${encodeURIComponent(new Date().toISOString())}&reminder_pushed=eq.false&select=id,artist_id,reminder_note,venue:venues!pipeline_entries_venue_id_fkey(name),org:orgs(name)&limit=50`);
+  for (const e of due) {
+    const name = (e.venue && e.venue.name) || (e.org && e.org.name) || "a deal";
+    notify(e.artist_id, "⏰ Reminder — " + (e.reminder_note || name), e.reminder_note ? name : "You asked to come back to this", "/app#entry/" + e.id).catch(() => {});
+    await sPatch(`pipeline_entries?id=eq.${e.id}`, { reminder_pushed: true });
+  }
+  if (due.length) console.log("reminders pushed:", due.length);
+}
 async function tick() {
   try {
     await processScheduled();
+    try { await pushDueReminders(); } catch (e) { console.error("reminders", e.message); }
     const conns = await sGet("google_connections?select=artist_id,refresh_token,history_id,watch_expiry");
     console.log(new Date().toISOString(), "poll", conns.length, "connection(s)");
     for (const c of conns) {

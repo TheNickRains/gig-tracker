@@ -3037,7 +3037,7 @@ function setReminder(id){
   var note = (document.getElementById('rem-note-' + id) || {value:''}).value.trim();
   if (!at) { showToast('Pick when to be reminded', true); return; }
   var iso = new Date(at).toISOString();
-  sb.from('pipeline_entries').update({ reminder_at: iso, reminder_note: note || null }).eq('id', p.uuid).then(function(r){
+  sb.from('pipeline_entries').update({ reminder_at: iso, reminder_note: note || null, reminder_pushed: false }).eq('id', p.uuid).then(function(r){
     if (r.error) { showToast('Could not set: ' + r.error.message, true); return; }
     p.reminderAt = iso; p.reminderNote = note;
     sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: 'system', body: '⏰ Reminder set — ' + fmtWhen(iso) + (note ? ': ' + note : ''), source: 'manual' }).then(function(){});
