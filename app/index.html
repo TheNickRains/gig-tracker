@@ -909,6 +909,7 @@
     <div id="war-funnel"></div>
     <div id="war-cal"></div>
     <div id="war-up"></div>
+    <div id="war-reminders"></div>
     <div id="war-sends"></div>
     <div class="section-label">Collective activity</div>
     <div id="war-feed"></div>
@@ -2069,6 +2070,19 @@ function renderHome(){
   renderMiniCal();
   renderFunnel();
   renderFeed();
+  // Your to-dos, visible BEFORE they're due (due ones jump up into Needs you).
+  var rems = pipeline.filter(function(p){ return p.reminderAt && new Date(p.reminderAt) > new Date(); })
+    .sort(function(a,b){ return new Date(a.reminderAt) - new Date(b.reminderAt); });
+  var re = document.getElementById('war-reminders');
+  if (re) re.innerHTML = rems.length
+    ? '<div class="section-label">Reminders — your to-dos</div><div class="card card-flush" style="margin-bottom:20px">' + rems.map(function(p){
+        return '<div class="war-row" onclick="openDetail(' + p.id + ')">'
+          + '<div class="war-ic" style="background:var(--hold-bg);color:var(--hold-text)"><i class="ti ti-alarm"></i></div>'
+          + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(p.reminderNote || 'Come back to ' + p.venue) + '</div><div class="war-sub">' + esc(p.venue) + ' · ' + fmtWhen(p.reminderAt) + '</div></div>'
+          + '<button class="war-x" onclick="event.stopPropagation();wrClearReminder(\'' + p.uuid + '\')" title="Already handled — clear it">Done</button>'
+          + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
+      }).join('') + '</div>'
+    : '';
   var sends = pipeline.filter(function(p){ return p.sched && p.sched.status==='scheduled'; });
   var se = document.getElementById('war-sends');
   if (se) se.innerHTML = sends.length
@@ -2515,13 +2529,14 @@ function openDetail(id) {
       + (p.reminderNote ? ' — ' + esc(p.reminderNote) : '') + '</div>'
       + '<button class="war-x" onclick="clearReminder(' + id + ')" title="Handled — clear it">Done</button></div>';
   } else {
-    // Wraps on narrow screens: icon + picker + button on row one, note takes
-    // its own full row — a non-wrapping row here shoved the whole app sideways.
-    remBlock = '<div class="card" style="margin-bottom:12px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
-      + '<i class="ti ti-alarm" style="color:var(--text-tertiary);flex-shrink:0" title="They said call back? Set a reminder — it lands in your war room when due"></i>'
-      + '<input type="datetime-local" class="pipe-search" style="margin:0;flex:1 1 150px;min-width:0;max-width:100%" id="rem-at-' + id + '">'
-      + '<button class="btn-secondary btn-sm" style="flex-shrink:0" onclick="setReminder(' + id + ')" title="Set the reminder"><i class="ti ti-alarm-plus"></i> Set</button>'
-      + '<input class="pipe-search" style="margin:0;flex:1 1 100%;min-width:0" id="rem-note-' + id + '" placeholder="Remind me — e.g. call ' + esc(first) + ' back">'
+    // Say what it IS in words — no mystery icons. Wraps on narrow screens
+    // (a non-wrapping row here once shoved the whole app sideways).
+    remBlock = '<div class="card" style="margin-bottom:12px">'
+      + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px"><i class="ti ti-alarm" style="margin-right:5px;color:var(--text-primary)"></i><strong style="color:var(--text-primary)">Remind me</strong> — they said “call back Tuesday”? Set it below and it shows up on your Home when it’s time.</div>'
+      + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+      + '<input type="datetime-local" class="pipe-search" style="margin:0;flex:1 1 150px;min-width:0;max-width:100%" id="rem-at-' + id + '" title="When should it pop up?">'
+      + '<button class="btn-secondary btn-sm" style="flex-shrink:0" onclick="setReminder(' + id + ')"><i class="ti ti-alarm-plus"></i> Set reminder</button>'
+      + '<input class="pipe-search" style="margin:0;flex:1 1 100%;min-width:0" id="rem-note-' + id + '" placeholder="What should it say? e.g. Call ' + esc(first) + ' back about October dates">'
       + '</div></div>';
   }
   var convo = p.activity.filter(function(a){ return a.kind!=='note'; });
