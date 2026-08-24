@@ -561,9 +561,16 @@
   .cc-seg { display: inline-flex; border: 0.5px solid var(--border-mid); border-radius: 7px; overflow: hidden; }
   .cc-opt { border: none; background: none; font-family: inherit; font-size: 11.5px; padding: 5px 12px; color: var(--text-secondary); cursor: pointer; }
   .cc-opt.on { background: var(--amber-800); color: #fff; font-weight: 600; }
-  .cc-channels { display: inline-flex; gap: 2px; }
-  .cc-ch { border: none; background: none; font-size: 14px; padding: 4px 6px; border-radius: 7px; cursor: pointer; opacity: 0.45; filter: grayscale(0.5); }
-  .cc-ch.on { opacity: 1; filter: none; background: var(--bg-primary); box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+  .cc-channels { display: inline-flex; gap: 5px; flex-wrap: wrap; }
+  /* Labeled channel chips — words, not mystery emojis */
+  .cc-ch {
+    display: inline-flex; align-items: center; gap: 5px;
+    border: 0.5px solid var(--border-mid); background: var(--bg-primary);
+    font-family: inherit; font-size: 11.5px; color: var(--text-secondary);
+    padding: 5px 11px; border-radius: 999px; cursor: pointer;
+  }
+  .cc-ch i { font-size: 13px; }
+  .cc-ch.on { background: var(--amber-800); color: #fff; border-color: var(--amber-800); font-weight: 600; }
   .composer { display: flex; gap: 6px; align-items: center; padding: 10px 12px 12px; }
   .composer .note-input { margin: 0; width: auto; flex: 1; }
   /* starts button-height, grows with content */
@@ -589,9 +596,13 @@
   .msg.them .m-meta { color: var(--talks-text); opacity: 0.7; }
   .msg.you .m-meta { color: var(--pitched-text); opacity: 0.7; justify-content: flex-end; }
   .msg { position: relative; }
-  .m-tools { position: absolute; top: 3px; right: 6px; display: flex; gap: 4px; opacity: 0.45; }
-  .m-tools .note-ic { padding: 1px 2px; font-size: 12px; }
+  .m-tools { position: absolute; top: 3px; right: 4px; display: flex; gap: 2px; opacity: 0.55; background: color-mix(in srgb, var(--bg-primary) 82%, transparent); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); border-radius: 8px; padding: 1px 2px; }
+  .m-tools .note-ic { padding: 3px 5px; font-size: 13px; }
   .msg:hover .m-tools { opacity: 1; }
+  .msg.manual { padding-right: 60px; } /* logged-by-hand bubbles reserve room for the tools */
+  .note-ic.armed { background: var(--dead-bg); color: var(--dead-text) !important; border-radius: 6px; }
+  /* Channel tag on hand-logged exchanges — the emoji had no words */
+  .m-chan { display: flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
   .sys-line { align-self: center; font-size: 11px; color: var(--text-tertiary); display: flex; gap: 6px; align-items: baseline; text-align: center; }
   /* Terminal-stage toggles */
   .closeout-btn.on { font-weight: 600; }
@@ -2487,6 +2498,14 @@ function openDetail(id) {
       if (manual && notesEditing[a.id]) {
         return '<div class="msg ' + (inbound ? 'them' : 'you') + '" style="width:88%"><div class="composer" style="padding:0"><textarea class="note-input" id="edit-' + a.id + '" rows="1" style="margin:0" autofocus onkeydown="saveNoteEdit(event,\'' + a.id + '\',' + id + ')">' + esc(a.text) + '</textarea><button class="send-btn" onclick="saveNoteEdit({key:\'Enter\',metaKey:true,target:document.getElementById(\'edit-' + a.id + '\')},\'' + a.id + '\',' + id + ')" title="Save"><i class="ti ti-check"></i></button></div></div>';
       }
+      // Hand-logged exchanges wear a labeled channel tag, not a bare emoji.
+      var CH_TAGS = { '💬': ['Text', 'ti-message'], '📸': ['DM', 'ti-brand-instagram'], '📞': ['Call', 'ti-phone'], '📝': ['Form', 'ti-forms'], '🤝': ['In person', 'ti-users'], '✉️': ['Email', 'ti-mail'] };
+      var chanTag = '';
+      var chKey = Object.keys(CH_TAGS).filter(function(k){ return text.indexOf(k) === 0; })[0];
+      if (chKey) {
+        text = text.slice(chKey.length).trim();
+        chanTag = '<div class="m-chan"><i class="ti ' + CH_TAGS[chKey][1] + '"></i>' + CH_TAGS[chKey][0] + (inbound ? ' from ' + esc(first) : '') + ' · logged by hand</div>';
+      }
       var content = a.summary
         ? '<div class="m-sum">' + esc(a.summary) + '</div><div class="m-raw">' + esc(text) + '</div>'
         : esc(text);
@@ -2494,7 +2513,7 @@ function openDetail(id) {
         ? '<span class="m-tools"><button class="note-ic" onclick="event.stopPropagation();startNoteEdit(\'' + a.id + '\',' + id + ')" title="Edit"><i class="ti ti-pencil"></i></button>'
           + '<button class="note-ic" onclick="event.stopPropagation();deleteNote(\'' + a.id + '\',' + id + ',this)" title="Delete"><i class="ti ti-trash"></i></button></span>'
         : '';
-      return '<div class="msg ' + (inbound ? 'them' : 'you') + '" title="' + (inbound ? esc(first) : 'You') + ' · ' + a.time + (manual ? ' · logged by hand' : '') + '">' + tools + content + '</div>';
+      return '<div class="msg ' + (inbound ? 'them' : 'you') + (manual ? ' manual' : '') + '" title="' + (inbound ? esc(first) : 'You') + ' · ' + a.time + (manual ? ' · logged by hand' : '') + '">' + tools + chanTag + content + '</div>';
     }
     return '<div class="sys-line"><span>' + esc(a.text) + '</span><span>· ' + a.time + '</span></div>';
   }).join('') || '<p style="color:var(--text-secondary);font-size:13px">No conversation yet — emails with ' + esc(first) + ' appear here automatically.</p>') + '</div>';
@@ -2654,18 +2673,23 @@ function openDetail(id) {
     + (p.email ? '<button class="btn-icon" style="width:26px;height:26px" onclick="ingestThread(\'' + p.uuid + '\')" title="Pull the full Gmail history with this contact"><i class="ti ti-refresh" style="font-size:14px"></i></button>' : '')
     + '<button class="btn-icon" style="width:26px;height:26px" onclick="toggleCompose(' + id + ')" title="Log a text, call, or conversation"><i class="ti ' + (composeOpen[p.uuid] ? 'ti-x' : 'ti-pencil-plus') + '" style="font-size:14px"></i></button></span></div>'
     + (composeOpen[p.uuid] ? '<div class="convo-composer" style="border:none;border-radius:14px;margin-bottom:10px">'
-    +   '<div class="cc-row">'
+    +   '<div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Log an exchange the app couldn’t see</div>'
+    +   '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px">'
+    +     '<span style="font-size:12px;color:var(--text-secondary)">Who spoke?</span>'
     +     '<div class="cc-seg">'
-    +       '<button class="cc-opt' + ((qlDir[p.uuid]||'out')==='out'?' on':'') + '" onclick="setQlDir(' + id + ',\'out\',this)">You</button>'
-    +       '<button class="cc-opt' + (qlDir[p.uuid]==='in'?' on':'') + '" onclick="setQlDir(' + id + ',\'in\',this)">' + esc(first) + '</button>'
+    +       '<button class="cc-opt' + ((qlDir[p.uuid]||'out')==='out'?' on':'') + '" onclick="setQlDir(' + id + ',\'out\',this)">You did</button>'
+    +       '<button class="cc-opt' + (qlDir[p.uuid]==='in'?' on':'') + '" onclick="setQlDir(' + id + ',\'in\',this)">' + esc(first) + ' did</button>'
     +     '</div>'
+    +   '</div>'
+    +   '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+    +     '<span style="font-size:12px;color:var(--text-secondary)">How?</span>'
     +     '<div class="cc-channels">'
-    + [['💬','Text'],['📸','DM'],['📞','Call'],['📝','Form'],['🤝','Met'],['✉️','Email']].map(function(ch){
-        return '<button class="cc-ch' + ((quickLogChannel[p.uuid]||'💬')===ch[0]?' on':'') + '" onclick="setQlChan(' + id + ',\'' + ch[0] + '\',this)" title="' + ch[1] + '">' + ch[0] + '</button>';
+    + [['💬','Text','ti-message'],['📞','Call','ti-phone'],['📸','DM','ti-brand-instagram'],['✉️','Email','ti-mail'],['🤝','In person','ti-users'],['📝','Form','ti-forms']].map(function(ch){
+        return '<button class="cc-ch' + ((quickLogChannel[p.uuid]||'💬')===ch[0]?' on':'') + '" onclick="setQlChan(' + id + ',\'' + ch[0] + '\',this)"><i class="ti ' + ch[2] + '"></i>' + ch[1] + '</button>';
       }).join('')
     +     '</div>'
     +   '</div>'
-    +   '<div class="composer" style="padding:8px 0 0"><input class="note-input" id="qlog-in-' + id + '" placeholder="' + (qlDir[p.uuid]==='in' ? ('Log what ' + esc(first) + ' said') : 'Log a text, call, or conversation') + '…" onkeydown="saveQuickLog(event,' + id + ')">'
+    +   '<div class="composer" style="padding:10px 0 0"><input class="note-input" id="qlog-in-' + id + '" placeholder="' + esc(qlogPlaceholder(p)) + '" onkeydown="saveQuickLog(event,' + id + ')">'
     +   '<button class="send-btn" onclick="saveQuickLog({key:\'Enter\',target:document.getElementById(\'qlog-in-' + id + '\')},' + id + ')" title="Log it"><i class="ti ti-arrow-up"></i></button></div>'
     + '</div>' : '')
     + '<div class="card card-flush" style="margin-bottom:20px">'
@@ -2859,17 +2883,30 @@ function igDraft(id){
 var qlDir = {};            // 'out' (default) | 'in'
 var composeOpen = {};
 var draftAngle = {};       // per-deal steering for the AI ("pitch the VIP room via Debbie") — survives re-renders, cleared on schedule
+// Placeholder reads like the question a friend would ask about the exchange.
+function qlogPlaceholder(p){
+  var first = (p.contact||'').split(' ')[0] || 'they';
+  var ch = quickLogChannel[p.uuid] || '💬';
+  var dirIn = qlDir[p.uuid] === 'in';
+  if (ch === '📞') return dirIn ? ('What did ' + first + ' say on the call?') : 'How did the call go? (no answer, left a voicemail, spoke with…)';
+  if (ch === '🤝') return 'How did it go? Who did you talk to?';
+  if (ch === '📝') return 'What did you submit through their form?';
+  if (ch === '✉️') return dirIn ? ('What did ' + first + ' write?') : 'What did you write? (for emails the app sends, it logs itself)';
+  return dirIn ? ('What did ' + first + ' say?') : 'What did you send?';
+}
 function setQlDir(id, dir, btn){
   var p = pipeline[id]; qlDir[p.uuid] = dir;
   btn.parentNode.querySelectorAll('.cc-opt').forEach(function(x){ x.classList.remove('on'); });
   btn.classList.add('on');
   var inp = document.getElementById('qlog-in-' + id);
-  if (inp) inp.placeholder = dir === 'in' ? ('Log what ' + (p.contact||'').split(' ')[0] + ' said…') : 'Log a text, call, or conversation…';
+  if (inp) inp.placeholder = qlogPlaceholder(p);
 }
 function setQlChan(id, ch, btn){
   var p = pipeline[id]; quickLogChannel[p.uuid] = ch;
   btn.parentNode.querySelectorAll('.cc-ch').forEach(function(x){ x.classList.remove('on'); });
   btn.classList.add('on');
+  var inp = document.getElementById('qlog-in-' + id);
+  if (inp) inp.placeholder = qlogPlaceholder(p);
 }
 function toggleCompose(id){
   var p = pipeline[id];
@@ -3329,9 +3366,8 @@ function armDelete(btn){
   if (btn.classList.contains('armed')) return true;
   btn.classList.add('armed');
   var old = btn.innerHTML;
-  btn.style.color = 'var(--dead-text)';
-  btn.innerHTML = '<span style="font-size:11px;font-weight:600">Sure?</span>';
-  setTimeout(function(){ if (btn.isConnected && btn.classList.contains('armed')) { btn.classList.remove('armed'); btn.style.color = ''; btn.innerHTML = old; } }, 3000);
+  btn.innerHTML = '<span style="font-size:11px;font-weight:600;white-space:nowrap">Delete?</span>';
+  setTimeout(function(){ if (btn.isConnected && btn.classList.contains('armed')) { btn.classList.remove('armed'); btn.innerHTML = old; } }, 3000);
   return false;
 }
 function deleteNote(actId, id, btn){
