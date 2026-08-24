@@ -278,11 +278,15 @@ async function ingestContactHistory(artistId, token, entryId) {
     const inbound = !(full.labelIds || []).includes("SENT");
     const text = cleanSnippet(extractPlainText(full.payload)) || cleanSnippet(full.snippet) || ("" + (header(full, "Subject") || ""));
     const row = { pipeline_entry_id: entry.id, kind: inbound ? "email_in" : "email_out", body: text.slice(0, 1200), source: "email_sync", email_message_id: full.id };
-    // Self-heal past misclassifications: same message already logged with the
-    // wrong direction gets its kind corrected instead of being skipped.
-    const existing = await sGet(`activities?pipeline_entry_id=eq.${entry.id}&email_message_id=eq.${full.id}&kind=in.(email_in,email_out)&select=id,kind&limit=1`);
+    if (inbound) row.from_name = senderName(full);
+    // Self-heal past rows: correct a wrong direction and backfill the sender
+    // name instead of skipping already-logged messages.
+    const existing = await sGet(`activities?pipeline_entry_id=eq.${entry.id}&email_message_id=eq.${full.id}&kind=in.(email_in,email_out)&select=id,kind,from_name&limit=1`);
     if (existing.length) {
-      if (existing[0].kind !== row.kind) { await sPatch(`activities?id=eq.${existing[0].id}`, { kind: row.kind }); added++; console.log("  direction corrected:", full.id); }
+      const fix = {};
+      if (existing[0].kind !== row.kind) fix.kind = row.kind;
+      if (inbound && row.from_name && existing[0].from_name !== row.from_name) fix.from_name = row.from_name;
+      if (Object.keys(fix).length) { await sPatch(`activities?id=eq.${existing[0].id}`, fix); added++; console.log("  corrected:", full.id, JSON.stringify(fix)); }
       continue;
     }
     if (full.internalDate) {
@@ -313,6 +317,14 @@ async function ingestContactHistory(artistId, token, entryId) {
   return { added, removed };
 }
 
+// The message's own From header names the sender FOREVER — the deal's current
+// contact can change, history can't. "Marc Driskill" <marc@…> → "Marc Driskill".
+function senderName(full) {
+  const from = header(full, "From") || "";
+  const name = (from.match(/^"?([^"<]+?)"?\s*</) || [])[1];
+  const emailPart = ((from.match(/[\w.+-]+@[\w.-]+/) || [""])[0]).split("@")[0];
+  return (name || emailPart || "").trim().slice(0, 80) || null;
+}
 // Shared: given a pipeline entry + a Gmail message, log it and advance the stage.
 async function applyMessage(entry, full, contactEmail, artistId) {
   if (!isRealMail(full)) return; // draft autosaves masquerade as sent mail
@@ -323,7 +335,7 @@ async function applyMessage(entry, full, contactEmail, artistId) {
     const fullText = cleanSnippet(extractPlainText(full.payload));
     const snippet = cleanSnippet(full.snippet);
     const body = (fullText || snippet) ? (fullText || snippet).slice(0, 1200) : "Reply: " + subject;
-    const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_in", body: body, source: "email_sync", email_message_id: full.id });
+    const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_in", body: body, source: "email_sync", email_message_id: full.id, from_name: senderName(full) });
     console.log("  inbound reply on entry", entry.id, "newly logged:", !!isNew);
     if (isNew) {
       const patch = { last_activity_at: new Date().toISOString() };
