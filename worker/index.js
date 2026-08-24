@@ -1263,7 +1263,9 @@ function handleHttp(req, res, u) {
     })();
     return;
   }
-  res.writeHead(404); res.end("not found");
+  // CORS headers even on 404 — otherwise a browser reports a missing route
+  // as a CORS error and sends you debugging the wrong thing entirely.
+  res.writeHead(404, corsHeaders(req)); res.end(JSON.stringify({ error: "not found" }));
 }
 
 console.log("Gig worker up. Poll fallback every", INTERVAL / 60000, "min");
