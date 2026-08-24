@@ -4586,13 +4586,20 @@ function deleteVenueArmed(venueId){
 
 // Discover → pipeline, one tap. Uses the venue's first contact when there is one.
 function addVenueToPipeline(venueId){
-  sb.from('contacts').select('id').eq('venue_id', venueId).limit(1).then(function(cr){
-    var contactId = (cr.data && cr.data[0] && cr.data[0].id) || null;
-    sb.from('pipeline_entries').insert({ artist_id: ME, venue_id: venueId, contact_id: contactId, status: 'lead' }).then(function(r){
-      if (r.error) { showToast('Could not add: ' + r.error.message, true); return; }
-      showToast('Added to your pipeline');
-      loadPipeline();
-      setTimeout(function(){ if (currentScreen==='venue') openVenueDetail(venueId); }, 350); // refresh the button state
+  // The collective's whole point: the second member to work this room starts
+  // with the known booker PRE-LOADED, not a blank contact card.
+  sb.from('venue_people').select('person:people(id,name)').eq('venue_id', venueId).then(function(vp){
+    var ppl = ((vp.data)||[]).map(function(x){ return x.person; }).filter(Boolean);
+    var personId = ppl.length === 1 ? ppl[0].id : null; // several known → pick on the deal, don't guess
+    sb.from('contacts').select('id').eq('venue_id', venueId).limit(1).then(function(cr){
+      var contactId = (cr.data && cr.data[0] && cr.data[0].id) || null;
+      sb.from('pipeline_entries').insert({ artist_id: ME, venue_id: venueId, person_id: personId, contact_id: personId ? null : contactId, status: 'lead' }).then(function(r){
+        if (r.error) { showToast('Could not add: ' + r.error.message, true); return; }
+        showToast(personId ? ('Added — ' + (ppl[0].name || 'the booker') + ' pre-loaded from the collective') :
+                  ppl.length > 1 ? ('Added — ' + ppl.length + ' known contacts, pick one on the deal') : 'Added to your pipeline');
+        loadPipeline();
+        setTimeout(function(){ if (currentScreen==='venue') openVenueDetail(venueId); }, 350); // refresh the button state
+      });
     });
   });
 }
