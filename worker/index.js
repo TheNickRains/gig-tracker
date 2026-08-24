@@ -935,7 +935,8 @@ async function handleAiDraft(req, res, bodyStr) {
       `CONTACT: ${c.name || "the booker"}${c.title ? " (" + c.title + ")" : ""}${c.org ? " of " + c.org : ""}${otherRooms}\n` +
       rateLine +
       (firstTouch
-        ? `ARTIST (use what's relevant — this is a first touch): ${a.display_name || ""} — ${a.genre || ""}. ${a.oneliner || ""} Draw: ${a.draw_claim || "n/a"}. Crowd: ${a.typical_crowd || "n/a"}. Formats: ${a.set_formats || "n/a"}. Notable rooms: ${a.notable || "n/a"}. Home market: ${a.home_market || "n/a"}. Site: ${a.website || ""} ${a.epk ? "EPK: " + a.epk : ""} ${a.spotify ? "Spotify: " + a.spotify : ""} Phone: ${a.phone || ""}\n`
+        ? `ARTIST (use what's relevant — this is a first touch): ${a.display_name || ""} — ${a.genre || ""}. HOOK: ${a.oneliner || "n/a"}. Draw: ${a.draw_claim || "n/a"}. Crowd: ${a.typical_crowd || "n/a"}. Formats: ${a.set_formats || "n/a"}. Notable rooms: ${a.notable || "n/a"}. Home market: ${a.home_market || "n/a"}. Site: ${a.website || ""} ${a.epk ? "EPK: " + a.epk : ""} ${a.spotify ? "Spotify: " + a.spotify : ""} Phone: ${a.phone || ""}\n` +
+          `HOOK RULE: the message is written in FIRST PERSON as the artist — NEVER render the hook (or any profile praise) as first-person self-praise ("I have a voice that pulls people in" is cringe and gets deleted). Convert it to observable outcomes ("my sets tend to quiet the room"), attributed praise ("bookers keep telling me…"), or let the venue-fit argument carry it. If it can't be said naturally in first person, leave it out entirely.\n`
         : `ARTIST (background only — do NOT pitch credentials mid-conversation): ${a.display_name || ""}, ${a.genre || ""}. Phone: ${a.phone || ""}\n`) +
       (a.tone_profile ? `\nTONE CARD — write indistinguishably in THIS voice:\n${a.tone_profile}\n` : "") +
       (function () {
@@ -1067,7 +1068,7 @@ http.createServer((req, res) => {
             sources.join("\n\n---\n\n").slice(0, 12000) +
             `\n\nDistill STRICT JSON with exactly these keys:\n` +
             `"genre": how a venue booker would file them, max 4 plain words (e.g. "Americana / roots rock") — never a paragraph, never hedged;\n` +
-            `"oneliner": ONE sentence a booker skims — what the show IS and why a room wants it. Concrete, warm, zero hype-slop (ban: "unforgettable", "one-of-a-kind", "captivating");\n` +
+            `"oneliner": ONE sentence a booker skims — the artist's HOOK. CRITICAL: it will be dropped into emails the artist writes about THEMSELVES, so it must survive first person without becoming self-praise. Write it as an observable effect on the room or a concrete fact — never a self-assessment. GOOD: "plays originals that quiet a room", "keeps a winery patio planted for three hours". BAD (cringe in first person, gets deleted): "has an unforgettable voice", "is a captivating performer". Concrete verbs, zero self-adjectives (ban: "unforgettable", "one-of-a-kind", "captivating");\n` +
             `"notable": their single best concrete brag — rooms played, press quote, streaming/draw numbers — or "" if the sources show none. Never invent.`, true);
           const parsed = JSON.parse(raw);
           res.writeHead(200, hdr);
