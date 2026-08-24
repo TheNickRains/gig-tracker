@@ -272,9 +272,19 @@ async function ingestContactHistory(artistId, token, entryId) {
     if (!full || !isRealMail(full)) continue;
     const from = (header(full, "From") || "").toLowerCase();
     if (/mailer-daemon|postmaster/.test(from)) continue;
-    const inbound = from.includes(email.toLowerCase());
+    // Direction comes from Gmail's OWN label, not a From-address match — people
+    // reply from addresses other than the one stored on the contact, and a
+    // failed match filed THEIR rejection as YOUR outbound.
+    const inbound = !(full.labelIds || []).includes("SENT");
     const text = cleanSnippet(extractPlainText(full.payload)) || cleanSnippet(full.snippet) || ("" + (header(full, "Subject") || ""));
     const row = { pipeline_entry_id: entry.id, kind: inbound ? "email_in" : "email_out", body: text.slice(0, 1200), source: "email_sync", email_message_id: full.id };
+    // Self-heal past misclassifications: same message already logged with the
+    // wrong direction gets its kind corrected instead of being skipped.
+    const existing = await sGet(`activities?pipeline_entry_id=eq.${entry.id}&email_message_id=eq.${full.id}&kind=in.(email_in,email_out)&select=id,kind&limit=1`);
+    if (existing.length) {
+      if (existing[0].kind !== row.kind) { await sPatch(`activities?id=eq.${existing[0].id}`, { kind: row.kind }); added++; console.log("  direction corrected:", full.id); }
+      continue;
+    }
     if (full.internalDate) {
       row.created_at = new Date(Number(full.internalDate)).toISOString();
       if (!newest || row.created_at > newest) newest = row.created_at;
@@ -306,9 +316,9 @@ async function ingestContactHistory(artistId, token, entryId) {
 // Shared: given a pipeline entry + a Gmail message, log it and advance the stage.
 async function applyMessage(entry, full, contactEmail, artistId) {
   if (!isRealMail(full)) return; // draft autosaves masquerade as sent mail
-  const from = (header(full, "From") || "").toLowerCase();
   const subject = header(full, "Subject") || "(no subject)";
-  const inbound = from.includes(contactEmail.toLowerCase());
+  // Gmail's SENT label is the direction authority (see ingestContactHistory).
+  const inbound = !(full.labelIds || []).includes("SENT");
   if (inbound) {
     const fullText = cleanSnippet(extractPlainText(full.payload));
     const snippet = cleanSnippet(full.snippet);
