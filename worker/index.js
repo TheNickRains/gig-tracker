@@ -878,6 +878,7 @@ async function handleAiDraft(req, res, bodyStr) {
     const parsed = JSON.parse(bodyStr || "{}");
     const entryId = (parsed.entry_id || "").replace(/[^a-zA-Z0-9-]/g, "");
     const dmChannel = parsed.channel === "dm"; // Instagram DM: short, casual, copy-paste flow
+    const angle = String(parsed.angle || "").trim().slice(0, 500);
     const enhance = parsed.mode === "enhance" && parsed.template_text;
     const templateKind = String(parsed.template_kind || "").slice(0, 20);
     const templateText = String(parsed.template_text || "").slice(0, 2000);
@@ -945,7 +946,8 @@ async function handleAiDraft(req, res, bodyStr) {
         : isTextThread
         ? `CHANNEL: TEXT MESSAGE (SMS). This thread lives in texts — NOT email. Write 1-3 short sentences, casual and direct: no greeting line, NO sign-off of any kind (no name, no phone — texts from the artist's own phone carry identity), no "email" vocabulary, links only if essential (and then as a bare URL, never [text](url) syntax). It should read like a text from a friend who's also a pro.\n\n`
         : `CHANNEL: EMAIL. Plain text only — no subject line, no formatting, no placeholders, under 160 words, direct and human (never marketing copy). ONE exception: a hyperlink may be written as [text](https://url) — it renders as clickable words, e.g. "[hear the live set](URL)" — use it for the listen/EPK link when one fits naturally, instead of pasting a raw URL. Do NOT add a signature, name, or phone number at the end — the artist's branded signature is appended automatically on send. End with the ask, or at most a short "Thanks," line.\n\n`) +
-      (enhance ? enhanceObjective : objective) + "\n" + playbook + "\n" +
+      (enhance ? enhanceObjective : objective) + "\n" + playbook +
+      (angle ? `ARTIST'S DIRECTION for THIS message — they told the assistant exactly what they want. Weight it ABOVE the generic objective and playbook; where they conflict, the direction wins (it may reference people or details from the notes/conversation):\n"""${angle}"""\n` : "") + "\n" +
       `DEAL STAGE: ${e.status}${gigWhen ? " · TARGET DATE: " + gigWhen : ""}\n` +
       (lastInbound ? `THEIR LAST MESSAGE (answer this):\n"""${lastInbound.slice(0, 600)}"""\n` : "") +
       (convo ? `CONVERSATION SO FAR:\n${convo}\n` : "") +

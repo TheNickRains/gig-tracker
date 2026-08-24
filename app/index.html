@@ -2597,6 +2597,7 @@ function openDetail(id) {
             + '</select>'
           : '')
         + (p.email ? '<input class="pipe-search" id="tpl-subj-' + id + '" placeholder="Subject" autocomplete="off" value="' + esc(subjVal) + '" oninput="draftSubject[\'' + p.uuid + '\']=this.value" style="margin:0 0 8px" title="Email subject line">' : '')
+        + '<input class="pipe-search" id="tpl-angle-' + id + '" placeholder="🎯 Angle (optional) — what do you want this message to do?" autocomplete="off" value="' + esc(draftAngle[p.uuid] || '') + '" oninput="draftAngle[\'' + p.uuid + '\']=this.value" style="margin:0 0 8px;font-size:12.5px" title="Direction for the AI — the ask, the referral, the specific play for this message. Weighted above everything else: your voice, the conversation, the venue.">'
         + '<textarea class="tpl-body" id="tpl-body-' + id + '" spellcheck="false" placeholder="' + esc(ph) + '" oninput="draftText[\'' + p.uuid + '\']=this.value">' + esc(draftVal) + '</textarea>'
         + (draftAI[p.uuid] ? '<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px"><i class="ti ti-school" style="margin-right:4px"></i>Edit freely — the AI compares what it wrote with what you send, and learns your voice from the difference.</div>' : '')
         + '<div class="tpl-actions">'
@@ -2752,7 +2753,8 @@ function aiDraft(id, channel) {
         mode: activeTpl[id] ? 'enhance' : 'draft',
         template_kind: activeTpl[id] || null,
         template_text: activeTpl[id] ? ((document.getElementById('tpl-body-' + id) || {value:''}).value || '') : null,
-        channel: channel || null
+        channel: channel || null,
+        angle: (draftAngle[p.uuid] || '').trim().slice(0, 500) || null
       })
     }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
       .then(function(x){
@@ -2855,6 +2857,7 @@ function igDraft(id){
 }
 var qlDir = {};            // 'out' (default) | 'in'
 var composeOpen = {};
+var draftAngle = {};       // per-deal steering for the AI ("pitch the VIP room via Debbie") — survives re-renders, cleared on schedule
 function setQlDir(id, dir, btn){
   var p = pipeline[id]; qlDir[p.uuid] = dir;
   btn.parentNode.querySelectorAll('.cc-opt').forEach(function(x){ x.classList.remove('on'); });
@@ -2969,6 +2972,8 @@ function scheduleSend(id) {
     p.sched = r.data;
     delete draftText[p.uuid]; // committed — the scheduled body is the truth now
     delete draftSubject[p.uuid];
+    delete draftAngle[p.uuid]; // the angle was for THIS message
+    delete draftAI[p.uuid];
     openDetail(id);
     if (now) { showToast(trained ? 'Sending — and your edits just taught the AI your voice ✍️' : 'Sending!'); pokeWorker(); }
     else showToast(trained ? 'Scheduled for ' + fmtWhen(at.toISOString()) + ' — your edits teach the AI ✍️' : 'Scheduled for ' + fmtWhen(at.toISOString()));
