@@ -83,6 +83,9 @@
   /* Mobile/PWA: the beloved gutter island (back by demand) — the app floats in a
      slim safe-area gutter; the bottom nav is its companion island. */
   body { touch-action: manipulation; background: var(--bg-page); }
+  /* No stray wide flex-row may ever shove the app into horizontal scroll.
+     clip (not hidden) so position:sticky inside keeps working. */
+  html, body { overflow-x: clip; }
   @media (max-width: 599px) {
     /* Top gutter only — sides bleed to the edge; gutter wears the island's paper. */
     body { padding: calc(env(safe-area-inset-top, 0px) + 16px) 0 0; background: var(--bg-primary); }
@@ -2512,11 +2515,14 @@ function openDetail(id) {
       + (p.reminderNote ? ' — ' + esc(p.reminderNote) : '') + '</div>'
       + '<button class="war-x" onclick="clearReminder(' + id + ')" title="Handled — clear it">Done</button></div>';
   } else {
-    remBlock = '<div class="card" style="margin-bottom:12px;display:flex;gap:8px;align-items:center">'
+    // Wraps on narrow screens: icon + picker + button on row one, note takes
+    // its own full row — a non-wrapping row here shoved the whole app sideways.
+    remBlock = '<div class="card" style="margin-bottom:12px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
       + '<i class="ti ti-alarm" style="color:var(--text-tertiary);flex-shrink:0" title="They said call back? Set a reminder — it lands in your war room when due"></i>'
-      + '<input type="datetime-local" class="pipe-search" style="margin:0;flex:1;min-width:150px" id="rem-at-' + id + '">'
-      + '<input class="pipe-search" style="margin:0;flex:1.3;min-width:120px" id="rem-note-' + id + '" placeholder="Remind me — e.g. call ' + esc(first) + ' back">'
-      + '<button class="btn-secondary btn-sm" onclick="setReminder(' + id + ')" title="Set the reminder"><i class="ti ti-alarm-plus"></i></button></div>';
+      + '<input type="datetime-local" class="pipe-search" style="margin:0;flex:1 1 150px;min-width:0;max-width:100%" id="rem-at-' + id + '">'
+      + '<button class="btn-secondary btn-sm" style="flex-shrink:0" onclick="setReminder(' + id + ')" title="Set the reminder"><i class="ti ti-alarm-plus"></i> Set</button>'
+      + '<input class="pipe-search" style="margin:0;flex:1 1 100%;min-width:0" id="rem-note-' + id + '" placeholder="Remind me — e.g. call ' + esc(first) + ' back">'
+      + '</div></div>';
   }
   var convo = p.activity.filter(function(a){ return a.kind!=='note'; });
   var notes = p.activity.filter(function(a){ return a.kind==='note'; });
