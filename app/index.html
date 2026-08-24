@@ -2270,6 +2270,9 @@ function createAndLinkRoom(pid, name){
         if (!x) { loc.textContent = 'No Maps match — location can be added later.'; return; }
         cnr.city = x.city || ''; cnr.state = x.state || ''; cnr.address = x.address || '';
         cnr.phone = x.phone || ''; cnr.website = x.website || '';
+        // Google's type verdict drives the quick-create selects too.
+        if (x.ticket) { var ct = document.getElementById('cnr-ticket'); if (ct && ct.value !== x.ticket) { ct.value = x.ticket; if (ct.onchange) ct.onchange(); } }
+        if (x.vtype) { var cv = document.getElementById('cnr-type'); if (cv && [].some.call(cv.options, function(o){ return o.value === x.vtype; })) cv.value = x.vtype; }
         var ni = document.getElementById('cnr-name'); if (ni && x.name) ni.value = x.name;
         loc.innerHTML = '<i class="ti ti-map-pin" style="color:var(--booked-text)"></i> ' + esc(x.address || (x.city + ', ' + x.state));
       }).catch(function(){});
@@ -2808,9 +2811,17 @@ function pickVenueResult(i){
   var x = wsResults[i]; if (!x) return;
   setVal('wn', x.name); setVal('wc', x.city); setVal('ws', x.state); setVal('waddr', x.address);
   setVal('wvph', x.phone || ''); setVal('wvwb', x.website || '');
+  // Google knows what kind of place this is — stop everything defaulting to Bar/Pub.
+  var typed = false, mismatch = false;
+  if (x.vtype) {
+    var sel = document.getElementById('wvt');
+    if (sel && [].some.call(sel.options, function(o){ return o.value === x.vtype; })) { sel.value = x.vtype; checkOther(); typed = true; }
+    else mismatch = !!x.ticket; // Google's type lives in the OTHER ticket class
+  }
   var box = document.getElementById('wsearch-results'); if (box) box.innerHTML = '';
   var si = document.getElementById('wsearch'); if (si) si.value = x.name;
-  showToast('Filled from Maps ✓');
+  if (mismatch) showToast('Maps calls this a ' + x.vtype.toLowerCase() + ' — usually ' + (x.ticket === 'hard' ? 'hard' : 'soft') + ' ticket. Back up a step to switch.', true);
+  else showToast('Filled from Maps ✓' + (typed ? ' — looks like a ' + x.vtype.toLowerCase() : ''));
 }
 
 // ── Off-grid channels: text the draft, log exchanges by hand — same engine ──

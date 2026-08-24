@@ -1017,6 +1017,28 @@ http.createServer((req, res) => {
     });
     return;
   }
+  return handleHttp(req, res, u);
+}).listen(PORT, () => console.log("Gig worker HTTP on :" + PORT));
+// Google's place types → our venue taxonomy, so "every listing saved as a bar"
+// stops happening. Primary type wins; the types array breaks ties. Returns
+// null when Google doesn't know — the select keeps its default, no bad guess.
+function venueTypeFromGoogle(primary, types) {
+  const all = [primary].concat(types || []).filter(Boolean);
+  const has = (...t) => t.some((x) => all.includes(x));
+  if (has("winery", "brewery", "distillery", "brewpub")) return { vtype: "Winery / Brewery", ticket: "soft" };
+  if (has("casino")) return { vtype: "Casino floor", ticket: "soft" };
+  if (has("performing_arts_theater", "auditorium", "opera_house", "philharmonic_hall")) return { vtype: "Theater", ticket: "hard" };
+  if (has("concert_hall", "amphitheatre")) return { vtype: "Concert hall", ticket: "hard" };
+  if (has("cultural_center", "community_center")) return { vtype: "Performing arts center", ticket: "hard" };
+  if (has("night_club", "dance_hall")) return { vtype: "Music club (ticketed)", ticket: "hard" };
+  if (has("banquet_hall", "wedding_venue", "event_venue", "convention_center")) return { vtype: "Corporate / private", ticket: "soft" };
+  if (has("coffee_shop", "cafe")) return { vtype: "Coffee shop", ticket: "soft" };
+  if (has("hotel", "lodging", "resort_hotel", "extended_stay_hotel")) return { vtype: "Hotel bar", ticket: "soft" };
+  if (has("bar", "pub", "bar_and_grill", "wine_bar", "sports_bar")) return { vtype: "Bar / Pub", ticket: "soft" };
+  if (has("restaurant") || all.some((t) => /_restaurant$/.test(t))) return { vtype: "Restaurant", ticket: "soft" };
+  return null;
+}
+function handleHttp(req, res, u) {
   if (req.method === "POST" && u.pathname === "/places/search") {
     // Venue lookup: one search fills name/address/city/state (+phone/site).
     let body = "";
@@ -1034,7 +1056,7 @@ http.createServer((req, res) => {
           headers: {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": PLACES_KEY,
-            "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.addressComponents,places.nationalPhoneNumber,places.websiteUri",
+            "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.addressComponents,places.nationalPhoneNumber,places.websiteUri,places.types,places.primaryType",
           },
           body: JSON.stringify({ textQuery: q, maxResultCount: 5 }),
         });
@@ -1043,6 +1065,7 @@ http.createServer((req, res) => {
         const results = (j.places || []).map((pl) => {
           const comps = pl.addressComponents || [];
           const get = (type, short) => { const cmpo = comps.find((cc) => (cc.types || []).includes(type)); return cmpo ? (short ? cmpo.shortText : cmpo.longText) : ""; };
+          const vt = venueTypeFromGoogle(pl.primaryType, pl.types || []);
           return {
             name: (pl.displayName && pl.displayName.text) || "",
             address: pl.formattedAddress || "",
@@ -1050,6 +1073,8 @@ http.createServer((req, res) => {
             state: get("administrative_area_level_1", true) || "",
             phone: pl.nationalPhoneNumber || "",
             website: pl.websiteUri || "",
+            vtype: vt ? vt.vtype : "",
+            ticket: vt ? vt.ticket : "",
           };
         });
         res.writeHead(200, hdr); res.end(JSON.stringify({ results }));
@@ -1189,7 +1214,7 @@ http.createServer((req, res) => {
     return;
   }
   res.writeHead(404); res.end("not found");
-}).listen(PORT, () => console.log("Gig worker HTTP on :" + PORT));
+}
 
 console.log("Gig worker up. Poll fallback every", INTERVAL / 60000, "min");
 ensureVapid().catch((e) => console.error("vapid", e.message)).finally(() => { tick(); });
