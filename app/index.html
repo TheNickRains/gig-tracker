@@ -2450,6 +2450,7 @@ function openDetail(id) {
           : '')
         + (p.email ? '<input class="pipe-search" id="tpl-subj-' + id + '" placeholder="Subject" autocomplete="off" value="' + esc(subjVal) + '" oninput="draftSubject[\'' + p.uuid + '\']=this.value" style="margin:0 0 8px" title="Email subject line">' : '')
         + '<textarea class="tpl-body" id="tpl-body-' + id + '" spellcheck="false" placeholder="' + esc(ph) + '" oninput="draftText[\'' + p.uuid + '\']=this.value">' + esc(draftVal) + '</textarea>'
+        + (draftAI[p.uuid] ? '<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px"><i class="ti ti-school" style="margin-right:4px"></i>Edit freely — the AI compares what it wrote with what you send, and learns your voice from the difference.</div>' : '')
         + '<div class="tpl-actions">'
         + (p.email ? '<button class="btn-primary btn-sm" onclick="sendNowInline(' + id + ')"><i class="ti ti-send"></i> Send now</button>' : '')
         + (p.phone ? '<button class="btn-' + (p.email ? 'secondary' : 'primary') + ' btn-sm" onclick="textDraft(' + id + ')"><i class="ti ti-message"></i> Text it</button>' : '')
@@ -2802,6 +2803,8 @@ function scheduleSend(id) {
     if (at.getHours() >= 9) at.setDate(at.getDate() + 1); // past 9am -> tomorrow; after midnight -> TODAY 9am
     at.setHours(9, 0, 0, 0);
   } else { at = new Date(); at.setDate(at.getDate() + sel); at.setHours(9, 0, 0, 0); }
+  // Edited an AI draft? That diff IS the training signal — say so (education).
+  var trained = !!(draftAI[p.uuid] && body !== draftAI[p.uuid].trim());
   sb.from('scheduled_messages').insert({
     artist_id: ME, pipeline_entry_id: p.uuid, to_email: p.email,
     subject: draftSubjectFor(p), body: body, send_at: at.toISOString(), human: now, ai_draft: draftAI[p.uuid] || null
@@ -2811,8 +2814,8 @@ function scheduleSend(id) {
     delete draftText[p.uuid]; // committed — the scheduled body is the truth now
     delete draftSubject[p.uuid];
     openDetail(id);
-    if (now) { showToast('Sending!'); pokeWorker(); }
-    else showToast('Scheduled for ' + fmtWhen(at.toISOString()));
+    if (now) { showToast(trained ? 'Sending — and your edits just taught the AI your voice ✍️' : 'Sending!'); pokeWorker(); }
+    else showToast(trained ? 'Scheduled for ' + fmtWhen(at.toISOString()) + ' — your edits teach the AI ✍️' : 'Scheduled for ' + fmtWhen(at.toISOString()));
   });
 }
 function sendNowInline(id){ sendChipDays[id] = 'now'; scheduleSend(id); delete sendChipDays[id]; }
