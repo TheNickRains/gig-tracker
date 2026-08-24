@@ -1256,23 +1256,29 @@ function bestLinkLine(){
   if (profile.spotify) return 'Here’s a quick listen: ' + profile.spotify;
   return '';
 }
-// Draw is a HARD-TICKET fact: max tickets sold to a single show. No draw ≠
-// zero — it's unverified, and unverified numbers never enter a pitch.
-function drawLine(t){
-  return (t === 'hard' && profile.draw) ? 'Best single-show ticket count so far: ' + profile.draw + '.\n\n' : '';
+// Draw is a TICKET-BUYER fact: max tickets sold to a single show. It matters
+// to hard-ticket rooms and to talent buyers (festivals, promoters/agencies) —
+// and it's noise to a bar. No draw ≠ zero — unverified numbers never pitch.
+function talentBuyer(vtype){ return /festival|promoter|agency/i.test(vtype || ''); }
+function drawLine(t, vtype){
+  return ((t === 'hard' || talentBuyer(vtype)) && profile.draw) ? 'Best single-show ticket count so far: ' + profile.draw + '.\n\n' : '';
 }
 // Templates never sign with phone — the app appends the real signature on send.
 var templates = {
   outreach: function(p) {
     var link = bestLinkLine();
-    return 'Hi ' + p.contact.split(' ')[0] + ',\n\nMy name is ' + profile.name + ' — I\'m a ' + (profile.genre || 'musician') + (markets[0] ? ' based in ' + markets[0] : '') + '.\n\nI\'d love to get on your calendar for a date at ' + p.venue + '.' + (link ? ' ' + link + '.' : '') + '\n\n' + drawLine(p.t) + 'Are you the right person to reach for bookings?\n\nThanks,\n' + profile.name;
+    // The middle argument matches the buyer's economics: draw for ticket
+    // buyers (hard rooms, festivals, agencies), formats/fit for soft rooms.
+    var mid = drawLine(p.t, p.vtype)
+      || ((p.t === 'soft' && !talentBuyer(p.vtype) && profile.formats) ? 'I can fit the night you need — ' + profile.formats + '.\n\n' : '');
+    return 'Hi ' + p.contact.split(' ')[0] + ',\n\nMy name is ' + profile.name + ' — I\'m a ' + (profile.genre || 'musician') + (markets[0] ? ' based in ' + markets[0] : '') + '.\n\nI\'d love to get on your calendar for a date at ' + p.venue + '.' + (link ? ' ' + link + '.' : '') + '\n\n' + mid + 'Are you the right person to reach for bookings?\n\nThanks,\n' + profile.name;
   },
   followup: function(p) {
     return 'Hi ' + p.contact.split(' ')[0] + ',\n\nCircling back on my note from ' + p.days + ' days ago. I know your inbox is full — no hard feelings if the timing isn\'t right.\n\n' + (p.city ? 'I\'ll be in ' + p.city + ' anyway and would love to make it work. ' : '') + 'Happy to send available dates if that\'s easier.\n\n' + profile.name;
   },
   pitch: function(p) {
     var lines = ['→ ' + (profile.genre || 'Live original music')];
-    if (p.t === 'hard' && profile.draw) lines.push('→ Best single-show ticket count: ' + profile.draw);
+    if ((p.t === 'hard' || talentBuyer(p.vtype)) && profile.draw) lines.push('→ Best single-show ticket count: ' + profile.draw);
     if (profile.formats) lines.push('→ ' + profile.formats);
     if (p.pay && p.pay !== '—') lines.push('→ Target: ' + p.pay);
     var link = bestLinkLine(); if (link) lines.push('→ ' + link);

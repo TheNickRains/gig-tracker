@@ -493,6 +493,16 @@ function roomClass(venueType, ticketType) {
   if (/bar|pub|casino/.test(t)) return "bar";
   return ticketType === "hard" ? "listening" : "bar";
 }
+// What a pitch ARGUES depends on the buyer's economics: soft rooms sell food
+// & drink, hard rooms sell tickets, and festivals/agencies/private buyers are
+// their own animals. Hard-ticket arguments are noise to a bar and vice versa.
+function pitchPlaybook(cls, ticket) {
+  if (cls === "festival") return "PLAYBOOK — FESTIVAL: talent buyers program months ahead. Argue programming fit (genre, stage vibe, set length) and draw evidence across markets (relevant here even for a soft-ticket fest). Lead with the EPK. Respect their booking cycle — ask about the next open season, not next weekend.\n";
+  if (cls === "promoter") return "PLAYBOOK — PROMOTER/AGENCY: they place artists across many rooms. Argue roster fit, reliability, and ready-to-send materials (EPK). Draw evidence helps regardless of ticket type. The ask: what rooms/dates they're currently buying for.\n";
+  if (cls === "private") return "PLAYBOOK — PRIVATE/CORPORATE: argue versatility (repertoire breadth, formats), self-sufficiency (own PA if true), and professionalism. Draw is IRRELEVANT — never mention it. These buyers expect to discuss budget; still follow the rate rule.\n";
+  if (ticket === "hard") return "PLAYBOOK — HARD TICKET: the room sells tickets, so argue WHY THIS DATE SELLS: verified draw, audience fit with their calendar, the promo push you bring (list, socials). Bar-sales/vibe arguments are noise here — cut them.\n";
+  return "PLAYBOOK — SOFT TICKET: the room sells food & drink, so argue what your set does for THEIR business: fits their clientele, keeps people seated and ordering, covers the hours (set-length stamina), zero-drama reliability. Ticket-sales and draw arguments are IRRELEVANT — never mention draw to a soft room.\n";
+}
 function cleanOutboundBody(body) {
   let b = (body || "").replace(/^Sent:\s*/, "").trim();
   if (/^[💬📞🤝📸📝✉️]/.test(b)) return null; // hand-logged one-liners aren't voice samples
@@ -926,6 +936,8 @@ async function handleAiDraft(req, res, bodyStr) {
     else if (v.booking_form_url) objective = "OBJECTIVE: this venue books via a WEB FORM. Write copy ready to paste into their booking form: who the artist is, why they fit this room, draw, one listen link. Skip the salutation and sign-off if it reads more natural for a form; keep the phone/site so they can respond.";
     else objective = "OBJECTIVE: first-touch cold outreach — concise intro, why the artist fits THIS room specifically (use the venue notes/clientele), one listen link, clear ask: are they the right person / can we get a date.";
     const today = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    const draftCls = roomClass(v.venue_type, ticket);
+    const playbook = ["hold", "booked", "played"].includes(e.status) ? "" : pitchPlaybook(draftCls, ticket);
     const draft = await gemini(
       `TODAY IS ${today}. Never propose dates in the past; prefer concrete dates at least 5 days out (e.g. "Friday June 20"), and resolve phrases like "this weekend" against today.\n\n` +
       (dmChannel
@@ -933,7 +945,7 @@ async function handleAiDraft(req, res, bodyStr) {
         : isTextThread
         ? `CHANNEL: TEXT MESSAGE (SMS). This thread lives in texts — NOT email. Write 1-3 short sentences, casual and direct: no greeting line, NO sign-off of any kind (no name, no phone — texts from the artist's own phone carry identity), no "email" vocabulary, links only if essential (and then as a bare URL, never [text](url) syntax). It should read like a text from a friend who's also a pro.\n\n`
         : `CHANNEL: EMAIL. Plain text only — no subject line, no formatting, no placeholders, under 160 words, direct and human (never marketing copy). ONE exception: a hyperlink may be written as [text](https://url) — it renders as clickable words, e.g. "[hear the live set](URL)" — use it for the listen/EPK link when one fits naturally, instead of pasting a raw URL. Do NOT add a signature, name, or phone number at the end — the artist's branded signature is appended automatically on send. End with the ask, or at most a short "Thanks," line.\n\n`) +
-      (enhance ? enhanceObjective : objective) + "\n\n" +
+      (enhance ? enhanceObjective : objective) + "\n" + playbook + "\n" +
       `DEAL STAGE: ${e.status}${gigWhen ? " · TARGET DATE: " + gigWhen : ""}\n` +
       (lastInbound ? `THEIR LAST MESSAGE (answer this):\n"""${lastInbound.slice(0, 600)}"""\n` : "") +
       (convo ? `CONVERSATION SO FAR:\n${convo}\n` : "") +
@@ -944,7 +956,7 @@ async function handleAiDraft(req, res, bodyStr) {
       (firstTouch
         ? `ARTIST (use what's relevant — this is a first touch): ${a.display_name || ""} — ${a.genre || ""}. HOOK: ${a.oneliner || "n/a"}. Crowd: ${a.typical_crowd || "n/a"}. Formats: ${a.set_formats || "n/a"}. Notable rooms: ${a.notable || "n/a"}. Home market: ${a.home_market || "n/a"}. Site: ${a.website || ""} ${a.epk ? "EPK: " + a.epk : ""} ${a.spotify ? "Spotify: " + a.spotify : ""} Phone: ${a.phone || ""}\n` +
           `HOOK RULE: the message is written in FIRST PERSON as the artist — NEVER render the hook (or any profile praise) as first-person self-praise ("I have a voice that pulls people in" is cringe and gets deleted). Convert it to observable outcomes ("my sets tend to quiet the room"), attributed praise ("bookers keep telling me…"), or let the venue-fit argument carry it. If it can't be said naturally in first person, leave it out entirely.\n` +
-          `DRAW (max tickets the artist has sold to ONE show — a verified fact, not a vibe): ${a.draw_claim || "unverified"}. Mention draw ONLY when pitching a hard/ticketed room${ticket === "hard" ? " (this IS one)" : " (this is NOT one — omit draw entirely)"}, and ONLY if verified — "unverified" means say nothing about numbers, never say zero, never estimate.\n` +
+          `DRAW (max tickets the artist has sold to ONE show — a verified fact, not a vibe): ${a.draw_claim || "unverified"}. Mention draw ONLY where the playbook says it matters (hard-ticket rooms, festivals, promoters — ${ticket === "hard" || ["festival", "promoter"].includes(draftCls) ? "which applies here" : "NOT this room: omit draw entirely"}), and ONLY if verified — "unverified" means say nothing about numbers, never say zero, never estimate.\n` +
           `LINK RULE: at most ONE link in the whole message. Hierarchy: EPK > website > Spotify/streaming > a social video. Label it as what it IS — "listen" is only honest for a streaming link; an EPK is called an EPK. Never offer two links: a booker given two options clicks neither.\n`
         : `ARTIST (background only — do NOT pitch credentials mid-conversation): ${a.display_name || ""}, ${a.genre || ""}. Phone: ${a.phone || ""}\n`) +
       (a.tone_profile ? `\nTONE CARD — write indistinguishably in THIS voice:\n${a.tone_profile}\n` : "") +
