@@ -63,3 +63,23 @@ Rules: red never decorates; attention is amber, never red (urgency without alarm
 stays ink (competence, not celebration-spam); chrome accents stay monochrome so data colors are the
 only voices speaking. Stage pastel fills + dark ink (#2a2722) in BOTH themes — they're data signals,
 read at a glance in dim rooms.
+
+### Layered glass & elevation (Apple Maps study — Nick, 2026-08-24)
+Content is the bed; UI floats above it in frosted glass layers with generous
+radii. Three layers, each visually distinct:
+
+1. **Content bed** — cards, lists, the app surface. Opaque. Radius 12 (cards),
+   8–10 (inputs). z-index 0–59.
+2. **Floating chrome** — things that ride over scrolling content: bottom island
+   nav, frosted top bar, sticky select bars. GLASS: `color-mix(in srgb,
+   var(--bg) 72–86%, transparent)` + `backdrop-filter: blur(12–18px)
+   saturate(1.3)` + 0.5px border-mid + deep soft shadow. Radius 999 (pills) or
+   22 (islands). z-index 60–99.
+3. **Transient sheets** — tour cards, toasts, future gate modals: same glass
+   recipe at the heavier end (blur 14–18), radius 20–22, z-index 100+ (overlays
+   120, tour 300/301, toast 999).
+
+Rules: anything that floats gets glass — a flat opaque panel over content
+breaks the hierarchy. Bigger radius = higher elevation. Never stack two glass
+layers of the same band. Reference: Apple Maps' search sheet / controls over
+the map.
