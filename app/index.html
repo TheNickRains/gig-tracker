@@ -3378,8 +3378,25 @@ function renderWizard(step, ticket, data) {
     + '<div class="ticket-btn' + (ticket==='hard'?' selected':'') + '" onclick="renderWizard(2,\'hard\',{})">'
     + '<span class="info-tip ticket-tip" tabindex="0" onclick="event.stopPropagation()" data-tip="&ldquo;Hard ticket&rdquo;: people buy tickets to see YOU — your draw is the product. Pay is a door split, a guarantee, or both, so these rooms will ask how many people you bring.">i</span>'
     + '<i class="ti ti-ticket"></i><div class="ticket-name">Hard ticket</div><div class="ticket-desc">You sell tickets &amp; earn from the door — listening room, theater, club</div></div>'
+    + '<div class="ticket-btn' + (ticket==='org'?' selected':'') + '" style="grid-column:1/-1" onclick="renderWizard(2,\'org\',{})">'
+    + '<span class="info-tip ticket-tip" tabindex="0" onclick="event.stopPropagation()" data-tip="Agencies, promoters, festival organizers, management — buyers who book you into rooms they don&rsquo;t own. The relationship is with the PERSON and company, not a stage.">i</span>'
+    + '<i class="ti ti-briefcase"></i><div class="ticket-name">Agency / Promoter / Buyer</div><div class="ticket-desc">Not a room — a company that books artists across venues</div></div>'
     + '</div>'
     + '<div style="font-size:11.5px;color:var(--text-tertiary);margin-top:12px;text-align:center">This sets the venue\u2019s default — rooms like theaters do both, and every deal can flip later.</div>';
+  } else if (step===2 && ticket==='org') {
+    html = '<div class="wiz-header"><div class="wiz-step-label">Step 2 of 4</div><div class="wiz-title">Who are they?</div></div>'
+    + '<div class="wiz-dots">' + dots + '</div>'
+    + '<div class="form-field"><label class="form-label">Company name *</label><input class="form-input" id="won" placeholder="e.g. Red Clay Entertainment"></div>'
+    + '<div class="form-field"><label class="form-label">What are they? *</label><select class="form-select" id="wot">'
+    + '<option value="" selected>Select…</option>'
+    + ['Booking agency','Promoter','Festival organizer','Management','Other'].map(function(t){ return '<option>' + t + '</option>'; }).join('') + '</select></div>'
+    + '<div class="form-row-2"><div class="form-field"><label class="form-label">City</label><input class="form-input" id="wc" placeholder="Nashville"></div>'
+    + '<div class="form-field"><label class="form-label">State</label><input class="form-input" id="ws" placeholder="TN"></div></div>'
+    + '<div class="form-row-2"><div class="form-field"><label class="form-label">Phone</label><input class="form-input" id="wvph" type="tel" placeholder="(615) 555-0182"></div>'
+    + '<div class="form-field"><label class="form-label">Website</label><input class="form-input" id="wvwb" placeholder="agency.com"></div></div>'
+    + '<div class="form-field"><label class="form-label">They mostly book</label><select class="form-select" id="wob">'
+    + '<option value="soft">Flat-rate rooms (soft ticket)</option><option value="hard">Ticketed shows (hard ticket)</option><option value="both">Both</option></select></div>'
+    + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(1,\'org\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(2,\'org\')">Continue</button></div>';
   } else if (step===2) {
     var types = ticket==='hard' ? hardTypes : softTypes;
     html = '<div class="wiz-header"><div class="wiz-step-label">Step 2 of 4</div><div class="wiz-title">Venue details</div></div>'
@@ -3400,10 +3417,11 @@ function renderWizard(step, ticket, data) {
     + '<div class="form-field"><label class="form-label">Booking form URL <span style="font-weight:400;color:var(--text-tertiary)">(if they book via web form)</span></label><input class="form-input" id="wform" placeholder="venue.com/booking"></div>'
     + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(1,\'' + ticket + '\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizNext(2,\'' + ticket + '\')">Continue</button></div>';
   } else if (step===3) {
-    var payFields = ticket==='soft'
+    var payFields = ticket==='org' ? ''
+      : ticket==='soft'
       ? '<div class="form-field"><label class="form-label">Rate ($ per hour)</label><input class="form-input" id="wrate" placeholder="150" inputmode="decimal"></div>'
       : '<div class="form-row-2"><div class="form-field"><label class="form-label">Pay low ($)</label><input class="form-input" id="wpl" placeholder="300" inputmode="decimal"></div><div class="form-field"><label class="form-label">Pay high ($)</label><input class="form-input" id="wph" placeholder="500" inputmode="decimal"></div></div>';
-    html = '<div class="wiz-header"><div class="wiz-step-label">Step 3 of 4</div><div class="wiz-title">Pay & booking contact</div></div>'
+    html = '<div class="wiz-header"><div class="wiz-step-label">Step 3 of 4</div><div class="wiz-title">' + (ticket==='org' ? 'Your person there — the contact IS the relationship' : 'Pay & booking contact') + '</div></div>'
     + '<div class="wiz-dots">' + dots + '</div>'
     + payFields
     + '<div class="form-row-2"><div class="form-field"><label class="form-label">Contact first name</label><input class="form-input" id="wcf" placeholder="Mike"></div>'
@@ -3417,7 +3435,7 @@ function renderWizard(step, ticket, data) {
   } else if (step===4) {
     html = '<div class="wiz-header"><div class="wiz-step-label">Step 4 of 4</div><div class="wiz-title">Notes for the collective</div></div>'
     + '<div class="wiz-dots">' + dots + '</div>'
-    + '<div class="form-field"><label class="form-label">Typical clientele</label><input class="form-input" id="wkl" placeholder="e.g. Americana fans, 35–55, seated"></div>'
+    + (ticket==='org' ? '' : '<div class="form-field"><label class="form-label">Typical clientele</label><input class="form-input" id="wkl" placeholder="e.g. Americana fans, 35–55, seated"></div>')
     + '<div class="form-field"><label class="form-label">Notes</label><textarea class="form-textarea" id="wnt" placeholder="Load-in details, who to name-drop, what they\'re looking for…"></textarea></div>'
     + '<div class="wiz-nav"><button class="btn-secondary" onclick="renderWizard(3,\'' + ticket + '\',{})"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-primary" onclick="wizSubmit(\'' + ticket + '\')">Add to collective ↗</button></div>';
   } else if (step===5) {
@@ -3899,7 +3917,7 @@ function loadVenues(){
 
 function loadPipeline(){
   sb.from('pipeline_entries')
-    .select('id,status,prev_status,venue_id,contact_id,person_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs,ticket_type, venue:venues!pipeline_entries_venue_id_fkey(name,city,state,venue_type,pay_range,ticket_type,booking_form_url), person:people(name,title,org,email,phone,linkedin,instagram), contact:contacts(name,title,email,phone,linkedin,instagram)')
+    .select('id,status,prev_status,venue_id,org_id,contact_id,person_id,followup_date,last_activity_at,created_at,gig_date,gig_pay,gig_costs,ticket_type, venue:venues!pipeline_entries_venue_id_fkey(name,city,state,venue_type,pay_range,ticket_type,booking_form_url), org:orgs(name,city,state,org_type,books), person:people(name,title,org,email,phone,linkedin,instagram), contact:contacts(name,title,email,phone,linkedin,instagram)')
     .order('last_activity_at',{ascending:false}).then(function(r){
       if(r.error){
         console.error('loadPipeline', r.error);
@@ -3911,10 +3929,12 @@ function loadPipeline(){
       }
       var rows=r.data||[];
       pipeline = rows.map(function(e,i){
-        var v=e.venue||{}, c=e.person||e.contact||{};
-        return {id:i, uuid:e.id, venue:v.name||'(unknown venue)', city:v.city||'', state:v.state||'',
+        // Org deals (agencies/promoters) flow through every venue-shaped
+        // surface: the org supplies name/place/type when there's no venue.
+        var v=e.venue||{}, o=e.org||{}, c=e.person||e.contact||{};
+        return {id:i, uuid:e.id, venue:v.name||o.name||'(unknown venue)', city:v.city||o.city||'', state:v.state||o.state||'',
                 contact:c.name||'(no contact)', title:c.title||'', org:c.org||'', email:c.email||'', phone:c.phone||'', linkedin:c.linkedin||'', instagram:c.instagram||'', personId:e.person_id||null,
-                vtype:v.venue_type||'', pay:v.pay_range||'—', form:v.booking_form_url||'', t:(e.ticket_type||v.ticket_type||'soft'), tOverride:e.ticket_type||null, s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, contactId:e.contact_id||null, gig_date:e.gig_date||null, gigPay:e.gig_pay||'', gigCosts:e.gig_costs||'', days:daysAgo(e.last_activity_at), activity:[]};
+                vtype:v.venue_type||o.org_type||'', pay:v.pay_range||'—', form:v.booking_form_url||'', t:(e.ticket_type||v.ticket_type||(o.books==='hard'?'hard':'soft')), tOverride:e.ticket_type||null, s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, orgId:e.org_id||null, contactId:e.contact_id||null, gig_date:e.gig_date||null, gigPay:e.gig_pay||'', gigCosts:e.gig_costs||'', days:daysAgo(e.last_activity_at), activity:[]};
       });
       updateHomeStats();
       backfillWins();
@@ -4127,12 +4147,21 @@ function setStatus(id, s){
 // ── Add venue wizard persistence ────────────────────────
 function wizNext(step, ticket){
   wizCapture(step, ticket);
-  if(step===2 && (!wizData.name || !wizData.city || !wizData.state)){ alert('Venue name, city, and state are required.'); return; }
-  if(step===2 && !wizData.vtype){ alert('Pick a venue type — it decides how the AI pitches this room.'); return; }
+  if(step===2 && ticket==='org' && (!wizData.orgName || !wizData.orgType)){ alert('Company name and what they are — both required.'); return; }
+  if(step===2 && ticket!=='org' && (!wizData.name || !wizData.city || !wizData.state)){ alert('Venue name, city, and state are required.'); return; }
+  if(step===2 && ticket!=='org' && !wizData.vtype){ alert('Pick a venue type — it decides how the AI pitches this room.'); return; }
   renderWizard(step+1, ticket, {});
 }
 function wizCapture(step, ticket){
   function val(id){ var e=document.getElementById(id); return e ? e.value : ''; }
+  if(step===2 && ticket==='org'){
+    wizData.ticket='org';
+    wizData.orgName=val('won').trim(); wizData.orgType=val('wot').trim();
+    wizData.city=val('wc').trim(); wizData.state=val('ws').trim();
+    wizData.phone=val('wvph').trim(); wizData.website=val('wvwb').trim();
+    wizData.books=val('wob').trim() || 'soft';
+    return;
+  }
   if(step===2){
     wizData.ticket=ticket;
     wizData.name=val('wn').trim(); wizData.city=val('wc').trim(); wizData.state=val('ws').trim();
@@ -4162,6 +4191,7 @@ function wizCapture(step, ticket){
 }
 function wizSubmit(ticket){
   wizCapture(4, ticket);
+  if(ticket==='org'){ wizSubmitOrg(); return; }
   if(!wizData.name){ alert('Give the venue a name first.'); return; }
   var cEmail = wizData.contactEmail || null;
   var cPhone = wizData.contactPhone || null;
@@ -4199,6 +4229,46 @@ function wizSubmit(ticket){
         sb.from('activities').insert({pipeline_entry_id:pr.data.id, kind:'system', body:'Added to pipeline', source:'manual'}).then(function(){});
         loadVenues(); loadPipeline();
         // Straight into the deal — pitch while the card's still warm.
+        showToast('In your pipeline — go get it');
+        location.hash = 'entry/' + pr.data.id;
+      });
+    });
+  });
+}
+
+// Org submit: a REAL orgs row (not a fake venue) — person linked via org_id,
+// deal attached via pipeline_entries.org_id with venue_id null.
+function wizSubmitOrg(){
+  var cEmail = wizData.contactEmail || null;
+  var cPhone = wizData.contactPhone || null;
+  var btn=document.querySelector('#wiz-container .btn-primary'); if(btn){ btn.textContent='Saving…'; btn.disabled=true; }
+  var orgPayload = {
+    name: wizData.orgName, org_type: wizData.orgType || null,
+    city: wizData.city || null, state: (wizData.state || '').toUpperCase() || null,
+    website: wizData.website || null, phone: wizData.phone || null,
+    books: wizData.books || 'soft', notes: wizData.notes || null,
+    created_by: ME, created_by_name: (profile.name || null)
+  };
+  sb.from('orgs').insert(orgPayload).select().single().then(function(orr){
+    if(orr.error){ alert('Could not save: ' + orr.error.message + (orr.error.message.indexOf('orgs') >= 0 ? ' — has migration 035 been run?' : '')); if(btn){ btn.disabled=false; btn.textContent='Add to collective ↗'; } return; }
+    var orgId = orr.data.id;
+    var needContact = wizData.contactName || cEmail || cPhone || wizData.contactTitle;
+    var contactStep;
+    if (!needContact) contactStep = Promise.resolve(null);
+    else {
+      var prow = { name: wizData.contactName||null, title: wizData.contactTitle||null, org: wizData.orgName||null, org_id: orgId, email: cEmail, phone: cPhone, linkedin: wizData.contactLinkedin||null, instagram: wizData.contactInstagram||null, created_by: ME };
+      contactStep = (cEmail ? sb.from('people').select('id,name').ilike('email', cEmail).limit(1) : Promise.resolve({ data: [] }))
+        .then(function(r){
+          var existing = r.data && r.data[0];
+          if (existing) { sb.from('people').update({ org_id: orgId }).eq('id', existing.id).then(function(){}); showToast('Recognized ' + (existing.name || 'them') + ' ✓'); return existing.id; }
+          return sb.from('people').insert(prow).select().single().then(function(ir){ return ir.data ? ir.data.id : null; });
+        });
+    }
+    contactStep.then(function(personId){
+      sb.from('pipeline_entries').insert({ artist_id: ME, org_id: orgId, person_id: personId, status: 'lead', ticket_type: wizData.books === 'hard' ? 'hard' : null }).select().single().then(function(pr){
+        if(pr.error){ alert('Saved, but could not start your pipeline: ' + pr.error.message); loadPipeline(); renderWizard(5, null, {}); return; }
+        sb.from('activities').insert({ pipeline_entry_id: pr.data.id, kind: 'system', body: 'Added to pipeline', source: 'manual' }).then(function(){});
+        loadPipeline();
         showToast('In your pipeline — go get it');
         location.hash = 'entry/' + pr.data.id;
       });

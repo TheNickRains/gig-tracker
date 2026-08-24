@@ -488,7 +488,7 @@ function roomClass(venueType, ticketType) {
   if (/winery|vineyard|brewery|distillery/.test(t)) return "winery";
   if (/restaurant|hotel|coffee|cafe/.test(t)) return "restaurant";
   if (/festival/.test(t)) return "festival";
-  if (/promoter|agency|agent/.test(t)) return "promoter";
+  if (/promoter|agency|agent|management/.test(t)) return "promoter";
   if (/corporate|private|wedding/.test(t)) return "private";
   if (/bar|pub|casino/.test(t)) return "bar";
   return ticketType === "hard" ? "listening" : "bar";
@@ -884,9 +884,12 @@ async function handleAiDraft(req, res, bodyStr) {
     const templateKind = String(parsed.template_kind || "").slice(0, 20);
     const templateText = String(parsed.template_text || "").slice(0, 2000);
     if (!entryId) { res.writeHead(400, hdr); res.end(JSON.stringify({ error: "entry_id required" })); return; }
-    const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,gig_date,gig_pay,gig_costs,ticket_type,person_id,venue:venues!pipeline_entries_venue_id_fkey(name,city,state,venue_type,ticket_type,pay_range,clientele,notes,booking_form_url),person:people(name,title,org),contact:contacts(name,title)`);
+    const entries = await sGet(`pipeline_entries?id=eq.${entryId}&select=id,status,artist_id,gig_date,gig_pay,gig_costs,ticket_type,person_id,venue:venues!pipeline_entries_venue_id_fkey(name,city,state,venue_type,ticket_type,pay_range,clientele,notes,booking_form_url),org:orgs(name,city,state,org_type,books,notes),person:people(name,title,org),contact:contacts(name,title)`);
     if (!entries.length || entries[0].artist_id !== uid) { res.writeHead(404, hdr); res.end(JSON.stringify({ error: "Entry not found" })); return; }
-    const e = entries[0], v = e.venue || {}, c = e.person || e.contact || {};
+    const e = entries[0], eOrg = e.org || null, c = e.person || e.contact || {};
+    // Org deals: the buyer's company wears the venue shape (name/type/place),
+    // which routes them into the promoter/festival playbooks and tone cells.
+    const v = e.venue || (eOrg ? { name: eOrg.name, venue_type: eOrg.org_type || "Booking agency", city: eOrg.city, state: eOrg.state, ticket_type: eOrg.books === "hard" ? "hard" : "soft", notes: eOrg.notes } : {});
     let otherRooms = "";
     if (e.person_id) {
       const links = await sGet(`venue_people?person_id=eq.${e.person_id}&select=venue:venues(name)&limit=5`);
@@ -959,7 +962,7 @@ async function handleAiDraft(req, res, bodyStr) {
       (lastInbound ? `THEIR LAST MESSAGE (answer this):\n"""${lastInbound.slice(0, 600)}"""\n` : "") +
       (convo ? `CONVERSATION SO FAR:\n${convo}\n` : "") +
       (roomsInPlay.length ? `ROOMS IN PLAY (one conversation, several of their rooms — speak to the set, push toward locking ONE): ${[v.name].concat(roomsInPlay).filter((x, i, arr) => x && arr.indexOf(x) === i).join(", ")}\n` : "") +
-      `VENUE: ${v.name || ""} (${v.venue_type || ""}, ${e.ticket_type || v.ticket_type || "soft"} ticket — quote the matching rate) in ${v.city || ""}, ${v.state || ""}. ${v.clientele ? "Clientele: " + v.clientele + "." : ""} ${v.notes ? "My notes on this venue: " + v.notes : ""}\n` +
+      `${eOrg ? "BUYER (a company that books across rooms — NOT a venue)" : "VENUE"}: ${v.name || ""} (${v.venue_type || ""}, ${e.ticket_type || v.ticket_type || "soft"} ticket — quote the matching rate) in ${v.city || ""}, ${v.state || ""}. ${v.clientele ? "Clientele: " + v.clientele + "." : ""} ${v.notes ? "My notes: " + v.notes : ""}\n` +
       `CONTACT: ${c.name || "the booker"}${c.title ? " (" + c.title + ")" : ""}${c.org ? " of " + c.org : ""}${otherRooms}\n` +
       rateLine +
       (firstTouch
