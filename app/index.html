@@ -2007,6 +2007,11 @@ var warPrevCount = 0;
 // The war room: Home leads with what needs you, then the scheduled queue.
 function renderHome(){
   var el = document.getElementById('war-needs'); if (!el) return;
+  // Mid-load: hold a quiet skeleton instead of flashing wrong conclusions.
+  if (pipeline.length && !(actsReady && schedReady)) {
+    if (!el.innerHTML) el.innerHTML = '<div class="section-label">Needs you</div><div class="card" style="margin-bottom:20px;font-size:13px;color:var(--text-tertiary)">Checking your pipeline…</div>';
+    return;
+  }
   var items = [];
   pipeline.forEach(function(p){
     if (p.reminderAt && new Date(p.reminderAt) <= new Date()) items.push({p:p, tier:0, ic:'ti-alarm', c:'var(--hold-text)', bg:'var(--hold-bg)', t:'Reminder — ' + (p.reminderNote || 'you asked to come back to this'), sub:'You set this ' + relTime(p.reminderAt), btns:[{fn:'wrClearReminder', label:'Done', title:'Handled — clear the reminder'}]});
@@ -4122,7 +4127,12 @@ function loadPipeline(){
       if(currentScreen==='pipeline') renderPipeline();
       retryPendingRoute();
       var ids = rows.map(function(e){ return e.id; });
+      // The war room renders only on COMPLETE data — a half-loaded pipeline
+      // (no activities yet) makes every quiet pitch look follow-up-due for a
+      // flash frame (markers/timestamps not in yet), then they vanish. Gate it.
+      actsReady = false; schedReady = false;
       if(ids.length) { loadActivities(ids); loadScheduled(ids); loadDealVenueMap(ids); }
+      else { actsReady = true; schedReady = true; renderHome(); }
     });
 }
 // Secondary rooms count as "in pipeline" too — a room in play on a deal is tracked.
@@ -4169,17 +4179,19 @@ function loadActivities(ids){
       p.fuKillTs = lastFuKill[p.uuid] || 0; // permanent follow-up dismiss — a newer outbound re-arms
       p.bounced = (lastBounce[p.uuid] || 0) > Math.max(p.lastOutboundTs, lastDismiss[p.uuid] || 0); // re-send OR dismiss clears it; a fresh bounce re-surfaces
     });
-    renderHome();
+    actsReady = true; renderHomeIfReady();
     if (currentScreen==='pipeline') renderPipeline();
     rerenderOpenDetail();
   });
 }
+var actsReady = false, schedReady = false;
+function renderHomeIfReady(){ if (actsReady && schedReady) renderHome(); }
 function loadScheduled(ids){
   sb.from('scheduled_messages').select('*').in('pipeline_entry_id',ids).in('status',['scheduled','ready']).order('created_at',{ascending:false}).then(function(r){
     var byEntry={};
     (r.data||[]).forEach(function(m){ if(!byEntry[m.pipeline_entry_id]) byEntry[m.pipeline_entry_id]=m; });
     pipeline.forEach(function(p){ p.sched = byEntry[p.uuid]||null; });
-    renderHome();
+    schedReady = true; renderHomeIfReady();
     if (currentScreen==='pipeline') renderPipeline();
     rerenderOpenDetail();
   });
