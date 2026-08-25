@@ -4109,10 +4109,16 @@ function loadVenues(){
   });
 }
 
+// Refresh cycles overlap (a dismiss triggers one directly AND via its own
+// realtime echo) — stale responses landing late were resurrecting dismissed
+// rows. Sequence number: only the NEWEST cycle's responses touch the UI.
+var loadSeq = 0;
 function loadPipeline(){
+  var seq = ++loadSeq;
   sb.from('pipeline_entries')
     .select('id,status,prev_status,venue_id,org_id,contact_id,person_id,followup_date,reminder_at,reminder_note,last_activity_at,created_at,gig_date,gig_pay,gig_costs,ticket_type, venue:venues!pipeline_entries_venue_id_fkey(name,city,state,venue_type,pay_range,ticket_type,booking_form_url), org:orgs(name,city,state,org_type,books), person:people(name,title,org,email,phone,linkedin,instagram), contact:contacts(name,title,email,phone,linkedin,instagram)')
     .order('last_activity_at',{ascending:false}).then(function(r){
+      if (seq !== loadSeq) return; // a newer refresh superseded this one
       if(r.error){
         console.error('loadPipeline', r.error);
         var pl = document.getElementById('pipe-list');
@@ -4139,7 +4145,7 @@ function loadPipeline(){
       // (no activities yet) makes every quiet pitch look follow-up-due for a
       // flash frame (markers/timestamps not in yet), then they vanish. Gate it.
       actsReady = false; schedReady = false;
-      if(ids.length) { loadActivities(ids); loadScheduled(ids); loadDealVenueMap(ids); }
+      if(ids.length) { loadActivities(ids, seq); loadScheduled(ids, seq); loadDealVenueMap(ids); }
       else { actsReady = true; schedReady = true; renderHome(); }
     });
 }
@@ -4153,8 +4159,9 @@ function loadDealVenueMap(ids){
     if (currentScreen==='discover') renderVenues();
   });
 }
-function loadActivities(ids){
+function loadActivities(ids, seq){
   sb.from('activities').select('*').in('pipeline_entry_id',ids).order('created_at',{ascending:false}).then(function(r){
+    if (seq !== undefined && seq !== loadSeq) return; // stale — a newer cycle owns the UI
     var byEntry={}, lastIn={}, lastOut={};
     (r.data||[]).forEach(function(a){
       (byEntry[a.pipeline_entry_id]=byEntry[a.pipeline_entry_id]||[]).push({id:a.id, kind:a.kind, source:a.source||'', dot:dotFor(a.kind), text:a.body||'', time:relTime(a.created_at), summary:a.summary||'', fromName:a.from_name||''});
@@ -4194,8 +4201,9 @@ function loadActivities(ids){
 }
 var actsReady = false, schedReady = false;
 function renderHomeIfReady(){ if (actsReady && schedReady) renderHome(); }
-function loadScheduled(ids){
+function loadScheduled(ids, seq){
   sb.from('scheduled_messages').select('*').in('pipeline_entry_id',ids).in('status',['scheduled','ready']).order('created_at',{ascending:false}).then(function(r){
+    if (seq !== undefined && seq !== loadSeq) return; // stale — a newer cycle owns the UI
     var byEntry={};
     (r.data||[]).forEach(function(m){ if(!byEntry[m.pipeline_entry_id]) byEntry[m.pipeline_entry_id]=m; });
     pipeline.forEach(function(p){ p.sched = byEntry[p.uuid]||null; });
