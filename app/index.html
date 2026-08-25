@@ -4250,7 +4250,8 @@ function addRoomSearch(id, q){
   var taken = [p.venueId].concat((p.dealVenues||[]).map(function(x){ return x.id; }));
   var hits = venues.filter(function(v){ return taken.indexOf(v.id) < 0 && (v.name + ' ' + v.city).toLowerCase().indexOf(q) >= 0; }).slice(0, 5);
   out.innerHTML = hits.map(function(v){
-    return '<div class="ws-row" onclick="addDealVenue(' + id + ',\'' + v.id + '\')"><div class="ws-name">' + esc(v.name) + '</div><div class="ws-addr">' + esc(v.city || '') + '</div></div>';
+    // Address shown — same-name multi-location rooms must be tellable apart.
+    return '<div class="ws-row" onclick="addDealVenue(' + id + ',\'' + v.id + '\')"><div class="ws-name">' + esc(v.name) + '</div><div class="ws-addr">' + esc([v.address, v.city].filter(Boolean).join(' · ')) + '</div></div>';
   }).join('') || '<div class="ws-row" style="cursor:default;color:var(--text-secondary);font-size:12px">No match.</div>';
 }
 function addDealVenue(id, venueId){
