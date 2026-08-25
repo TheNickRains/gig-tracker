@@ -83,3 +83,11 @@ Rules: anything that floats gets glass — a flat opaque panel over content
 breaks the hierarchy. Bigger radius = higher elevation. Never stack two glass
 layers of the same band. Reference: Apple Maps' search sheet / controls over
 the map.
+
+### Interactive list rows (2026-08-25)
+Row hover/selected states are FULL-BLEED: the row extends under the card's
+side padding (`margin: 0 -16px; padding-left/right: 16px`) and `.card-flush`
+carries `overflow: hidden` so the highlight clips to the card's own radius —
+an edge-to-edge color shift with perfectly rounded first/last rows (iOS list
+idiom). Never paint a hover as an inset block that stops short of the card
+edge or pokes square corners past the radius.
