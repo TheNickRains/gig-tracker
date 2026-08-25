@@ -2896,7 +2896,9 @@ function venueSearch(q){
   var knownHtml = known.length
     ? '<div style="font-size:10px;font-weight:600;color:var(--booked-text);text-transform:uppercase;letter-spacing:.05em;padding:6px 2px 2px">Already in the collective</div>'
       + known.map(function(v, i){
-          return '<div class="ws-row" onclick="pickCollectiveVenue(' + i + ')"><div class="ws-name"><i class="ti ti-circle-check-filled" style="color:var(--booked-text);margin-right:5px"></i>' + esc(v.name) + '</div><div class="ws-addr">' + esc([v.city, v.state].filter(Boolean).join(', ')) + (v.contact && v.contact !== '—' ? ' · knows ' + esc(v.contact) : '') + '</div></div>';
+          // Street address included — multi-location spots (two coffee shops,
+          // same name, same town) must be tellable apart before confirming.
+          return '<div class="ws-row" onclick="pickCollectiveVenue(' + i + ')"><div class="ws-name"><i class="ti ti-circle-check-filled" style="color:var(--booked-text);margin-right:5px"></i>' + esc(v.name) + '</div><div class="ws-addr">' + esc([v.address, [v.city, v.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ')) + (v.contact && v.contact !== '—' ? ' · knows ' + esc(v.contact) : '') + '</div></div>';
         }).join('')
     : '';
   if (box && knownHtml) box.innerHTML = knownHtml;
@@ -2931,7 +2933,7 @@ function pickCollectiveVenue(i){
       '<div class="wiz-header"><div class="wiz-step-label">Already in the collective</div><div class="wiz-title">' + esc(v.name) + '</div></div>'
       + '<div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px">A member already worked this room. You’re the freshest eyes on it — if this looks right, confirm it and your deal starts with the booker attached.</div>'
       + '<div class="card card-flush" style="margin-bottom:12px">'
-      + row('Type', v.vtype) + row('Where', [v.city, v.state].filter(Boolean).join(', '))
+      + row('Type', v.vtype) + row('Address', v.address) + row('Where', [v.city, v.state].filter(Boolean).join(', '))
       + row('Pay', v.pay !== '—' ? v.pay : '') + row('Phone', v.phone) + row('Website', v.website)
       + '</div>'
       + (ppl.length ? '<div class="section-label">Known booker' + (ppl.length > 1 ? 's' : '') + '</div><div class="card card-flush" style="margin-bottom:14px">'
