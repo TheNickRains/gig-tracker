@@ -2710,7 +2710,7 @@ function openDetail(id) {
     '<button class="back-btn" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>'
     + '<div class="detail-cols"><div>'
     + '<div class="detail-header"><div class="detail-icon"><i class="ti ' + venueIcon(p.vtype) + '"></i></div>'
-    + '<div style="min-width:0"><div class="detail-venue">' + p.venue + '</div><div class="detail-meta">' + p.vtype + ' · ' + p.city + ', ' + p.state + ' · ' + p.pay + '</div>'
+    + '<div style="min-width:0"><div class="detail-venue"' + (p.venueId ? ' style="cursor:pointer" onclick="openVenueDetail(\'' + p.venueId + '\')" title="Open this room’s collective page"' : '') + '>' + p.venue + '</div><div class="detail-meta">' + p.vtype + ' · ' + p.city + ', ' + p.state + ' · ' + p.pay + '</div>'
     + '<span class="badge badge-' + p.s + '" style="margin-top:6px">' + statusLabel[p.s] + '</span></div>'
     + dealType + '</div>'
     + (stageIdx>=0 ? '<div class="stage-track" style="margin-bottom:20px">' + stageDots + '</div>' : '')
@@ -2718,7 +2718,9 @@ function openDetail(id) {
     + statusActions
     + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 12px">'
     + '<span style="font-size:10.5px;color:var(--text-tertiary)">rooms in play:</span>'
-    + '<span class="vchip done" style="cursor:default">' + esc(p.venue) + '</span>'
+    + (p.venueId
+        ? '<button class="vchip done" onclick="openVenueDetail(\'' + p.venueId + '\')" title="Open this room’s collective page — intel, wins, quick edits">' + esc(p.venue) + ' <i class="ti ti-arrow-up-right"></i></button>'
+        : '<span class="vchip done" style="cursor:default">' + esc(p.venue) + '</span>')
     + (p.dealVenues || []).map(function(dv){ return '<span class="vchip" style="cursor:default">' + esc(dv.name)
         + ' <i class="ti ti-star" title="Make primary — the deal moves here, history intact" style="cursor:pointer" onclick="promoteDealVenue(' + id + ',\'' + dv.id + '\',\'' + esc(dv.name) + '\')"></i>'
         + ' <i class="ti ti-x" title="Drop from the set" style="cursor:pointer" onclick="removeDealVenue(' + id + ',\'' + dv.id + '\')"></i></span>'; }).join('')
@@ -4571,7 +4573,8 @@ function openVenueDetail(id){
     + '<button class="back-btn" style="margin-bottom:0" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>'
     + '<div class="vchips" style="margin:0">'
     + (function(){
-        if (pipeline.some(function(pp){ return pp.venueId===v.id; })) return '<span class="vchip done"><i class="ti ti-check"></i> In pipeline</span>';
+        var myIdx = -1; pipeline.forEach(function(pp, pi){ if (myIdx < 0 && pp.venueId === v.id) myIdx = pi; });
+        if (myIdx >= 0) return '<button class="vchip done" onclick="openDetail(' + myIdx + ')" title="Open your deal on this room"><i class="ti ti-check"></i> In pipeline — open deal</button>';
         var euuid = dealVenueMap[v.id];
         var di = euuid ? pipeline.map(function(pp){return pp.uuid;}).indexOf(euuid) : -1;
         if (di >= 0) return '<button class="vchip done" onclick="openDetail(' + di + ')" title="Open the deal this room is in play on"><i class="ti ti-check"></i> In play — ' + esc(pipeline[di].venue) + '</button>';
