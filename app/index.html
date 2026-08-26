@@ -2004,6 +2004,27 @@ function bulkDismissWar(){
     loadPipeline();
   });
 }
+// Bulk snooze: only follow-up rows are snoozable (replies/bounces have no
+// 7-day clock to restart) — the button shows how many of the selection apply.
+function bulkSnoozeWar(){
+  var rows = warItems.filter(function(it){ return it.snoozable && warSel[it.p.uuid]; })
+    .map(function(it){ return { pipeline_entry_id: it.p.uuid, kind: 'system', source: 'manual', body: '✓ Follow-up snoozed' }; });
+  if (!rows.length) return;
+  sb.from('activities').insert(rows).then(function(r){
+    if (r.error) { showToast('Could not snooze: ' + r.error.message, true); return; }
+    showToast('Snoozed ' + rows.length + ' follow-up' + (rows.length === 1 ? '' : 's') + ' — back in 7 quiet days');
+    warSelect = false; warSel = {};
+    loadPipeline();
+  });
+}
+// Inline permanent dismiss for a follow-up nag (was select-mode-only).
+function dismissFollowup(entryUuid){
+  sb.from('activities').insert({ pipeline_entry_id: entryUuid, kind: 'system', source: 'manual', body: '✓ Follow-up dismissed' }).then(function(r){
+    if (r.error) { showToast('Could not dismiss: ' + r.error.message, true); return; }
+    showToast('Dismissed — a new outbound from you re-arms it');
+    loadPipeline();
+  });
+}
 function dismissUnmatched(uid){
   sb.from('unmatched_mail').update({ status: 'dismissed' }).eq('id', uid).then(function(){ loadUnmatched(); });
 }
@@ -2022,7 +2043,7 @@ function renderHome(){
     if (p.bounced) items.push({p:p, tier:0, ic:'ti-mail-x', c:'var(--dead-text)', bg:'var(--dead-bg)', t:'Email bounced — fix the address', sub:'The pitch never arrived; edit the contact and re-send', marker:'✓ Bounce dismissed', btns:[{fn:'dismissBounce', label:'Dismiss', title:'I’ve handled this another way'}]});
     else if (p.sched && p.sched.status==='ready') items.push({p:p, tier:0, ic:'ti-bell-ringing', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Send awaiting your review', sub:'Auto-send is off — review & fire'});
     else if (needsReply(p)) items.push({p:p, tier:1, ic:'ti-mail', c:'var(--talks-text)', bg:'var(--talks-bg)', t:'You\u2019ve got mail — ' + ((p.contact||'').split(' ')[0]||'they') + ' replied', sub:lastInboundPreview(p), marker:'✓ Reply dismissed', btns:[{fn:'dismissReply', label:'Dismiss', title:'No reply needed'}]});
-    else if (followupDue(p)) items.push({p:p, tier:2, ic:'ti-clock-exclamation', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Follow-up due · ' + p.days + 'd quiet', sub:'Nudge them or schedule it', marker:'✓ Follow-up dismissed', btns:[{fn:'snoozeFollowup', label:'Snooze', title:'Snooze 7 days — comes back if they stay quiet'}]});
+    else if (followupDue(p)) items.push({p:p, tier:2, ic:'ti-clock-exclamation', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Follow-up due · ' + p.days + 'd quiet', sub:'Nudge them or schedule it', marker:'✓ Follow-up dismissed', snoozable:true, btns:[{fn:'snoozeFollowup', label:'Snooze', title:'Snooze 7 days — comes back if they stay quiet'},{fn:'dismissFollowup', label:'Dismiss', title:'Stop nagging about this one — a new outbound re-arms it'}]});
   });
   // Scale: hardest-to-ignore first (ready > replies > follow-ups, oldest first),
   // capped — the overflow lives in Pipeline sorted by Priority, one tap away.
@@ -2043,12 +2064,16 @@ function renderHome(){
   if (warSelect) {
     var dismissable = items.filter(function(it){ return it.marker; });
     var selCount = dismissable.filter(function(it){ return warSel[it.p.uuid]; }).length;
+    var snoozeCount = items.filter(function(it){ return it.snoozable && warSel[it.p.uuid]; }).length;
     var allSel = dismissable.length && selCount === dismissable.length;
     html += '<div class="war-selbar">'
       + '<button class="vchip" onclick="warSelAll()">' + (allSel ? 'Clear all' : 'Select all') + '</button>'
       + (selCount
-        ? '<button class="vchip primary" onclick="bulkDismissWar()"><i class="ti ti-x"></i> Dismiss ' + selCount + ' selected</button>'
+        ? '<button class="vchip primary" onclick="bulkDismissWar()"><i class="ti ti-x"></i> Dismiss ' + selCount + '</button>'
         : '<span style="font-size:12px;color:var(--text-tertiary)">Tap rows to select</span>')
+      + (snoozeCount
+        ? '<button class="vchip" onclick="bulkSnoozeWar()" title="Restart the 7-day quiet clock on the selected follow-ups"><i class="ti ti-clock-pause"></i> Snooze ' + snoozeCount + '</button>'
+        : '')
       + '</div>';
   }
   if (!items.length) {
