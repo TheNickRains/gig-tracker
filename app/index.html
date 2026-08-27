@@ -2923,7 +2923,8 @@ function venueSearch(q){
       + known.map(function(v, i){
           // Street address included — multi-location spots (two coffee shops,
           // same name, same town) must be tellable apart before confirming.
-          return '<div class="ws-row" onclick="pickCollectiveVenue(' + i + ')"><div class="ws-name"><i class="ti ti-circle-check-filled" style="color:var(--booked-text);margin-right:5px"></i>' + esc(v.name) + '</div><div class="ws-addr">' + esc([v.address, [v.city, v.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ')) + (v.contact && v.contact !== '—' ? ' · knows ' + esc(v.contact) : '') + '</div></div>';
+          var inP = myDealForVenue(v.id);
+          return '<div class="ws-row" onclick="pickCollectiveVenue(' + i + ')"><div class="ws-name"><i class="ti ti-circle-check-filled" style="color:var(--booked-text);margin-right:5px"></i>' + esc(v.name) + (inP ? ' <span style="font-size:10px;font-weight:600;color:var(--talks-text)">· in your pipeline</span>' : '') + '</div><div class="ws-addr">' + esc([v.address, [v.city, v.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ')) + (v.contact && v.contact !== '—' ? ' · knows ' + esc(v.contact) : '') + '</div></div>';
         }).join('')
     : '';
   if (box && knownHtml) box.innerHTML = knownHtml;
@@ -2949,14 +2950,26 @@ function venueSearch(q){
 // On the phone with the venue? Pick the collective's record, eyeball it, and
 // one tap confirms it (+1 verifies for everyone) and starts your deal with
 // the known booker attached.
+// Do I already have a deal on this room? (primary venue, or a secondary room
+// in play). Returns the pipeline index + which, or null — so the collective
+// flow never tries to create a duplicate (unique(artist_id, venue_id) errors).
+function myDealForVenue(venueId){
+  for (var i = 0; i < pipeline.length; i++) if (pipeline[i].venueId === venueId) return { idx: i, secondary: false };
+  var euuid = dealVenueMap[venueId];
+  if (euuid) for (var j = 0; j < pipeline.length; j++) if (pipeline[j].uuid === euuid) return { idx: j, secondary: true };
+  return null;
+}
 function pickCollectiveVenue(i){
   var v = wsCollective[i]; if (!v) return;
+  var mine = myDealForVenue(v.id);
   sb.from('venue_people').select('person:people(id,name,title,email,phone)').eq('venue_id', v.id).then(function(r){
     var ppl = ((r.data)||[]).map(function(x){ return x.person; }).filter(Boolean);
     var row = function(label, val){ return val ? '<div class="field-row"><span class="field-label">' + label + '</span><span class="field-value">' + esc(val) + '</span></div>' : ''; };
     document.getElementById('wiz-container').innerHTML =
       '<div class="wiz-header"><div class="wiz-step-label">Already in the collective</div><div class="wiz-title">' + esc(v.name) + '</div></div>'
-      + '<div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px">A member already worked this room. You’re the freshest eyes on it — if this looks right, confirm it and your deal starts with the booker attached.</div>'
+      + (mine
+          ? '<div class="card" style="margin-bottom:14px;border:1px solid var(--talks-text);display:flex;gap:9px;align-items:center"><i class="ti ti-check" style="color:var(--talks-text);font-size:17px"></i><div style="font-size:12.5px"><strong>You’re already working this room' + (mine.secondary ? ' — it’s in play on a deal' : '') + '.</strong> Open your deal instead of starting a new one.</div></div>'
+          : '<div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px">A member already worked this room. You’re the freshest eyes on it — if this looks right, confirm it and your deal starts with the booker attached.</div>')
       + '<div class="card card-flush" style="margin-bottom:12px">'
       + row('Type', v.vtype) + row('Address', v.address) + row('Where', [v.city, v.state].filter(Boolean).join(', '))
       + row('Pay', v.pay !== '—' ? v.pay : '') + row('Phone', v.phone) + row('Website', v.website)
@@ -2964,7 +2977,7 @@ function pickCollectiveVenue(i){
       + (ppl.length ? '<div class="section-label">Known booker' + (ppl.length > 1 ? 's' : '') + '</div><div class="card card-flush" style="margin-bottom:14px">'
           + ppl.map(function(pp){ return '<div class="field-row"><span class="field-label">' + esc(pp.name || '?') + '</span><span class="field-value">' + esc([pp.title, pp.email, pp.phone].filter(Boolean).join(' · ')) + '</span></div>'; }).join('') + '</div>'
         : '<div class="card placeholder" style="margin-bottom:14px;font-size:12.5px;color:var(--text-tertiary)">No booker on file yet — you might be the one to add them.</div>')
-      + '<div class="save-row"><button class="btn-primary" onclick="confirmCollectiveVenue(' + i + ')"><i class="ti ti-thumb-up"></i> Looks right — start my deal (+1)</button>'
+      + '<div class="save-row"><button class="btn-primary" onclick="confirmCollectiveVenue(' + i + ')">' + (mine ? '<i class="ti ti-arrow-up-right"></i> Open my deal (+1)' : '<i class="ti ti-thumb-up"></i> Looks right — start my deal (+1)') + '</button>'
       + '<button class="btn-secondary" onclick="hideWizardToVenue(\'' + v.id + '\')">Something’s off — open &amp; fix</button></div>'
       + '<div style="text-align:center;margin-top:10px"><button class="vc-btn" style="font-size:12px" onclick="renderWizard(2, wizTicket, {})">← Back to search</button></div>';
   });
@@ -2972,7 +2985,9 @@ function pickCollectiveVenue(i){
 function hideWizardToVenue(venueId){ openVenueDetail(venueId); }
 function confirmCollectiveVenue(i){
   var v = wsCollective[i]; if (!v) return;
-  addVenueToPipeline(v.id, true);
+  var mine = myDealForVenue(v.id);
+  if (mine) { showToast('You’re already working this — opening your deal'); location.hash = 'entry/' + pipeline[mine.idx].uuid; }
+  else { addVenueToPipeline(v.id, true); }
   // The +1: venue and its people get a freshness stamp from your confirmation.
   sb.from('venues').select('verify_count').eq('id', v.id).single().then(function(r){
     var n = ((r.data && r.data.verify_count) || 0) + 1;
