@@ -1259,7 +1259,8 @@ function venueIcon(vt){
   if (t.indexOf('coffee') >= 0) return 'ti-coffee';
   if (t.indexOf('restaurant') >= 0) return 'ti-tools-kitchen-2';
   if (t.indexOf('hotel') >= 0) return 'ti-bed';
-  if (t.indexOf('winery') >= 0 || t.indexOf('brewery') >= 0) return 'ti-barrel';
+  if (t.indexOf('vineyard') >= 0 || t.indexOf('winery') >= 0) return 'ti-bottle';
+  if (t.indexOf('brewery') >= 0 || t.indexOf('distillery') >= 0) return 'ti-barrel';
   if (t.indexOf('casino') >= 0) return 'ti-dice';
   if (t.indexOf('festival') >= 0) return 'ti-tent';
   if (t.indexOf('listening') >= 0) return 'ti-music';
@@ -1271,7 +1272,7 @@ function venueIcon(vt){
   return 'ti-building-store';
 }
 
-var softTypes = ['Bar / Pub','Coffee shop','Restaurant','Hotel','Winery / Brewery','Casino','Festival','Corporate / private','Other'];
+var softTypes = ['Bar / Pub','Coffee shop','Restaurant','Hotel','Vineyard / Winery','Distillery / Brewery','Casino','Festival','Corporate / private','Other'];
 var hardTypes = ['Listening room','Theater','Concert hall','Performing arts center','Music club (ticketed)','Other'];
 
 var activeTpl = {};

@@ -1071,7 +1071,8 @@ http.createServer((req, res) => {
 function venueTypeFromGoogle(primary, types) {
   const all = [primary].concat(types || []).filter(Boolean);
   const has = (...t) => t.some((x) => all.includes(x));
-  if (has("winery", "brewery", "distillery", "brewpub")) return { vtype: "Winery / Brewery", ticket: "soft" };
+  if (has("winery", "vineyard")) return { vtype: "Vineyard / Winery", ticket: "soft" };
+  if (has("brewery", "distillery", "brewpub", "beer_hall")) return { vtype: "Distillery / Brewery", ticket: "soft" };
   if (has("casino")) return { vtype: "Casino", ticket: "soft" };
   if (has("performing_arts_theater", "auditorium", "opera_house", "philharmonic_hall")) return { vtype: "Theater", ticket: "hard" };
   if (has("concert_hall", "amphitheatre")) return { vtype: "Concert hall", ticket: "hard" };
