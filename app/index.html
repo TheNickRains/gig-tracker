@@ -2961,7 +2961,9 @@ function myDealForVenue(venueId){
 }
 function pickCollectiveVenue(i){
   var v = wsCollective[i]; if (!v) return;
+  // Already your deal? It's yours — skip the confirm/verify, just go there.
   var mine = myDealForVenue(v.id);
+  if (mine) { showToast('Already in your pipeline — opening your deal'); location.hash = 'entry/' + pipeline[mine.idx].uuid; return; }
   sb.from('venue_people').select('person:people(id,name,title,email,phone)').eq('venue_id', v.id).then(function(r){
     var ppl = ((r.data)||[]).map(function(x){ return x.person; }).filter(Boolean);
     var row = function(label, val){ return val ? '<div class="field-row"><span class="field-label">' + label + '</span><span class="field-value">' + esc(val) + '</span></div>' : ''; };
@@ -4168,6 +4170,12 @@ function loadPipeline(){
         return;
       }
       var rows=r.data||[];
+      // Gate the war room BEFORE the pipeline is rebuilt with empty activity —
+      // updateHomeStats() below calls renderHome(), and if the flags still read
+      // "ready" from the prior load it would paint every quiet pitch as
+      // follow-up-due (snooze/dismiss markers not loaded yet), then collapse to
+      // the truth a beat later. Reset first so renderHome holds the prior frame.
+      actsReady = false; schedReady = false;
       pipeline = rows.map(function(e,i){
         // Org deals (agencies/promoters) flow through every venue-shaped
         // surface: the org supplies name/place/type when there's no venue.
@@ -4181,10 +4189,6 @@ function loadPipeline(){
       if(currentScreen==='pipeline') renderPipeline();
       retryPendingRoute();
       var ids = rows.map(function(e){ return e.id; });
-      // The war room renders only on COMPLETE data — a half-loaded pipeline
-      // (no activities yet) makes every quiet pitch look follow-up-due for a
-      // flash frame (markers/timestamps not in yet), then they vanish. Gate it.
-      actsReady = false; schedReady = false;
       if(ids.length) { loadActivities(ids, seq); loadScheduled(ids, seq); loadDealVenueMap(ids); }
       else { actsReady = true; schedReady = true; renderHome(); }
     });
