@@ -2594,9 +2594,11 @@ function openDetail(id) {
         text = text.slice(chKey.length).trim();
         chanTag = '<div class="m-chan"><i class="ti ' + CH_TAGS[chKey][1] + '"></i>' + CH_TAGS[chKey][0] + ' · logged by hand</div>';
       }
+      // mdRich (not esc) so [text](url) the AI writes renders as a real link
+      // in the bubble — matching what actually goes out in the sent email.
       var content = a.summary
-        ? '<div class="m-sum">' + esc(a.summary) + '</div><div class="m-raw">' + esc(text) + '</div>'
-        : esc(text);
+        ? '<div class="m-sum">' + esc(a.summary) + '</div><div class="m-raw">' + mdRich(text) + '</div>'
+        : mdRich(text);
       var tools = manual
         ? '<span class="m-tools"><button class="note-ic" onclick="event.stopPropagation();startNoteEdit(\'' + a.id + '\',' + id + ')" title="Edit"><i class="ti ti-pencil"></i></button>'
           + '<button class="note-ic" onclick="event.stopPropagation();deleteNote(\'' + a.id + '\',' + id + ',this)" title="Delete"><i class="ti ti-trash"></i></button></span>'
