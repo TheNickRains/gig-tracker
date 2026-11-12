@@ -1,6 +1,6 @@
 # Gig Collective audit — November 7, 2026
 
-**Historical findings.** All 18 now have local patches; see [implementation, verification, and rollout](patches.md). The report below describes the original pre-fix behavior. Production deployment is still pending.
+**Historical findings.** All 18 are patched and deployed as of November 12, 2026; see [implementation, verification, and rollout](patches.md). The report below describes the original pre-fix behavior. The matching app/worker release and migration 040 are live.
 
 The most urgent finding is a reproducible wrong-recipient race: a realtime refresh can reorder the pipeline while an editor remains open, and Send now then acts on a different deal. The send queue also lacks the coordination needed to prevent duplicate sends and honor last-moment cancellations reliably.
 
