@@ -1,0 +1,14 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+const {EventEmitter}=require('node:events');
+const {safeSiteFetch,publicAddress}=require('../worker/safe-site-fetch');
+const publicDNS=async()=>[{address:'93.184.216.34',family:4}];
+function requester(pages,seen=[]){return (url,options,callback)=>{seen.push({url:String(url),options});const req=new EventEmitter();req.destroy=e=>{req.emit('error',e);req.emit('close');};req.end=()=>queueMicrotask(()=>{const page=pages.shift(),res=new EventEmitter();Object.assign(res,{statusCode:page.status||200,headers:page.headers||{'content-type':'text/html'},resume(){}});callback(res);if(page.body)res.emit('data',Buffer.from(page.body));res.emit('end');req.emit('close');});return req;};}
+test('A18: private, loopback, reserved, metadata and mapped IPv6 addresses are refused',async()=>{for(const address of ['127.0.0.1','10.0.0.1','172.16.0.1','192.168.1.1','169.254.169.254','100.64.0.1','0.0.0.0','::1','fe80::1','fc00::1','::ffff:127.0.0.1','2001:db8::1']){assert.equal(publicAddress(address),false,address);let called=false;await assert.rejects(safeSiteFetch('https://example.com',{lookup:async()=>[{address,family:address.includes(':')?6:4}],request:()=>{called=true;}}),/public server/);assert.equal(called,false);}});
+test('A18: public fetch pins checked DNS address and keeps TLS hostname',async()=>{const seen=[];const text=await safeSiteFetch('https://example.com',{lookup:publicDNS,request:requester([{body:'<p>Public page</p>'}],seen)});assert.equal(text,'<p>Public page</p>');assert.equal(seen[0].url,'https://example.com/');seen[0].options.lookup('example.com',{},(_e,address,family)=>{assert.equal(address,'93.184.216.34');assert.equal(family,4);});});
+test('A18: mixed public/private DNS and redirects into internal services are refused',async()=>{await assert.rejects(safeSiteFetch('https://example.com',{lookup:async()=>[...await publicDNS(),{address:'127.0.0.1',family:4}]}),/public server/);const seen=[];await assert.rejects(safeSiteFetch('https://example.com',{lookup:publicDNS,request:requester([{status:302,headers:{location:'http://169.254.169.254/latest/meta-data/'}}],seen)}),/public server/);assert.equal(seen.length,1);});
+test('A18: response size, DNS duration, redirect hops and ports are bounded',async()=>{
+ await assert.rejects(safeSiteFetch('https://example.com',{lookup:publicDNS,request:requester([{body:'x'.repeat(512*1024+1)}])}),/too large/);
+ await assert.rejects(safeSiteFetch('https://example.com',{lookup:()=>new Promise(()=>{}),timeoutMs:10}),/timed out/);
+ await assert.rejects(safeSiteFetch('http://example.com:8080',{lookup:publicDNS}),/public HTTP/);
+ await assert.rejects(safeSiteFetch('https://example.com',{lookup:publicDNS,request:requester(Array.from({length:4},()=>({status:302,headers:{location:'/loop'}})))}),/Too many/);
+});

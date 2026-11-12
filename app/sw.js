@@ -7,6 +7,7 @@ self.addEventListener("push", function (e) {
   try { d = e.data ? e.data.json() : {}; } catch (err) {}
   e.waitUntil(self.registration.showNotification(d.title || "Gig Collective", {
     body: d.body || "",
+    tag: d.tag || undefined,
     icon: "/icon-192.png",
     badge: "/icon-192.png",
     data: { url: d.url || "/app" },

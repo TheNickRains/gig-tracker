@@ -14,6 +14,7 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <script src="/config.js"></script>
+<script src="/draft-store.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   /* ── Reset & base ── */
@@ -1226,6 +1227,19 @@ var notableEditOpen = false;
 
 var venues = [];
 var pipeline = [];
+// Numeric DOM handles are permanent for this page, keyed to an immutable UUID.
+// Realtime sorting changes the list order, never the identity of an open form.
+var dealUuids = [], dealHandles = Object.create(null);
+function dealHandle(uuid){
+  if (dealHandles[uuid] === undefined) { dealHandles[uuid] = dealUuids.length; dealUuids.push(uuid); }
+  return dealHandles[uuid];
+}
+function dealFor(handle){
+  var uuid = typeof handle === 'string' ? handle : dealUuids[handle];
+  var p = pipeline.find(function(p){ return p.uuid === uuid; });
+  if (!p) { showToast('This deal is no longer available. Refresh your pipeline.', true); throw new Error('Deal no longer available'); }
+  return p;
+}
 
 // Staging spine. Happy path: lead → pitched → talks → hold (hard ticket only) →
 // booked → played. Exits: passed (recyclable no — fair game to circle back) and
@@ -1388,7 +1402,7 @@ function applyRoute(){
     if (h.indexOf('entry/') === 0) {
       var u = h.slice(6), idx = -1;
       pipeline.forEach(function(p, i){ if (p.uuid === u) idx = i; });
-      if (idx >= 0) { if (currentScreen !== 'detail' || currentDetailUuid !== u) openDetail(idx); }
+      if (idx >= 0) { if (currentScreen !== 'detail' || currentDetailUuid !== u) openDetail(pipeline[idx].id); }
       else pendingRoute = true; // pipeline not loaded yet — retried after load
     } else if (h.indexOf('event/') === 0) {
       var eu = h.slice(6);
@@ -1614,6 +1628,7 @@ function renderDiscover() {
   var inPipe = {}; pipeline.forEach(function(p){ if (p.venueId) inPipe[p.venueId] = true; });
   Object.keys(dealVenueMap).forEach(function(vid){ inPipe[vid] = true; });
   var f = venues.filter(function(v){
+    if(v.archived)return false;
     if (!locMatch(discLoc, v.city, v.state)) return false;
     if (type && v.type !== type) return false;
     if (pf === 'in' && !inPipe[v.id]) return false;
@@ -1666,7 +1681,7 @@ function renderPipeline() {
   function metaFor(p){
     if (isCold(p)) return '<div style="font-size:11px;font-weight:500;color:var(--text-tertiary)">❄ Cold</div><div class="pipe-date">' + p.days + 'd quiet</div>';
     if (followupDue(p)) return '<div style="font-size:11px;font-weight:500;color:var(--pitched-text)">Follow up</div><div class="pipe-date">' + (p.days-7) + 'd overdue</div>';
-    if (p.bounced) return '<div style="font-size:11px;font-weight:500;color:var(--dead-text)">Bounced ⚠️</div><div class="pipe-date">fix address</div>';
+    if (p.bounced) return '<div style="font-size:11px;font-weight:500;color:var(--dead-text)">' + (bounceAddressChanged(p) ? 'Address updated' : 'Bounced ⚠️') + '</div><div class="pipe-date">' + esc(bounceAction(p).label) + '</div>';
     if (needsReply(p)) return '<div style="font-size:11px;font-weight:500;color:var(--talks-text)">Reply waiting</div><div class="pipe-date">' + dLabel(p.days) + '</div>';
     if (p.sched && p.sched.status==='ready') return '<div style="font-size:11px;font-weight:500;color:var(--pitched-text)">Ready to send</div><div class="pipe-date">awaiting you</div>';
     if (p.sched && p.sched.status==='scheduled') return '<div style="font-size:11px;font-weight:500;color:var(--text-secondary)"><i class="ti ti-clock-hour-4" style="font-size:11px"></i> Scheduled</div><div class="pipe-date">' + new Date(p.sched.send_at).toLocaleDateString(undefined,{weekday:'short'}) + ' ' + new Date(p.sched.send_at).toLocaleTimeString(undefined,{hour:'numeric'}) + '</div>';
@@ -1768,7 +1783,7 @@ function renderFeed(){
   if (feedCache) { el.innerHTML = feedCache; return; }
   Promise.all([
     sb.from('venue_comments').select('author_name,body,created_at,venue_id').order('created_at',{ascending:false}).limit(10),
-    sb.from('venues').select('id,name,city,created_at,created_by').order('created_at',{ascending:false}).limit(10),
+    sb.from('venues').select('id,name,city,created_at,created_by').is('archived_at',null).order('created_at',{ascending:false}).limit(10),
     sb.from('venue_wins').select('author_name,status,created_at,venue_id').order('created_at',{ascending:false}).limit(10)
   ]).then(function(rs){
     var items = [];
@@ -1955,6 +1970,90 @@ function ingestThread(entryUuid, quiet){
       }).catch(function(){});
   });
 }
+// Compare with the address in the bounce, not the current contact. This works
+// after a reload or an edit on another device; case/whitespace aren't a fix.
+var bounceResending = {};
+function normalizedEmail(email){ return (email || '').trim().toLowerCase(); }
+function bouncedAddress(body){
+  var match = (body || '').match(/^⚠️ Email bounced\s*—\s*([^\s]+@[^\s]+)/);
+  return match ? normalizedEmail(match[1]) : '';
+}
+function bounceHistoryText(text){
+  var email = bouncedAddress(text);
+  return email ? 'Earlier email to ' + email + ' bounced.' : text;
+}
+function bounceAddressChanged(p){
+  var email = normalizedEmail(p.email);
+  return !!p.bounceEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email !== p.bounceEmail;
+}
+function bounceAction(p){
+  if (bounceResending[p.uuid]) {
+    return { title:'Preparing resend', sub:'Checking the saved email and corrected address.', label:'Preparing…', disabled:true };
+  }
+  if (p.sched && p.sched.status === 'scheduled' && p.sched.human) {
+    return { title:'Resend queued', sub:'Waiting for Gmail to confirm the send.', label:'Sending…', disabled:true };
+  }
+  if (p.sched && ['scheduled','ready','sending','uncertain'].indexOf(p.sched.status) >= 0) {
+    return { title:'A draft is already waiting', sub:'Review the pending draft before resending.', label:'Review draft', fn:'reviewBounceDraft' };
+  }
+  if (bounceAddressChanged(p)) {
+    return { title:'Address updated — ready to resend', sub:'Resend your last email to ' + p.email + '.', label:'Resend', fn:'resendBouncedEmail' };
+  }
+  return { title:'Email bounced — check the address', sub:'The email to ' + (p.bounceEmail || 'the previous address') + ' was rejected. Correct the contact address, then resend.', label:'Fix address', fn:'fixBounceAddress' };
+}
+function fixBounceAddress(uuid){
+  var id = pipeline.findIndex(function(p){ return p.uuid === uuid; });
+  if (id >= 0) startContactEdit(pipeline[id].id, pipeline[id].personId || '');
+}
+function reviewBounceDraft(uuid){
+  var id = pipeline.findIndex(function(p){ return p.uuid === uuid; });
+  if (id >= 0) { openDetail(pipeline[id].id); jumpToDraft(pipeline[id].id); }
+}
+function refreshBounceUI(){ renderHome(); if (currentScreen === 'pipeline') renderPipeline(); rerenderOpenDetail(); }
+async function resendBouncedEmail(uuid){
+  var p = pipeline.find(function(entry){ return entry.uuid === uuid; });
+  if (!p || !p.bounced || !p.bounceId || bounceResending[uuid]) return;
+  if (!bounceAddressChanged(p)) { showToast('Correct the contact email first', true); return; }
+  if (p.sched && ['scheduled','ready','sending','uncertain'].indexOf(p.sched.status) >= 0) { reviewBounceDraft(uuid); return; }
+  var to = p.email.trim();
+  bounceResending[uuid] = true; refreshBounceUI();
+  try {
+    // Recheck the saved contact: never send to stale data from an older tab.
+    var contact = await sb.from('pipeline_entries').select('person:people(email),contact:contacts(email)').eq('id', uuid).eq('artist_id', ME).single();
+    if (contact.error) throw contact.error;
+    var currentEmail = contact.data && ((contact.data.person && contact.data.person.email) || (contact.data.contact && contact.data.contact.email));
+    if (normalizedEmail(currentEmail) !== normalizedEmail(to)) throw new Error('The contact changed. Review its address before resending.');
+    var queued = await sb.from('scheduled_messages').select('id').eq('artist_id', ME).eq('pipeline_entry_id', uuid).in('status',['scheduled','ready','sending','uncertain']).limit(1);
+    if (queued.error) throw queued.error;
+    if (queued.data && queued.data.length) { showToast('A draft is already waiting — review it before resending'); loadPipeline(); return; }
+    var recent = await sb.from('activities').select('id,kind,body').eq('pipeline_entry_id',uuid).in('kind',['email_out','system'])
+      .gte('created_at',new Date(p.lastBounceTs).toISOString());
+    if (recent.error) throw recent.error;
+    if ((recent.data || []).some(function(a){ return a.kind === 'email_out' || (a.id !== p.bounceId && /^(✓ Bounce dismissed|⚠️ Email bounced)/.test(a.body || '')); })) {
+      showToast('This conversation changed. Review it before resending.'); loadPipeline(); return;
+    }
+    // Activities contain only a 600-character preview. Recover the complete
+    // last email sent to the bounced address, including its subject and links.
+    var original = await sb.from('scheduled_messages').select('subject,body,ai_draft').eq('artist_id', ME).eq('pipeline_entry_id', uuid)
+      .eq('status','sent').ilike('to_email',p.bounceEmail.replace(/[%_*]/g, function(c){ return '\\' + c; }))
+      .lte('sent_at',new Date(p.lastBounceTs).toISOString()).order('sent_at',{ascending:false}).limit(1);
+    if (original.error) throw original.error;
+    var message = original.data && original.data[0];
+    if (!message || !message.body) throw new Error('The complete original email is not saved here. Copy it from Gmail into the draft to resend.');
+    // The bounce's UUID is also the resend ID: the primary key prevents a
+    // double click, another tab, or a lost HTTP response from creating copies.
+    var result = await sb.rpc('queue_message',{p_id:p.bounceId,p_entry:uuid,p_to:to,p_subject:message.subject,p_body:message.body,p_ai:message.ai_draft||null,p_at:new Date().toISOString(),p_human:true});
+    if(result.error)throw result.error;
+    if(result.data.status!=='scheduled'){showToast('This resend was already attempted. Review its delivery status.');loadPipeline();return;}
+    p.sched = result.data;
+    showToast('Resend queued to ' + to);
+    pokeWorker(); loadPipeline();
+  } catch (err) {
+    showToast('Could not resend: ' + err.message, true);
+  } finally {
+    delete bounceResending[uuid]; refreshBounceUI();
+  }
+}
 // Bounce notifications are dismissable: a marker activity clears the flag
 // (a NEW bounce later re-surfaces it; re-sending also clears it).
 function dismissBounce(entryUuid){
@@ -2041,8 +2140,12 @@ function renderHome(){
   var items = [];
   pipeline.forEach(function(p){
     if (p.reminderAt && new Date(p.reminderAt) <= new Date()) items.push({p:p, tier:0, ic:'ti-alarm', c:'var(--hold-text)', bg:'var(--hold-bg)', t:'Reminder — ' + (p.reminderNote || 'you asked to come back to this'), sub:'You set this ' + relTime(p.reminderAt), btns:[{fn:'wrClearReminder', label:'Done', title:'Handled — clear the reminder'}]});
-    if (p.bounced) items.push({p:p, tier:0, ic:'ti-mail-x', c:'var(--dead-text)', bg:'var(--dead-bg)', t:'Email bounced — fix the address', sub:'The pitch never arrived; edit the contact and re-send', marker:'✓ Bounce dismissed', btns:[{fn:'dismissBounce', label:'Dismiss', title:'I’ve handled this another way'}]});
-    else if (p.sched && p.sched.status==='ready') items.push({p:p, tier:0, ic:'ti-bell-ringing', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Send awaiting your review', sub:'Auto-send is off — review & fire'});
+    if (p.bounced) {
+      var bounce = bounceAction(p);
+      items.push({p:p, tier:0, ic:'ti-mail-x', c:'var(--dead-text)', bg:'var(--dead-bg)', t:bounce.title, sub:bounce.sub, marker:'✓ Bounce dismissed', btns:[{fn:bounce.fn, label:bounce.label, title:bounce.sub, disabled:bounce.disabled},{fn:'dismissBounce', label:'Dismiss', title:'I’ve handled this another way'}]});
+    }
+    else if (p.sched && ['failed','uncertain'].indexOf(p.sched.status)>=0) items.push({p:p,tier:0,ic:'ti-mail-exclamation',c:'var(--dead-text)',bg:'var(--dead-bg)',t:p.sched.status==='failed'?'Email was not sent':'Verify email delivery',sub:p.sched.cancel_reason||'Your message is saved — open the outbox to review'});
+    else if (p.sched && p.sched.status==='ready') items.push({p:p, tier:0, ic:'ti-bell-ringing', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Send awaiting your review', sub:p.sched.cancel_reason||'Review the saved recipient and message'});
     else if (needsReply(p)) items.push({p:p, tier:1, ic:'ti-mail', c:'var(--talks-text)', bg:'var(--talks-bg)', t:'You\u2019ve got mail — ' + ((p.contact||'').split(' ')[0]||'they') + ' replied', sub:lastInboundPreview(p), marker:'✓ Reply dismissed', btns:[{fn:'dismissReply', label:'Dismiss', title:'No reply needed'}]});
     else if (followupDue(p)) items.push({p:p, tier:2, ic:'ti-clock-exclamation', c:'var(--pitched-text)', bg:'var(--pitched-bg)', t:'Follow-up due · ' + p.days + 'd quiet', sub:'Nudge them or schedule it', marker:'✓ Follow-up dismissed', snoozable:true, btns:[{fn:'snoozeFollowup', label:'Snooze', title:'Snooze 7 days — comes back if they stay quiet'},{fn:'dismissFollowup', label:'Dismiss', title:'Stop nagging about this one — a new outbound re-arms it'}]});
   });
@@ -2094,7 +2197,7 @@ function renderHome(){
               ? '<i class="ti ' + (sel ? 'ti-square-check-filled' : 'ti-square') + '" style="font-size:19px;color:' + (sel ? 'var(--text-primary)' : 'var(--text-tertiary)') + '"></i>'
               : '<span style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.04em;flex-shrink:0">review</span>')
           : (it.btns||[]).map(function(b){
-              return '<button class="war-x" onclick="event.stopPropagation();' + b.fn + '(\'' + it.p.uuid + '\')" title="' + esc(b.title) + '">' + b.label + '</button>';
+              return '<button class="war-x" ' + (b.disabled ? 'disabled' : 'onclick="event.stopPropagation();' + b.fn + '(\'' + it.p.uuid + '\')"') + ' title="' + esc(b.title) + '">' + b.label + '</button>';
             }).join('') + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i>')
         + '</div>';
     }).join('')
@@ -2118,13 +2221,13 @@ function renderHome(){
           + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
       }).join('') + '</div>'
     : '';
-  var sends = pipeline.filter(function(p){ return p.sched && p.sched.status==='scheduled'; });
+  var sends = pipeline.filter(function(p){ return p.sched && ['scheduled','sending'].indexOf(p.sched.status)>=0; });
   var se = document.getElementById('war-sends');
   if (se) se.innerHTML = sends.length
     ? '<div class="section-label">Scheduled sends</div><div class="card card-flush" style="margin-bottom:20px">' + sends.map(function(p){
         return '<div class="war-row" onclick="openDetail(' + p.id + ')">'
           + '<div class="war-ic" style="background:var(--bg-secondary);color:var(--text-primary)"><i class="ti ti-clock-hour-4"></i></div>'
-          + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(p.venue) + '</div><div class="war-sub">Sends ' + fmtWhen(p.sched.send_at) + ' · cancels if they reply</div></div>'
+          + '<div style="flex:1;min-width:0"><div class="war-t">' + esc(p.venue) + '</div><div class="war-sub">' + (p.sched.status==='sending'?'Waiting for Gmail confirmation':p.sched.human?'Queued for Gmail':'Scheduled '+fmtWhen(p.sched.send_at)) + '</div></div>'
           + '<i class="ti ti-chevron-right" style="color:var(--text-tertiary)"></i></div>';
       }).join('') + '</div>'
     : '';
@@ -2133,7 +2236,7 @@ function renderHome(){
 function priorityScore(p) {
   if (p.bounced) return 125;                                // the pitch never arrived
   if (p.reminderAt && new Date(p.reminderAt) <= new Date()) return 122; // you promised to call back
-  if (p.sched && p.sched.status === 'ready') return 120;   // send awaiting review
+  if (p.sched && ['ready','failed','uncertain'].indexOf(p.sched.status)>=0) return 120;   // send awaiting review
   if (needsReply(p))                  return 100 + p.days; // their word is the last word
   if (isCold(p))                      return 1;            // cold — above the graveyard, below everything live
   if (followupDue(p))                 return 80 + p.days;  // pitched, gone quiet
@@ -2249,10 +2352,9 @@ function renderPipeFilterSelect(){
 // ── Pipeline detail ─────────────────────────────────────
 function linkUrl(v, kind){
   v = (v || '').trim();
-  if (/^https?:\/\//i.test(v)) return v;
-  if (kind === 'instagram') return 'https://instagram.com/' + v.replace(/^@/, '');
-  if (kind === 'linkedin') return 'https://' + v.replace(/^\/+/, '');
-  return 'https://' + v;
+  if (kind === 'instagram' && !/^https?:\/\//i.test(v)) v = 'https://instagram.com/' + v.replace(/^@/, '');
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(v)) v = 'https://' + v;
+  try { var u = new URL(v); return ['http:','https:'].indexOf(u.protocol) >= 0 && !u.username && !u.password ? u.href : ''; } catch(e){ return ''; }
 }
 // ── Person page: one human, all their rooms, all your deals with them ──
 var currentPersonId = null;
@@ -2269,7 +2371,7 @@ function openPersonView(pid){
     var rooms = (rs[1].data || []).filter(function(x){ return x.venue; });
     var deals = pipeline.filter(function(pp){ return pp.personId === pid; });
     var icons = ''
-      + (per.email ? '<a class="btn-icon" title="Email" href="mailto:' + esc(per.email) + '"><i class="ti ti-mail"></i></a>' : '')
+      + (per.email ? '<a class="btn-icon" title="Email" href="mailto:' + encodeURIComponent(per.email) + '"><i class="ti ti-mail"></i></a>' : '')
       + (per.phone ? '<a class="btn-icon" title="Call" href="tel:' + esc(per.phone).replace(/[^+0-9]/g,'') + '"><i class="ti ti-phone"></i></a>' : '')
       + (per.linkedin ? '<a class="btn-icon" title="LinkedIn" target="_blank" rel="noopener" href="' + esc(linkUrl(per.linkedin,'linkedin')) + '"><i class="ti ti-brand-linkedin"></i></a>' : '')
       + (per.instagram ? '<a class="btn-icon" title="Instagram" target="_blank" rel="noopener" href="' + esc(linkUrl(per.instagram,'instagram')) + '"><i class="ti ti-brand-instagram"></i></a>' : '');
@@ -2315,7 +2417,7 @@ function ppRoomSearch(pid, q){
   var out = document.getElementById('pp-room-results'); if (!out) return;
   q = (q||'').toLowerCase();
   if (q.length < 2) { out.innerHTML = ''; return; }
-  var hits = venues.filter(function(v){ return (v.name + ' ' + v.city).toLowerCase().indexOf(q) >= 0; }).slice(0, 5);
+  var hits = venues.filter(function(v){ return !v.archived && (v.name + ' ' + v.city).toLowerCase().indexOf(q) >= 0; }).slice(0, 5);
   out.innerHTML = (hits.length ? hits.map(function(v){
     return '<div class="ws-row" onclick="linkRoomToPerson(\'' + pid + '\',\'' + v.id + '\')"><div class="ws-name">' + esc(v.name) + '</div><div class="ws-addr">' + esc(v.city || '') + '</div></div>';
   }).join('') : '')
@@ -2401,9 +2503,9 @@ function contactSection(p, id){
       + '<div style="flex:1;min-width:0"><div class="contact-name" ' + (p.personId ? 'style="cursor:pointer" onclick="openPersonView(\'' + p.personId + '\')"' : '') + '>' + esc(p.contact) + (p.personId ? ' <i class="ti ti-chevron-right" style="font-size:11px;color:var(--text-tertiary)"></i>' : '') + '</div><div class="contact-title">' + esc([p.title, p.org].filter(Boolean).join(' · ')) + '</div>'
       + '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px;overflow-wrap:anywhere">' + esc(p.email || 'no email') + (p.phone ? ' · ' + esc(p.phone) : '') + '</div></div>'
       + '<div class="contact-actions">'
-      + (p.email ? '<a class="btn-icon" title="Email" href="mailto:' + esc(p.email) + '"><i class="ti ti-mail"></i></a>' : '')
+      + (p.email ? '<a class="btn-icon" title="Email" href="mailto:' + encodeURIComponent(p.email) + '"><i class="ti ti-mail"></i></a>' : '')
       + (p.phone ? '<a class="btn-icon" title="Call" href="tel:' + esc(p.phone).replace(/[^+0-9]/g,'') + '" onclick="logCallTap(' + id + ')"><i class="ti ti-phone"></i></a>' : '')
-      + (p.phone ? '<a class="btn-icon" title="Text" href="sms:' + esc(p.phone).replace(/[^+0-9]/g,'') + '" onclick="qlDir[pipeline[' + id + '].uuid]=\'out\';quickLogChannel[pipeline[' + id + '].uuid]=\'💬\';setTimeout(function(){openDetail(' + id + ')},400)"><i class="ti ti-message"></i></a>' : '')
+      + (p.phone ? '<a class="btn-icon" title="Text" href="sms:' + esc(p.phone).replace(/[^+0-9]/g,'') + '" onclick="qlDir[dealFor(' + id + ').uuid]=\'out\';quickLogChannel[dealFor(' + id + ').uuid]=\'💬\';setTimeout(function(){openDetail(' + id + ')},400)"><i class="ti ti-message"></i></a>' : '')
       + (p.linkedin ? '<a class="btn-icon" title="LinkedIn" target="_blank" rel="noopener" href="' + esc(linkUrl(p.linkedin, 'linkedin')) + '"><i class="ti ti-brand-linkedin"></i></a>' : '')
       + (p.instagram ? '<a class="btn-icon" title="Instagram" target="_blank" rel="noopener" href="' + esc(linkUrl(p.instagram, 'instagram')) + '"><i class="ti ti-brand-instagram"></i></a>' : '')
       + '<button class="btn-icon" title="Edit contact" onclick="startContactEdit(' + id + ',\'' + (p.personId||'') + '\')"><i class="ti ti-pencil"></i></button>'
@@ -2433,10 +2535,10 @@ function contactForm(p, id, c){
     + '<div class="save-row"><button class="btn-primary btn-sm" onclick="saveContact(' + id + ',\'' + (c.id||'') + '\')">' + (isNew ? 'Add contact' : 'Save') + '</button>'
     + '<button class="btn-secondary btn-sm" onclick="cancelContactEdit(' + id + ')">Cancel</button></div></div>';
 }
-function startContactEdit(id, cid){ var p = pipeline[id]; contactEditing[p.uuid] = cid || p.personId; openDetail(id); }
-function cancelContactEdit(id){ var p = pipeline[id]; delete contactEditing[p.uuid]; openDetail(id); }
+function startContactEdit(id, cid){ var p = dealFor(id); contactEditing[p.uuid] = cid || p.personId; openDetail(id); }
+function cancelContactEdit(id){ var p = dealFor(id); delete contactEditing[p.uuid]; openDetail(id); }
 function saveContact(id, cid){
-  var p = pipeline[id];
+  var p = dealFor(id);
   var row = {
     name: document.getElementById('cf-name').value.trim(),
     title: document.getElementById('cf-title').value.trim() || null,
@@ -2483,7 +2585,7 @@ function linkPersonToDeal(p, row, done){
   });
 }
 function switchContact(id, cid){
-  var p = pipeline[id];
+  var p = dealFor(id);
   sb.from('pipeline_entries').update({ person_id: cid }).eq('id', p.uuid).then(function(r){
     if (r.error) { showToast('Could not switch: ' + r.error.message, true); return; }
     showToast('Contact switched for this deal'); loadPipeline();
@@ -2499,7 +2601,7 @@ function fetchVenueContacts(p){
 }
 
 function openDetail(id) {
-  var p = pipeline[id];
+  var p = dealFor(id);
   currentDetailUuid = p ? p.uuid : null;
   if (p && !p.contactsAll) fetchVenueContacts(p);
   if (p && p.dealVenues === undefined) { p.dealVenues = []; fetchDealVenues(p); }
@@ -2520,14 +2622,15 @@ function openDetail(id) {
   // What needs you, at the TOP of the hierarchy — obvious, with the action.
   var attnCard = '';
   if (p.bounced) {
+    var bounce = bounceAction(p);
     attnCard = '<div class="attn-card" style="border-color:var(--dead-text)"><i class="ti ti-mail-x" style="color:var(--dead-text)"></i>'
-      + '<div class="grow"><strong>Their email bounced — it never arrived</strong><div class="sub">' + esc(p.email || 'address') + ' doesn\u2019t exist. Fix it, then re-send.</div></div>'
+      + '<div class="grow"><strong>' + esc(bounce.title) + '</strong><div class="sub" style="overflow-wrap:anywhere">' + esc(bounce.sub) + '</div></div>'
       + '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">'
-      + '<button class="btn-primary btn-sm" onclick="startContactEdit(' + id + ',\'' + (p.personId||'') + '\')">Fix address</button>'
+      + '<button class="btn-primary btn-sm" ' + (bounce.disabled ? 'disabled' : 'onclick="' + bounce.fn + '(\'' + p.uuid + '\')"') + '>' + bounce.label + '</button>'
       + '<button class="war-x" onclick="dismissBounce(\'' + p.uuid + '\')" title="I\u2019ve handled this another way">Dismiss</button></div></div>';
   } else if (p.sched && p.sched.status === 'ready') {
     attnCard = '<div class="attn-card" style="border-color:var(--pitched-text)"><i class="ti ti-bell-ringing" style="color:var(--pitched-text)"></i>'
-      + '<div class="grow"><strong>Send awaiting your review</strong><div class="sub">Auto-send is off — review the draft below, then fire</div></div>'
+      + '<div class="grow"><strong>Send awaiting your review</strong><div class="sub">Review the saved recipient and message below</div></div>'
       + '<button class="btn-primary btn-sm" onclick="jumpToDraft(' + id + ')">Review</button></div>';
   } else if (needsReply(p)) {
     attnCard = '<div class="attn-card" style="border-color:var(--talks-text)"><i class="ti ti-mail" style="color:var(--talks-text)"></i>'
@@ -2610,7 +2713,7 @@ function openDetail(id) {
       var meta = '<div class="m-meta">' + (inbound ? '<i class="ti ti-arrow-down-left"></i>' + esc(senderFirst) : 'You<i class="ti ti-arrow-up-right"></i>') + ' · ' + a.time + '</div>';
       return '<div class="msg ' + (inbound ? 'them' : 'you') + (manual ? ' manual' : '') + '">' + tools + chanTag + content + meta + '</div>';
     }
-    return '<div class="sys-line"><span>' + esc(a.text) + '</span><span>· ' + a.time + '</span></div>';
+    return '<div class="sys-line"><span>' + esc(bounceHistoryText(a.text)) + '</span><span>· ' + a.time + '</span></div>';
   }).join('') || '<p style="color:var(--text-secondary);font-size:13px">No conversation yet — emails with ' + esc(first) + ' appear here automatically.</p>') + '</div>';
   var notesHtml = notes.map(function(a){
     if (a.id && notesEditing[a.id]) {
@@ -2626,20 +2729,14 @@ function openDetail(id) {
   // Slice B: schedule the draft. One pending send per entry; the worker fires it
   // (or marks it 'ready' when auto-send is off; reply first = auto-cancel).
   var schedBlock;
-  if (p.sched && p.sched.status === 'scheduled' && p.sched.human) {
-    schedBlock = '<div class="sched-card" style="background:var(--booked-bg)"><i class="ti ti-send" style="color:var(--booked-text)"></i><div class="grow"><strong>Sending now…</strong>'
-      + '<div class="sub">Firing from your Gmail — lands in the conversation in seconds</div></div></div>';
-  } else if (p.sched && p.sched.status === 'scheduled') {
-    schedBlock = '<div class="sched-card"><i class="ti ti-clock-hour-4"></i><div class="grow">Scheduled for <strong>' + fmtWhen(p.sched.send_at) + '</strong>'
-      + '<div class="sub">Sends on its own · cancels itself if ' + esc((p.contact||'').split(' ')[0]) + ' replies first</div></div>'
-      + '<button class="sched-x" onclick="cancelScheduled(' + id + ')">Cancel</button></div>';
-  } else if (p.sched && p.sched.status === 'ready') {
-    schedBlock = '<div class="sched-card" style="background:var(--pitched-bg)"><i class="ti ti-bell-ringing" style="color:var(--pitched-text)"></i><div class="grow"><strong>Ready to send</strong> — auto-send is off'
-      + '<div class="sub">Review the draft, then send it yourself</div></div></div>'
-      + '<div style="display:flex;gap:8px;margin-top:8px">'
-      + '<button class="btn-primary btn-sm" onclick="openScheduledInEmail(' + id + ')"><i class="ti ti-mail"></i> Open in email</button>'
-      + '<button class="btn-secondary btn-sm" onclick="markScheduledSent(' + id + ')">Mark sent</button>'
-      + '<button class="sched-x" onclick="cancelScheduled(' + id + ')">Cancel</button></div>';
+  if (p.sched) {
+    var m=p.sched, state=m.status, editable=['scheduled','ready'].indexOf(state)>=0;
+    var labels={scheduled:m.human?'Queued for Gmail':'Scheduled for '+fmtWhen(m.send_at),ready:'Review before sending',sending:'Sending — waiting for Gmail',uncertain:'Delivery needs verification',failed:'Email was not sent',canceled:'Send canceled'};
+    schedBlock='<div class="sched-card"><div class="grow"><strong>'+esc(labels[state]||state)+'</strong><div class="sub">'+esc(m.cancel_reason|| (state==='scheduled'&&!m.human?'Checks for replies before sending':'Your complete message is saved below.'))+'</div>'
+      + (state==='scheduled' ? '<div class="sub">'+(m.human?'Gmail has not confirmed this send yet.':'')+'</div>':'')+'</div></div>';
+    if(editable) schedBlock+='<div class="tpl-actions">'+(state==='ready'?'<button class="btn-primary btn-sm" onclick="releaseScheduled('+id+')">Send now from Gmail</button><button class="btn-secondary btn-sm" onclick="openScheduledInEmail('+id+')">Open in email</button><button class="btn-secondary btn-sm" onclick="markScheduledSent('+id+')">I sent it manually</button>':'')+'<button class="sched-x" onclick="cancelScheduled('+id+')">Cancel</button></div>';
+    if(state==='failed'||state==='canceled') schedBlock+='<button class="btn-secondary btn-sm" onclick="restoreScheduled('+id+')">Restore to draft</button>';
+    if(state==='uncertain') schedBlock+='<div class="tpl-actions"><a class="btn-secondary btn-sm" href="https://mail.google.com/mail/u/0/#search/'+encodeURIComponent(m.rfc_message_id?'in:sent rfc822msgid:'+m.rfc_message_id:'in:sent to:'+m.to_email)+'" target="_blank" rel="noopener">Check Gmail Sent</a><button class="btn-secondary btn-sm" onclick="resolveDelivery('+id+',true)">I found it in Sent</button><button class="btn-secondary btn-sm" onclick="resolveDelivery('+id+',false)">I verified it was not sent</button></div>';
   } else {
     var next9Label = '9am ' + (new Date().getHours() < 9 ? 'today' : 'tomorrow');
     var chipsDef = [[next9Label,'next9'],['In 3 days',3],['In 7 days',7]];
@@ -2655,7 +2752,7 @@ function openDetail(id) {
       + '<span style="font-size:11px;color:var(--text-tertiary)">cancels if they reply first</span></div>';
   }
 
-  var wonBanner = (p.s==='booked'||p.s==='played'||p.s==='won') ? '<div class="won-banner"><i class="ti ti-' + (p.s==='played'?'music':'trophy') + '"></i><div><div class="won-banner-title">' + (p.s==='played'?'Played':'Booked') + '</div><div class="won-banner-sub">' + p.venue + '</div></div></div>' : '';
+  var wonBanner = (p.s==='booked'||p.s==='played'||p.s==='won') ? '<div class="won-banner"><i class="ti ti-' + (p.s==='played'?'music':'trophy') + '"></i><div><div class="won-banner-title">' + (p.s==='played'?'Played':'Booked') + '</div><div class="won-banner-sub">' + esc(p.venue) + '</div></div></div>' : '';
 
   // Tracker dots ARE the stage control. Passed/Dead are TOGGLES: tap on to
   // close out, tap the lit one again to restore the deal where it was.
@@ -2675,24 +2772,24 @@ function openDetail(id) {
   // Once a send is scheduled the draft LOCKS: you see exactly what will go out
   // (read-only), with an explicit Edit step. The editor only shows pre-schedule.
   var tplSection = '';
-  if (p.s!=='passed' && p.s!=='dead') {
+  if ((p.s!=='passed' && p.s!=='dead') || p.sched) {
     if (p.sched) {
       var draftBlock;
-      if (schedEditing[id]) {
-        draftBlock = '<input class="pipe-search" id="sched-subj-' + id + '" placeholder="Subject" autocomplete="off" value="' + esc(p.sched.subject || '') + '" style="margin:0 0 8px" title="Email subject line">'
+      if (schedEditing[id] && ['scheduled','ready'].indexOf(p.sched.status)>=0) {
+        draftBlock = '<div style="margin-bottom:8px">To: '+esc(p.email)+' (saving confirms this recipient)</div><input class="pipe-search" id="sched-subj-' + id + '" placeholder="Subject" autocomplete="off" value="' + esc(p.sched.subject || '') + '" style="margin:0 0 8px" title="Email subject line">'
           + '<textarea class="tpl-body" id="sched-edit-' + id + '" spellcheck="false">' + esc(p.sched.body) + '</textarea>'
           + '<div class="tpl-actions">'
           + '<button class="btn-primary btn-sm" onclick="saveSchedEdit(' + id + ')"><i class="ti ti-check"></i> Save draft</button>'
-          + '<button class="btn-secondary btn-sm" onclick="openLinkBar(\'sched-edit-' + id + '\')" title="Turn the selected words into a clickable link"><i class="ti ti-link"></i> Link</button>'
+        + '<button class="btn-secondary btn-sm" onclick="openLinkBar(\'sched-edit-' + id + '\')" title="Turn the selected words into a clickable link"><i class="ti ti-link"></i> Link</button>'
           + '<button class="btn-secondary btn-sm" onclick="cancelSchedEdit(' + id + ')">Discard changes</button></div>'
           + '<div id="lb-sched-edit-' + id + '" style="display:none;gap:8px;margin-top:8px"><input class="pipe-search" id="lb-url-sched-edit-' + id + '" placeholder="https://… (select words first — they become the link)" autocomplete="off" style="margin:0;flex:1" onkeydown="linkBarKey(event,\'sched-edit-' + id + '\')"><button class="btn-primary btn-sm" onclick="insertLink(\'sched-edit-' + id + '\')">Insert</button></div>';
       } else {
-        draftBlock = '<div class="locked-head"><i class="ti ti-lock"></i> ' + (p.sched.status==='ready' ? 'Awaiting your review' : 'Locked — sends exactly as written') + '</div>'
+        draftBlock = '<div style="margin-bottom:8px">To: '+esc(p.sched.to_email)+(normalizedEmail(p.sched.to_email)!==normalizedEmail(p.email)?'<div style="color:var(--dead-text)">Contact changed to '+esc(p.email)+'. Edit this draft to confirm the new recipient.</div>':'')+'</div><div class="locked-head"><i class="ti ti-lock"></i> ' + (['scheduled','ready'].indexOf(p.sched.status)>=0 ? 'Saved message — edit before sending' : 'Saved message') + '</div>'
           + (p.sched.subject ? '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px"><span style="color:var(--text-tertiary)">Subject:</span> ' + esc(p.sched.subject) + '</div>' : '')
           + '<div class="locked-body">' + mdRich(p.sched.body) + '</div>'
-          + '<div class="tpl-actions"><button class="btn-secondary btn-sm" onclick="editSched(' + id + ')"><i class="ti ti-pencil"></i> Edit draft</button></div>';
+          + (['scheduled','ready'].indexOf(p.sched.status)>=0 ? '<div class="tpl-actions"><button class="btn-secondary btn-sm" onclick="editSched(' + id + ')"><i class="ti ti-pencil"></i> Edit draft / recipient</button></div>':'');
       }
-      tplSection = '<div class="section-label" style="margin-top:4px">Scheduled draft</div>'
+      tplSection = '<div class="section-label" style="margin-top:4px">Outbox</div>'
         + '<div class="card" style="margin-bottom:12px">' + draftBlock
         + '<div style="border-top:0.5px solid var(--border-light);padding-top:12px;margin-top:12px">' + schedBlock + '</div></div>';
     } else {
@@ -2703,7 +2800,9 @@ function openDetail(id) {
       var ph = FLAGS.staticTemplates
         ? 'Write your message here, or select a template from the dropdown above.\n\n✨ Draft with AI writes it in your voice — try it out!'
         : 'Write your message here…\n\n✨ Draft with AI writes it in your voice — it knows this venue, this contact, and the conversation.';
-      tplSection = '<div class="section-label" style="margin-top:4px">Draft outreach</div>'
+      tplSection = (drafts && drafts.get(p.uuid).conflict ? '<div class="card">A draft changed in another browser. Your local text is preserved. <button class="btn-secondary btn-sm" onclick="resolveDraft(\''+p.uuid+'\',false)">Load cloud draft</button> <button class="btn-secondary btn-sm" onclick="resolveDraft(\''+p.uuid+'\',true)">Keep my draft</button></div>' : '')
+        + (pendingAI[p.uuid] !== undefined ? '<div class="card"><details><summary>AI suggestion — your edits are preserved</summary><div class="locked-body">'+mdRich(pendingAI[p.uuid])+'</div><button class="btn-secondary btn-sm" onclick="usePendingAI(\''+p.uuid+'\')">Use this suggestion</button></details></div>' : '')
+        + '<div class="section-label" style="margin-top:4px">Draft outreach</div>'
         + '<div class="card" style="margin-bottom:12px">'
         + (FLAGS.staticTemplates
           ? '<select class="pipe-sort" style="margin-bottom:10px" onchange="switchTpl(' + id + ',this.value)" title="Load a template">'
@@ -2711,15 +2810,16 @@ function openDetail(id) {
             + tplKeys.map(function(k,i){ return '<option value="' + k + '"' + (activeTpl[id]===k?' selected':'') + '>' + tplLabels[i] + '</option>'; }).join('')
             + '</select>'
           : '')
-        + (p.email ? '<input class="pipe-search" id="tpl-subj-' + id + '" placeholder="Subject" autocomplete="off" value="' + esc(subjVal) + '" oninput="draftSubject[\'' + p.uuid + '\']=this.value" style="margin:0 0 8px" title="Email subject line">' : '')
-        + '<input class="pipe-search" id="tpl-angle-' + id + '" placeholder="🎯 Angle (optional) — what do you want this message to do?" autocomplete="off" value="' + esc(draftAngle[p.uuid] || '') + '" oninput="draftAngle[\'' + p.uuid + '\']=this.value" style="margin:0 0 8px;font-size:12.5px" title="Direction for the AI — the ask, the referral, the specific play for this message. Weighted above everything else: your voice, the conversation, the venue.">'
-        + '<textarea class="tpl-body" id="tpl-body-' + id + '" spellcheck="false" placeholder="' + esc(ph) + '" oninput="draftText[\'' + p.uuid + '\']=this.value">' + esc(draftVal) + '</textarea>'
+        + (p.email ? '<div style="font-size:12px;margin-bottom:8px">To: '+esc(p.email)+'</div><input class="pipe-search" id="tpl-subj-' + id + '" placeholder="Subject" autocomplete="off" value="' + esc(subjVal) + '" oninput="updateDraft(\'' + p.uuid + '\',\'subject\',this.value)" style="margin:0 0 8px" title="Email subject line">' : '')
+        + '<input class="pipe-search" id="tpl-angle-' + id + '" placeholder="🎯 Angle (optional) — what do you want this message to do?" autocomplete="off" value="' + esc(draftAngle[p.uuid] || '') + '" oninput="updateDraft(\'' + p.uuid + '\',\'angle\',this.value)" style="margin:0 0 8px;font-size:12.5px" title="Direction for the AI — the ask, the referral, the specific play for this message. Weighted above everything else: your voice, the conversation, the venue.">'
+        + '<textarea class="tpl-body" id="tpl-body-' + id + '" data-recipient="'+esc(p.email||'')+'" spellcheck="false" placeholder="' + esc(ph) + '" oninput="updateDraft(\'' + p.uuid + '\',\'body\',this.value)">' + esc(draftVal) + '</textarea>'
         + (draftAI[p.uuid] ? '<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px"><i class="ti ti-school" style="margin-right:4px"></i>Edit freely — the AI compares what it wrote with what you send, and learns your voice from the difference.</div>' : '')
         + '<div class="tpl-actions">'
         + (p.email ? '<button class="btn-primary btn-sm" onclick="sendNowInline(' + id + ')"><i class="ti ti-send"></i> Send now</button>' : '')
         + (p.phone ? '<button class="btn-' + (p.email ? 'secondary' : 'primary') + ' btn-sm" onclick="textDraft(' + id + ')"><i class="ti ti-message"></i> Text it</button>' : '')
         + (p.instagram ? '<button class="btn-' + (p.email || p.phone ? 'secondary' : 'primary') + ' btn-sm" onclick="igDraft(' + id + ')"><i class="ti ti-brand-instagram"></i> DM it</button>' : '')
         + (p.form ? '<button class="btn-' + (p.email || p.phone || p.instagram ? 'secondary' : 'primary') + ' btn-sm" onclick="openBookingForm(' + id + ')"><i class="ti ti-external-link"></i> Open form</button>' : '')
+        + (openedForms[p.uuid] ? '<button class="btn-secondary btn-sm" onclick="confirmBookingForm(' + id + ')">I submitted the form</button>' : '')
         + '<button class="btn-secondary btn-sm" onclick="openLinkBar(\'tpl-body-' + id + '\')" title="Turn the selected words into a clickable link"><i class="ti ti-link"></i> Link</button>'
         + '<button class="btn-secondary btn-sm" onclick="copyTpl(' + id + ')"><i class="ti ti-copy"></i> Copy</button>'
         + '<button class="btn-secondary btn-sm" onclick="aiDraft(' + id + ')"><i class="ti ti-sparkles"></i> ' + (activeTpl[id] ? 'Enhance with AI' : 'Draft with AI') + '</button>'
@@ -2738,7 +2838,7 @@ function openDetail(id) {
     '<button class="back-btn" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>'
     + '<div class="detail-cols"><div>'
     + '<div class="detail-header"><div class="detail-icon"><i class="ti ' + venueIcon(p.vtype) + '"></i></div>'
-    + '<div style="min-width:0"><div class="detail-venue"' + (p.venueId ? ' style="cursor:pointer" onclick="openVenueDetail(\'' + p.venueId + '\')" title="Open this room’s collective page"' : '') + '>' + p.venue + '</div><div class="detail-meta">' + p.vtype + ' · ' + p.city + ', ' + p.state + ' · ' + p.pay + '</div>'
+    + '<div style="min-width:0"><div class="detail-venue"' + (p.venueId ? ' style="cursor:pointer" onclick="openVenueDetail(\'' + p.venueId + '\')" title="Open this room’s collective page"' : '') + '>' + esc(p.venue) + '</div><div class="detail-meta">' + esc(p.vtype) + ' · ' + esc(p.city) + ', ' + esc(p.state) + ' · ' + esc(p.pay) + '</div>'
     + '<span class="badge badge-' + p.s + '" style="margin-top:6px">' + statusLabel[p.s] + '</span></div>'
     + dealType + '</div>'
     + (stageIdx>=0 ? '<div class="stage-track" style="margin-bottom:20px">' + stageDots + '</div>' : '')
@@ -2750,7 +2850,7 @@ function openDetail(id) {
         ? '<button class="vchip done" onclick="openVenueDetail(\'' + p.venueId + '\')" title="Open this room’s collective page — intel, wins, quick edits">' + esc(p.venue) + ' <i class="ti ti-arrow-up-right"></i></button>'
         : '<span class="vchip done" style="cursor:default">' + esc(p.venue) + '</span>')
     + (p.dealVenues || []).map(function(dv){ return '<span class="vchip" style="cursor:default">' + esc(dv.name)
-        + ' <i class="ti ti-star" title="Make primary — the deal moves here, history intact" style="cursor:pointer" onclick="promoteDealVenue(' + id + ',\'' + dv.id + '\',\'' + esc(dv.name) + '\')"></i>'
+        + ' <i class="ti ti-star" title="Make primary — the deal moves here, history intact" style="cursor:pointer" onclick="promoteDealVenue(' + id + ',\'' + dv.id + '\')"></i>'
         + ' <i class="ti ti-x" title="Drop from the set" style="cursor:pointer" onclick="removeDealVenue(' + id + ',\'' + dv.id + '\')"></i></span>'; }).join('')
     + '<button class="vchip" onclick="toggleAddRoom(' + id + ')" title="Add a room to this opportunity"><i class="ti ti-plus"></i></button>'
     + '</div>'
@@ -2802,6 +2902,33 @@ var draftText = {}; // per-entry draft (keyed by uuid) — survives re-renders
 var draftAI = {};   // last AI generation per entry — diffed against what you send
 var draftSubject = {}; // per-entry subject (keyed by uuid) — same lifecycle as draftText
 
+var draftLoadSeq=0;
+var drafts, draftTimers = {}, sendingDraft = {}, aiRequests = {}, pendingAI = {};
+function initDrafts(){
+  drafts = createDraftStore({storage:localStorage,key:'gig-drafts:'+ME,id:function(){return crypto.randomUUID();},
+    save:async function(uuid,r){var x=await sb.rpc('save_message_draft',{p_entry:uuid,p_request:r.request_id,p_version:r.version,p_body:r.body,p_subject:r.subject,p_angle:r.angle,p_ai:r.ai_draft});if(x.error)throw x.error;return x.data;},
+    onError:function(){showToast('Browser could not save a recovery copy. Keep this tab open until the draft is saved.',true);}});
+  syncDraftObjects();
+}
+function syncDraftObjects(){
+  draftText={};draftSubject={};draftAngle={};draftAI={};
+  Object.keys(drafts.all()).forEach(function(uuid){var r=drafts.get(uuid);draftText[uuid]=r.body;draftSubject[uuid]=r.subject;draftAngle[uuid]=r.angle;draftAI[uuid]=r.ai_draft;});
+}
+function updateDraft(uuid,field,value){
+  var patch={};patch[field]=value;drafts.update(uuid,patch);syncDraftObjects();
+  clearTimeout(draftTimers[uuid]);draftTimers[uuid]=setTimeout(function(){drafts.flush(uuid).catch(function(e){showToast('Draft kept on this device: '+e.message,true);loadDrafts();});},700);
+}
+async function loadDrafts(){
+  var seq=++draftLoadSeq;
+  var r=await sb.from('message_drafts').select('*');
+  if(seq!==draftLoadSeq)return;
+  if(r.error){showToast('Cloud drafts unavailable; local copies are retained',true);return;}
+  drafts.merge(r.data||[]);syncDraftObjects();rerenderOpenDetail();
+  Object.keys(drafts.all()).forEach(function(uuid){var d=drafts.get(uuid);if(d.dirty&&!d.conflict&&!sendingDraft[uuid])drafts.flush(uuid).catch(function(e){showToast('Local draft retained: '+e.message,true);});});
+}
+function resolveDraft(uuid,keep){drafts.resolve(uuid,keep);syncDraftObjects();if(keep)drafts.flush(uuid).catch(function(e){showToast(e.message,true);});rerenderOpenDetail();}
+function usePendingAI(uuid){var text=pendingAI[uuid];if(text===undefined)return;updateDraft(uuid,'ai_draft',text);updateDraft(uuid,'body',text);delete pendingAI[uuid];rerenderOpenDetail();}
+
 // ── Links in drafts: [text](url) — the one markdown-ism drafts understand ──
 // The worker renders it as a real <a> in the email's HTML part; every
 // plain-text exit (SMS, copy, mailto) degrades it to "text (url)".
@@ -2836,11 +2963,11 @@ function insertLink(taId){
   showToast('Link in — sends as clickable text');
 }
 function switchTpl(id, key) {
-  var p = pipeline[id];
+  var p = dealFor(id);
   if (!key) { activeTpl[id] = null; openDetail(id); return; }
   activeTpl[id] = key;
   var text = templates[key](p);
-  draftText[p.uuid] = text;
+  updateDraft(p.uuid, 'body', text);
   openDetail(id); // refresh: editor text + the Draft/Enhance button label
 }
 function stageIntent(p){
@@ -2863,7 +2990,7 @@ function draftSubjectFor(p){ // your subject if you wrote one; blank falls back 
 // ── Slice C: AI drafting (Gemini lives in the worker; the key never reaches the browser) ──
 var WORKER_URL = 'https://gig-worker-production.up.railway.app';
 function aiDraft(id, channel) {
-  var p = pipeline[id];
+  var p = dealFor(id), revision=drafts.get(p.uuid).revision, request=(aiRequests[p.uuid]||0)+1; aiRequests[p.uuid]=request;
   showToast('Drafting with AI…');
   sb.auth.getSession().then(function(s){
     var tok = s.data && s.data.session && s.data.session.access_token;
@@ -2882,8 +3009,9 @@ function aiDraft(id, channel) {
     }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
       .then(function(x){
         if (!x.ok) { showToast(x.j.error || 'AI draft failed', true); return; }
-        draftText[p.uuid] = x.j.draft || '';
-        draftAI[p.uuid] = x.j.draft || '';
+        if(aiRequests[p.uuid]!==request)return;
+        if(drafts.get(p.uuid).revision!==revision){pendingAI[p.uuid]=x.j.draft||'';showToast('Your edits are safe. The AI suggestion is ready to review.');rerenderOpenDetail();return;}
+        updateDraft(p.uuid,'ai_draft',x.j.draft||'');updateDraft(p.uuid,'body',x.j.draft||'');
         var ta = document.getElementById('tpl-body-' + id);
         if (ta) { ta.value = draftText[p.uuid]; showToast(channel === 'dm' ? 'DM draft ready — tap DM it to copy & open Instagram' : 'Draft ready — make it yours before sending'); }
       })
@@ -2891,22 +3019,28 @@ function aiDraft(id, channel) {
   });
 }
 function emailTpl(id) {
-  var p = pipeline[id];
+  var p = dealFor(id);
   var body = mdStrip(document.getElementById('tpl-body-' + id).value);
-  window.open('mailto:' + p.email + '?subject=' + encodeURIComponent(draftSubjectFor(p)) + '&body=' + encodeURIComponent(body));
+  window.open('mailto:' + encodeURIComponent(p.email) + '?subject=' + encodeURIComponent(draftSubjectFor(p)) + '&body=' + encodeURIComponent(body));
 }
 
-// Form-gate venues: draft → copy → GO. Opening the form logs the pitch.
+var openedForms = {};
 function openBookingForm(id){
-  var p = pipeline[id];
-  if (!p.form) return;
-  window.open(linkUrl(p.form), '_blank', 'noopener');
-  sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: 'email_out', body: 'Submitted via booking form: ' + p.form, source: 'manual' }).then(function(r){
-    if (r.error) return;
-    var patch = { last_activity_at: new Date().toISOString() };
-    if (p.s === 'lead') { patch.status = 'pitched'; p.s = 'pitched'; }
-    sb.from('pipeline_entries').update(patch).eq('id', p.uuid).then(function(){ loadPipeline(); });
-    showToast('Form opened — logged as your pitch');
+  var p = dealFor(id), url = linkUrl(p.form);
+  if (!url) { showToast('This booking form URL is invalid', true); return; }
+  window.open(url, '_blank', 'noopener');
+  openedForms[p.uuid] = true;
+  showToast('Form opened. After submitting, tap “I submitted the form”.');
+  openDetail(id);
+}
+function confirmBookingForm(id){
+  var p = dealFor(id);
+  sb.from('activities').insert({pipeline_entry_id:p.uuid,kind:'email_out',body:'Submitted via booking form: '+p.form,source:'manual'}).then(function(r){
+    if(r.error){showToast('Could not record submission: '+r.error.message,true);return;}
+    delete openedForms[p.uuid];
+    var patch={last_activity_at:new Date().toISOString()}; if(p.s==='lead')patch.status='pitched';
+    sb.from('pipeline_entries').update(patch).eq('id',p.uuid).then(function(){loadPipeline();});
+    showToast('Submission recorded');
   });
 }
 
@@ -2919,7 +3053,7 @@ function venueSearch(q){
   // The collective answers FIRST — if a member already worked this room, you
   // get their record (booker included) instead of creating a duplicate.
   var qn = q.trim().toLowerCase();
-  var known = venues.filter(function(v){ return (v.name||'').toLowerCase().indexOf(qn) >= 0; }).slice(0, 4);
+  var known = venues.filter(function(v){ return !v.archived && (v.name||'').toLowerCase().indexOf(qn) >= 0; }).slice(0, 4);
   wsCollective = known;
   var knownHtml = known.length
     ? '<div style="font-size:10px;font-weight:600;color:var(--booked-text);text-transform:uppercase;letter-spacing:.05em;padding:6px 2px 2px">Already in the collective</div>'
@@ -3027,7 +3161,7 @@ function pickVenueResult(i){
 
 // ── Off-grid channels: text the draft, log exchanges by hand — same engine ──
 function textDraft(id){
-  var p = pipeline[id];
+  var p = dealFor(id);
   var body = mdStrip((draftText[p.uuid] !== undefined ? draftText[p.uuid] : (document.getElementById('tpl-body-' + id) || {value:''}).value).trim());
   var digits = (p.phone || '').replace(/[^+0-9]/g, '');
   if (!digits) { showToast('No phone on this contact', true); return; }
@@ -3040,7 +3174,7 @@ function textDraft(id){
 // inside a 24h window), so the flow is assisted: short AI draft → clipboard →
 // straight into their DM thread. First tap on an empty box writes the DM.
 function igDraft(id){
-  var p = pipeline[id];
+  var p = dealFor(id);
   var handle = (p.instagram || '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/^@/, '').replace(/\/.*$/, '');
   if (!handle) { showToast('No Instagram on this contact', true); return; }
   var body = mdStrip((draftText[p.uuid] !== undefined ? draftText[p.uuid] : (document.getElementById('tpl-body-' + id) || {value:''}).value).trim());
@@ -3069,28 +3203,28 @@ function qlogPlaceholder(p){
   return dirIn ? ('What did ' + first + ' say?') : 'What did you send?';
 }
 function setQlDir(id, dir, btn){
-  var p = pipeline[id]; qlDir[p.uuid] = dir;
+  var p = dealFor(id); qlDir[p.uuid] = dir;
   btn.parentNode.querySelectorAll('.cc-opt').forEach(function(x){ x.classList.remove('on'); });
   btn.classList.add('on');
   var inp = document.getElementById('qlog-in-' + id);
   if (inp) inp.placeholder = qlogPlaceholder(p);
 }
 function setQlChan(id, ch, btn){
-  var p = pipeline[id]; quickLogChannel[p.uuid] = ch;
+  var p = dealFor(id); quickLogChannel[p.uuid] = ch;
   btn.parentNode.querySelectorAll('.cc-ch').forEach(function(x){ x.classList.remove('on'); });
   btn.classList.add('on');
   var inp = document.getElementById('qlog-in-' + id);
   if (inp) inp.placeholder = qlogPlaceholder(p);
 }
 function toggleCompose(id){
-  var p = pipeline[id];
+  var p = dealFor(id);
   composeOpen[p.uuid] = !composeOpen[p.uuid];
   openDetail(id);
   if (composeOpen[p.uuid]) { var inp = document.getElementById('qlog-in-' + id); if (inp) inp.focus(); }
 }
 var quickLogChannel = {};
 function setReminder(id){
-  var p = pipeline[id];
+  var p = dealFor(id);
   var at = (document.getElementById('rem-at-' + id) || {value:''}).value;
   var note = (document.getElementById('rem-note-' + id) || {value:''}).value.trim();
   if (!at) { showToast('Pick when to be reminded', true); return; }
@@ -3104,7 +3238,7 @@ function setReminder(id){
   });
 }
 function clearReminder(id){
-  var p = pipeline[id];
+  var p = dealFor(id);
   sb.from('pipeline_entries').update({ reminder_at: null, reminder_note: null }).eq('id', p.uuid).then(function(r){
     if (r.error) { showToast('Could not clear: ' + r.error.message, true); return; }
     p.reminderAt = null; p.reminderNote = '';
@@ -3114,10 +3248,10 @@ function clearReminder(id){
   });
 }
 function wrClearReminder(uuid){
-  for (var i = 0; i < pipeline.length; i++) if (pipeline[i].uuid === uuid) { clearReminder(i); return; }
+  for (var i = 0; i < pipeline.length; i++) if (pipeline[i].uuid === uuid) { clearReminder(pipeline[i].id); return; }
 }
 function logCallTap(id){
-  var p = pipeline[id];
+  var p = dealFor(id);
   sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: 'call', body: 'Called ' + ((p.contact||'').split(' ')[0] || 'contact'), source: 'manual' }).then(function(r){
     if (!r.error) sb.from('pipeline_entries').update({ last_activity_at: new Date().toISOString() }).eq('id', p.uuid).then(function(){ loadPipeline(); });
   });
@@ -3126,16 +3260,17 @@ function logCallTap(id){
   setTimeout(function(){ if (currentScreen==='detail' && currentDetailUuid===p.uuid) openDetail(id); }, 600);
 }
 function saveQuickLog(e, id){
-  var p = pipeline[id];
+  var p = dealFor(id);
   if (e.key === 'Escape') { e.target.value = ''; return; }
   if (e.key !== 'Enter' || !e.target.value.trim()) return;
   var dir = qlDir[p.uuid] || 'out';
   var body = (quickLogChannel[p.uuid] || '💬') + ' ' + e.target.value.trim();
-  e.target.value = '';
-  composeOpen[p.uuid] = false;
+  var input = e.target, originalValue = input.value;
   var kind = dir === 'out' ? 'email_out' : 'email_in'; // same engine: bubbles, AI context, needs-you
   sb.from('activities').insert({ pipeline_entry_id: p.uuid, kind: kind, body: body, source: 'manual' }).then(function(r){
     if (r.error) { showToast('Could not log: ' + r.error.message, true); return; }
+    if (input.value === originalValue) input.value = '';
+    composeOpen[p.uuid] = false;
     // Mirror the worker's stage rules for hand-logged exchanges.
     var patch = { last_activity_at: new Date().toISOString() };
     if (dir === 'out' && (p.s === 'lead')) { patch.status = 'pitched'; p.s = 'pitched'; }
@@ -3148,17 +3283,17 @@ function saveQuickLog(e, id){
 // ── Slice B: schedule the draft ──
 var sendChipDays = {};
 var schedEditing = {};
-function editSched(id){ schedEditing[id] = true; openDetail(id); }
+function editSched(id){ var m=dealFor(id).sched;if(!m||['scheduled','ready'].indexOf(m.status)<0)return;schedEditing[id] = m.updated_at; openDetail(id); }
 function cancelSchedEdit(id){ delete schedEditing[id]; openDetail(id); }
 function saveSchedEdit(id){
-  var p = pipeline[id]; if(!p.sched) return;
+  var p = dealFor(id); if(!p.sched) return;
   var body = document.getElementById('sched-edit-' + id).value.trim();
   if(!body){ showToast('Draft is empty', true); return; }
   var si = document.getElementById('sched-subj-' + id);
   var subject = (si && si.value.trim()) || defaultSubject();
-  sb.from('scheduled_messages').update({ body: body, subject: subject }).eq('id', p.sched.id).then(function(r){
+  sb.rpc('edit_queued_message',{p_id:p.sched.id,p_version:schedEditing[id],p_body:body,p_subject:subject,p_to:p.email}).then(function(r){
     if(r.error){ showToast('Could not save: ' + r.error.message, true); return; }
-    p.sched.body = body; p.sched.subject = subject; delete schedEditing[id]; openDetail(id); showToast('Draft updated');
+    p.sched = r.data; delete schedEditing[id]; openDetail(id); showToast('Draft updated');
   });
 }
 function pickSendChip(id, val) {
@@ -3181,12 +3316,14 @@ function fmtWhen(ts){
   return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}) + ', ' + d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
 }
 function autoSendOn(){ return !!profile.allow_auto_send; }
-function scheduleSend(id) {
-  var p = pipeline[id];
+async function scheduleSend(id) {
+  var p = dealFor(id);
+  if(sendingDraft[p.uuid])return;
   var sel = sendChipDays[id];
   if (sel === undefined) { showToast('Pick when it should send first', true); return; }
   if (!p.email) { showToast('This contact has no email', true); return; }
   var ta = document.getElementById('tpl-body-' + id);
+  if(ta && normalizedEmail(ta.dataset.recipient)!==normalizedEmail(p.email)){showToast('The contact changed. Review the current recipient before sending.',true);openDetail(id);return;}
   var body = (draftText[p.uuid] !== undefined ? draftText[p.uuid] : (ta ? ta.value : '')).trim();
   if (!body) { showToast('Draft is empty', true); return; }
   var at, now = sel === 'now';
@@ -3201,23 +3338,26 @@ function scheduleSend(id) {
     if (at.getHours() >= 9) at.setDate(at.getDate() + 1); // past 9am -> tomorrow; after midnight -> TODAY 9am
     at.setHours(9, 0, 0, 0);
   } else { at = new Date(); at.setDate(at.getDate() + sel); at.setHours(9, 0, 0, 0); }
-  // Edited an AI draft? That diff IS the training signal — say so (education).
-  var trained = !!(draftAI[p.uuid] && body !== draftAI[p.uuid].trim());
-  sb.from('scheduled_messages').insert({
-    artist_id: ME, pipeline_entry_id: p.uuid, to_email: p.email,
-    subject: draftSubjectFor(p), body: body, send_at: at.toISOString(), human: now, ai_draft: draftAI[p.uuid] || null
-  }).select().single().then(function(r){
-    if (r.error) { showToast('Could not schedule: ' + r.error.message, true); return; }
-    p.sched = r.data;
-    delete draftText[p.uuid]; // committed — the scheduled body is the truth now
-    delete draftSubject[p.uuid];
-    delete draftAngle[p.uuid]; // the angle was for THIS message
-    delete draftAI[p.uuid];
-    openDetail(id);
-    if (now) { showToast(trained ? 'Sending — and your edits just taught the AI your voice ✍️' : 'Sending!'); pokeWorker(); }
-    else showToast(trained ? 'Scheduled for ' + fmtWhen(at.toISOString()) + ' — your edits teach the AI ✍️' : 'Scheduled for ' + fmtWhen(at.toISOString()));
-  });
+  sendingDraft[p.uuid]=true;
+  try {
+    clearTimeout(draftTimers[p.uuid]);
+    var r0=drafts.get(p.uuid);
+    // A lost queue response must reuse the same request, even after a reload.
+    var previous=await sb.from('scheduled_messages').select('*').eq('id',r0.request_id).maybeSingle();
+    if(previous.error)throw previous.error;
+    if(previous.data){if(r0.body===previous.data.body&&r0.subject===previous.data.subject)drafts.queued(p.uuid,r0.revision);else drafts.fresh(p.uuid,{body:r0.body,subject:r0.subject,angle:r0.angle,ai_draft:r0.ai_draft});syncDraftObjects();p.sched=previous.data;showToast('This message is already saved in the outbox. Review its status.');loadPipeline();return;}
+    if(r0.body!==body)updateDraft(p.uuid,'body',body);
+    if(r0.subject!==draftSubjectFor(p))updateDraft(p.uuid,'subject',draftSubjectFor(p));
+    var snapshot=await drafts.flush(p.uuid);
+    var r=await sb.rpc('queue_message',{p_id:snapshot.request_id,p_entry:p.uuid,p_to:p.email,p_subject:snapshot.subject,p_body:snapshot.body,p_at:at.toISOString(),p_human:now,p_ai:snapshot.ai_draft,p_draft_version:snapshot.version});
+    if(r.error)throw r.error;
+    drafts.queued(p.uuid,snapshot.revision);syncDraftObjects();p.sched=r.data;
+    openDetail(id);showToast(now?'Queued for Gmail — awaiting confirmation':'Scheduled for '+fmtWhen(at.toISOString()));
+    if(now)pokeWorker();
+  }catch(e){showToast('Draft retained. Could not queue: '+e.message,true);loadDrafts();}
+  finally{delete sendingDraft[p.uuid];}
 }
+
 function sendNowInline(id){ sendChipDays[id] = 'now'; scheduleSend(id); delete sendChipDays[id]; }
 // "Send now" shouldn't wait for the worker's next cycle — poke it.
 function pokeWorker(){
@@ -3228,25 +3368,27 @@ function pokeWorker(){
     poke().catch(function(){ setTimeout(function(){ poke().catch(function(){}); }, 5000); });
   });
 }
-function cancelScheduled(id) {
-  var p = pipeline[id]; if (!p.sched) return;
-  sb.from('scheduled_messages').update({ status:'canceled', cancel_reason:'Canceled by you' }).eq('id', p.sched.id).then(function(r){
-    if (r.error) { showToast('Could not cancel: ' + r.error.message, true); return; }
-    p.sched = null; openDetail(id); showToast('Send canceled');
-  });
+async function changeQueued(id,rpc,extra){
+  var p=dealFor(id);if(!p.sched)return;
+  var r=await sb.rpc(rpc,Object.assign({p_id:p.sched.id,p_version:p.sched.updated_at},extra||{}));
+  if(r.error){showToast(r.error.message,true);loadPipeline();return;}
+  p.sched=r.data;openDetail(id);loadPipeline();return r.data;
 }
-function openScheduledInEmail(id) {
-  var p = pipeline[id]; if (!p.sched) return;
-  window.open('mailto:' + p.sched.to_email + '?subject=' + encodeURIComponent(p.sched.subject) + '&body=' + encodeURIComponent(mdStrip(p.sched.body)));
+function cancelScheduled(id){return changeQueued(id,'cancel_queued_message').then(function(m){if(m)showToast('Send canceled — message preserved');});}
+function releaseScheduled(id){return changeQueued(id,'release_queued_message').then(function(m){if(m){showToast('Queued for Gmail');pokeWorker();}});}
+function openScheduledInEmail(id){var p=dealFor(id);if(!p.sched)return;window.open('mailto:'+encodeURIComponent(p.sched.to_email)+'?subject='+encodeURIComponent(p.sched.subject)+'&body='+encodeURIComponent(mdStrip(p.sched.body)));}
+function markScheduledSent(id){return changeQueued(id,'confirm_manual_message').then(function(m){if(m)showToast('Manual send recorded');});}
+function resolveDelivery(id,sent){
+  if(!window.confirm(sent?'Confirm you found this exact email in Gmail Sent?':'Confirm you checked Gmail Sent and the recipient, and verified this email was NOT sent? This allows a new draft.'))return;
+  return changeQueued(id,'resolve_message_delivery',{p_sent:sent});
 }
-function markScheduledSent(id) {
-  var p = pipeline[id]; if (!p.sched) return;
-  var subj = p.sched.subject;
-  sb.from('scheduled_messages').update({ status:'sent', sent_at:new Date().toISOString() }).eq('id', p.sched.id).then(function(r){
-    if (r.error) { showToast('Could not update: ' + r.error.message, true); return; }
-    sb.from('activities').insert({ pipeline_entry_id:p.uuid, kind:'email_out', body:'Sent: ' + subj, source:'manual' }).then(function(){ loadPipeline(); });
-    p.sched = null; openDetail(id); showToast('Marked sent');
-  });
+var restoredMessages={};
+function restoreScheduled(id){
+  var p=dealFor(id),m=p.sched;if(!m||['failed','canceled'].indexOf(m.status)<0)return;
+  if((draftText[p.uuid]||'').trim() && !window.confirm('Replace your current draft with this saved message?'))return;
+  if(drafts.get(p.uuid).request_id===m.id)drafts.fresh(p.uuid,{});
+  updateDraft(p.uuid,'body',m.body);updateDraft(p.uuid,'subject',m.subject);updateDraft(p.uuid,'ai_draft',m.ai_draft);
+  restoredMessages[m.id]=true;p.sched=null;openDetail(id);
 }
 function legacySelectFollowup(id, val) {
   selectedFollowup[id] = val;
@@ -3258,7 +3400,7 @@ function toLocalDT(ts){
     + 'T' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
 }
 function saveGigDate(id){
-  var p = pipeline[id];
+  var p = dealFor(id);
   var di = document.getElementById('gig-date-' + id), ti = document.getElementById('gig-time-' + id);
   var val = (di && di.value) ? new Date(di.value + 'T' + ((ti && ti.value) || '20:00')).toISOString() : null;
   if (val && p.gig_date && new Date(val).getTime() === new Date(p.gig_date).getTime()) {
@@ -3333,7 +3475,7 @@ function openEventView(uuid){
   var gd = p.gig_date ? toLocalDT(p.gig_date) : '';
   var html = '<button class="back-btn" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>'
     + '<div class="page-title" style="margin-bottom:2px">' + (p.s==='hold' ? 'HOLD: ' : 'Gig: ') + esc(p.venue) + '</div>'
-    + '<div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:16px">' + esc(p.city) + (p.state ? ', ' + esc(p.state) : '') + ' · booking@ calendar · <span style="color:var(--text-primary);text-decoration:underline;cursor:pointer" onclick="openDetail(' + idx + ')">open the deal →</span></div>'
+    + '<div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:16px">' + esc(p.city) + (p.state ? ', ' + esc(p.state) : '') + ' · booking@ calendar · <span style="color:var(--text-primary);text-decoration:underline;cursor:pointer" onclick="openDetail(' + p.id + ')">open the deal →</span></div>'
     + '<div class="card" style="margin-bottom:12px">'
     + '<div class="field-row"><span class="field-label">Date</span><input type="date" class="pipe-search" style="margin:0;flex:1" id="ev-date" value="' + (gd ? gd.slice(0,10) : '') + '"></div>'
     + '<div class="field-row"><span class="field-label">Start</span><input type="time" class="pipe-search" style="margin:0;width:130px" id="ev-time" value="' + (gd ? gd.slice(11,16) : '20:00') + '" step="900"></div>'
@@ -3491,22 +3633,18 @@ function renderUpcoming(gigs){
       }).join('') + '</div>'
     : '<div class="section-label" style="margin-top:18px">Upcoming</div><div class="card" style="font-size:13px;color:var(--text-secondary)">No gigs on the books yet — set a gig date on a Hold or Booked venue.</div>';
 }
+var availLoadSeq=0, manualAvail={}, importedAvail={};
 function loadAvail(){
-  var y = calMonth.getFullYear(), m = calMonth.getMonth();
-  var start = isoDay(y, m, 1);
-  var endD = new Date(y, m + 1, 7);
-  var end = isoDay(endD.getFullYear(), endD.getMonth(), endD.getDate());
-  var startD = new Date(y, m, -6);
-  var startPad = isoDay(startD.getFullYear(), startD.getMonth(), startD.getDate());
-  sb.from('availability').select('day,status').gte('day', startPad).lte('day', end).then(function(r){
-    if (r.error) { showToast('Calendar load failed: ' + r.error.message, true); return; }
-    (r.data||[]).forEach(function(x){ availMap[x.day] = x.status; });
-    renderCalendar();
-  });
-  sb.from('availability_rules').select('dow,status').then(function(r){
-    dowRules = {};
-    (r.data||[]).forEach(function(x){ dowRules[x.dow] = x.status; });
-    renderCalendar();
+  var seq=++availLoadSeq,y=calMonth.getFullYear(),m=calMonth.getMonth(),endD=new Date(y,m+1,7),startD=new Date(y,m,-6);
+  var start=isoDay(startD.getFullYear(),startD.getMonth(),startD.getDate()),end=isoDay(endD.getFullYear(),endD.getMonth(),endD.getDate());
+  Promise.all([sb.from('availability').select('day,status,source').gte('day',start).lte('day',end),sb.from('calendar_busy_days').select('day').gte('day',start).lte('day',end),sb.from('availability_rules').select('dow,status')]).then(function(results){
+    if(seq!==availLoadSeq)return;
+    var error=results.find(function(r){return r.error;});if(error){showToast('Calendar load failed: '+error.error.message,true);return;}
+    Object.keys(availMap).forEach(function(day){if(day>=start&&day<=end){delete availMap[day];delete manualAvail[day];delete importedAvail[day];}});
+    results[1].data.forEach(function(x){importedAvail[x.day]=true;availMap[x.day]='busy';});
+    results[0].data.forEach(function(x){manualAvail[x.day]=x.status;availMap[x.day]=x.status;});
+    dowRules={};results[2].data.forEach(function(x){dowRules[x.dow]=x.status;});renderCalendar();
+    if(results[0].data.some(function(x){return x.source==='legacy';}))showToast('Older busy dates were preserved. Tap a date to review or clear it; new Google events now sync separately.');
   });
 }
 var calGigs = {};
@@ -3515,21 +3653,10 @@ function dayTap(iso){
   if (calGigs[iso] && calGigs[iso].length) { openEventView(calGigs[iso][0].uuid); return; }
   cycleAvail(iso);
 }
-function cycleAvail(iso){
-  var cur = availMap[iso];
-  var next = !cur ? 'available' : (cur === 'available' ? 'busy' : null);
-  if (next) {
-    availMap[iso] = next;
-    sb.from('availability').upsert({ artist_id: ME, day: iso, status: next }).then(function(r){
-      if (r.error) { delete availMap[iso]; renderCalendar(); showToast('Could not save: ' + r.error.message, true); }
-    });
-  } else {
-    delete availMap[iso];
-    sb.from('availability').delete().eq('artist_id', ME).eq('day', iso).then(function(r){
-      if (r.error) showToast('Could not clear: ' + r.error.message, true);
-    });
-  }
-  renderCalendar();
+async function cycleAvail(iso){
+  var cur=manualAvail[iso],next=!cur?'available':cur==='available'?'busy':null;
+  var r=next?await sb.from('availability').upsert({artist_id:ME,day:iso,status:next,source:'manual'}):await sb.from('availability').delete().eq('artist_id',ME).eq('day',iso);
+  if(r.error){showToast('Could not save availability: '+r.error.message,true);return;}loadAvail();
 }
 
 function jumpToDraft(id){
@@ -3554,7 +3681,7 @@ function saveNoteEdit(e, actId, id){
   if (!val) { showToast('Note is empty — use delete instead', true); return; }
   sb.from('activities').update({ body: val }).eq('id', actId).then(function(r){
     if (r.error) { showToast('Could not save note: ' + r.error.message, true); return; }
-    var p = pipeline[id];
+    var p = dealFor(id);
     (p.activity||[]).forEach(function(a){ if (a.id === actId) a.text = val; });
     delete notesEditing[actId];
     openDetail(id);
@@ -3575,7 +3702,7 @@ function deleteNote(actId, id, btn){
   if (!armDelete(btn)) return;
   sb.from('activities').delete().eq('id', actId).then(function(r){
     if (r.error) { showToast('Could not delete: ' + r.error.message, true); return; }
-    var p = pipeline[id];
+    var p = dealFor(id);
     p.activity = (p.activity||[]).filter(function(a){ return a.id !== actId; });
     openDetail(id);
     showToast('Note deleted');
@@ -3587,12 +3714,11 @@ function addNote(e, id) {
   if (e.key==='Enter' && !(e.metaKey || e.ctrlKey)) return;
   if (e.key==='Enter' && e.target.value.trim()) {
     var text = e.target.value.trim();
-    var p = pipeline[id];
-    p.activity.unshift({kind:'note', dot:'#2E2A24', text: text, time:'Just now'});
-    p.days = 0;
-    openDetail(id);
+    var p = dealFor(id);
+    var input = e.target, originalValue = input.value;
     sb.from('activities').insert({pipeline_entry_id:p.uuid, kind:'note', body:text, source:'manual'}).then(function(r){
       if (r.error) { showToast('Could not save note: ' + r.error.message, true); return; }
+      if (input.value === originalValue) input.value = '';
       sb.from('pipeline_entries').update({last_activity_at:new Date().toISOString()}).eq('id', p.uuid).then(function(){});
       loadPipeline(); // refresh so the new note gets its id (edit/delete)
     });
@@ -3744,8 +3870,8 @@ function saveSection(s) {
 
 function renderMarkets() {
   var c = document.getElementById('market-chips');
-  c.innerHTML = markets.map(function(m){
-    return '<div class="market-chip">' + m + (marketEditOpen ? '<span class="chip-remove" onclick="removeMarket(\'' + m + '\')">&nbsp;×</span>' : '') + '</div>';
+  c.innerHTML = markets.map(function(m,i){
+    return '<div class="market-chip">' + esc(m) + (marketEditOpen ? '<span class="chip-remove" onclick="removeMarket(markets[' + i + '])">&nbsp;×</span>' : '') + '</div>';
   }).join('') + (marketEditOpen ? '<div class="chip-add" onclick="toggleMarketInput()">+ Add</div>' : '');
 }
 function toggleMarketEdit() { marketEditOpen = !marketEditOpen; renderMarkets(); }
@@ -3796,7 +3922,7 @@ function updateProfilePreview() {
   if (lg) lg.innerHTML = [
     {tag:'{{name}}',val:profile.name},{tag:'{{genre}}',val:profile.genre},
     {tag:'{{market}}',val:markets[0]||'—'},{tag:'{{link}}',val:(bestLinkLine()||'— add EPK, site, or Spotify').replace(/^Here.s (my |a quick )?/,'')}
-  ].map(function(x){ return '<div class="merge-item"><span class="merge-tag">' + x.tag + '</span><span>' + x.val + '</span></div>'; }).join('');
+  ].map(function(x){ return '<div class="merge-item"><span class="merge-tag">' + x.tag + '</span><span>' + esc(x.val) + '</span></div>'; }).join('');
 }
 
 // ── Email signature manager: preview exactly what gmailSend appends ──
@@ -3860,7 +3986,7 @@ function initThemeSelect(){
 // ── Toast ───────────────────────────────────────────────
 function showToast(msg, isError) {
   var t = document.getElementById('toast');
-  t.innerHTML = '<i class="ti ' + (isError ? 'ti-alert-triangle' : 'ti-check') + '" style="margin-right:6px"></i>' + (msg || 'Copied to clipboard');
+  t.innerHTML = '<i class="ti ' + (isError ? 'ti-alert-triangle' : 'ti-check') + '" style="margin-right:6px"></i>' + esc(msg || 'Copied to clipboard');
   t.style.background = isError ? 'color-mix(in srgb, #93402E 88%, transparent)' : 'color-mix(in srgb, #2E2A24 88%, transparent)';
   t.style.color = isError ? '#F6E3DE' : '#F4F1E8';
   t.style.display = 'block';
@@ -3908,6 +4034,7 @@ function signInGoogle(){
 // ── Connect Gmail + Calendar (incremental OAuth; separate from base login) ──
 var GOOGLE_SCOPES = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.events';
 var googleConnected = false;
+var profileLoadSeq = 0;
 function connectGoogle(){
   try { sessionStorage.setItem('gc_connecting','1'); } catch(e){}
   sb.auth.signInWithOAuth({ provider:'google', options:{
@@ -3917,20 +4044,24 @@ function connectGoogle(){
   }}).then(function(r){ if(r.error){ try{sessionStorage.removeItem('gc_connecting');}catch(e){} showToast('Could not start Google connect: ' + r.error.message, true); } });
 }
 // Runs on the redirect back from connectGoogle: stash the refresh token (worker uses it).
+var googleCapturePending=false;
 function captureGoogleToken(session){
+  if(googleCapturePending)return;
   var connecting=false; try { connecting = sessionStorage.getItem('gc_connecting')==='1'; } catch(e){}
   if(!connecting) return;
   var rt = session && session.provider_refresh_token;
   if(!rt || !session.user) return;  // no refresh token surfaced this round
-  try { sessionStorage.removeItem('gc_connecting'); } catch(e){}
+  googleCapturePending=true;
   sb.rpc('store_google_token', { p_refresh_token: rt, p_scope: GOOGLE_SCOPES }).then(function(r){
+    googleCapturePending=false;
     if(r.error){ showToast('Couldn’t save the connection: ' + r.error.message, true); return; }
-    setGoogleConnectedUI(true);
+    try { sessionStorage.removeItem('gc_connecting'); } catch(e){}
+    profileLoadSeq++; setGoogleConnectedUI(true);
     showToast('Gmail & Calendar connected');
   });
 }
 function setGoogleConnectedUI(connected){
-  if(connected) googleConnected = true;   // sticky: a stale profile read can't downgrade it
+  googleConnected = !!connected;
   renderGoogleStatus();
 }
 function renderGoogleStatus(){
@@ -4006,12 +4137,13 @@ function showApp(session){
   document.getElementById('app-shell').style.display='block';
   var pe=document.querySelector('.profile-email'); if(pe) pe.textContent = session.user.email || '';
   try { if(sb.realtime && session.access_token) sb.realtime.setAuth(session.access_token); } catch(e){}
+  initDrafts();
   loadAll();
   applyRoute(); // restore the screen from the URL hash (deep links / refresh)
 }
 
 // ── Load ────────────────────────────────────────────────
-function loadAll(){ loadProfile(); loadVenues(); loadPipeline(); loadAvail(); loadUnmatched(); subscribeRealtime(); pokeWorker(); }
+function loadAll(){ loadDrafts(); loadProfile(); loadVenues(); loadPipeline(); loadAvail(); loadUnmatched(); subscribeRealtime(); pokeWorker(); }
 
 // Live updates over websockets: when the worker writes a reply/stage change,
 // Supabase Realtime pushes it here and we refresh — no manual reload. RLS means
@@ -4029,6 +4161,9 @@ function subscribeRealtime(){
   // schedule a retry, and the retry loop feeds itself forever (2s refetch jitter).
   if(rtChannel){ var old = rtChannel; rtChannel = null; try { sb.removeChannel(old); } catch(e){} }
   var ch = sb.channel('pipeline-rt')
+    .on('postgres_changes', { event:'UPDATE', schema:'public', table:'artists', filter:'id=eq.'+ME }, function(){ loadProfile(); })
+    .on('postgres_changes', { event:'*', schema:'public', table:'message_drafts' }, function(){ loadDrafts(); })
+    .on('postgres_changes', { event:'*', schema:'public', table:'calendar_busy_days' }, function(){ if(currentScreen==='calendar') loadAvail(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, function(){ loadPipeline(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pipeline_entries' }, function(){ loadPipeline(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'scheduled_messages' }, function(){ loadPipeline(); })
@@ -4069,7 +4204,7 @@ function refreshRtAuth(cb){
   });
 }
 function refetchAll(){
-  loadPipeline(); loadUnmatched();
+  loadDrafts(); loadProfile(); loadPipeline(); loadUnmatched();
   if (currentScreen==='calendar') loadAvail();
   feedCache = null; renderFeed();
 }
@@ -4091,7 +4226,9 @@ window.addEventListener('online', function(){
 });
 
 function loadProfile(){
+  var seq = ++profileLoadSeq;
   sb.from('artists').select('*').eq('id',ME).single().then(function(r){
+    if (seq !== profileLoadSeq) return;
     var a = r.data; if(!a) return;
     profile.name=a.display_name||''; profile.genre=a.genre||''; profile.oneliner=a.oneliner||'';
     profile.phone=a.phone||''; profile.web=a.website||''; profile.epk=a.epk||''; profile.spotify=a.spotify||'';
@@ -4144,7 +4281,7 @@ function loadVenues(){
   sb.from('venues').select('*, venue_people(person:people(name)), contacts(name)').order('created_at',{ascending:false}).then(function(r){
     var rows=r.data||[]; cities={};
     venues = rows.map(function(v){
-      return {id:v.id, name:v.name, city:v.city||'', state:v.state||'', type:v.ticket_type||'soft', createdAt:v.created_at||null, createdBy:v.created_by||null, createdByName:v.created_by_name||'',
+      return {id:v.id, archived:!!v.archived_at, name:v.name, city:v.city||'', state:v.state||'', type:v.ticket_type||'soft', createdAt:v.created_at||null, createdBy:v.created_by||null, createdByName:v.created_by_name||'',
               vtype:v.venue_type||'', pay:v.pay_range||'—', contact:((v.venue_people&&v.venue_people[0]&&v.venue_people[0].person&&v.venue_people[0].person.name) || (v.contacts&&v.contacts[0]?v.contacts[0].name:'—')),
               address:v.address||'', phone:v.phone||'', website:v.website||'', clientele:v.clientele||'', notes:v.notes||'', form:v.booking_form_url||'',
               verifyCount:v.verify_count||0, verifiedAt:v.verified_at||null};
@@ -4183,7 +4320,7 @@ function loadPipeline(){
         // Org deals (agencies/promoters) flow through every venue-shaped
         // surface: the org supplies name/place/type when there's no venue.
         var v=e.venue||{}, o=e.org||{}, c=e.person||e.contact||{};
-        return {id:i, uuid:e.id, venue:v.name||o.name||'(unknown venue)', city:v.city||o.city||'', state:v.state||o.state||'',
+        return {id:dealHandle(e.id), uuid:e.id, venue:v.name||o.name||'(unknown venue)', city:v.city||o.city||'', state:v.state||o.state||'',
                 contact:c.name||'(no contact)', title:c.title||'', org:c.org||'', email:c.email||'', phone:c.phone||'', linkedin:c.linkedin||'', instagram:c.instagram||'', personId:e.person_id||null,
                 vtype:v.venue_type||o.org_type||'', pay:v.pay_range||'—', form:v.booking_form_url||'', t:(e.ticket_type||v.ticket_type||(o.books==='hard'?'hard':'soft')), tOverride:e.ticket_type||null, s:e.status||'lead', prev:e.prev_status||null, venueId:e.venue_id||null, orgId:e.org_id||null, contactId:e.contact_id||null, gig_date:e.gig_date||null, gigPay:e.gig_pay||'', gigCosts:e.gig_costs||'', reminderAt:e.reminder_at||null, reminderNote:e.reminder_note||'', days:daysAgo(e.last_activity_at), activity:[]};
       });
@@ -4216,12 +4353,14 @@ function loadActivities(ids, seq){
       if (a.kind==='email_in'  && (!lastIn[a.pipeline_entry_id]  || t > lastIn[a.pipeline_entry_id]))  lastIn[a.pipeline_entry_id]  = t;
       if (a.kind==='email_out' && (!lastOut[a.pipeline_entry_id] || t > lastOut[a.pipeline_entry_id])) lastOut[a.pipeline_entry_id] = t;
     });
-    var lastBounce={}, lastDismiss={}, lastReplyDismiss={}, lastFuSnooze={}, lastFuKill={};
+    var lastBounce={}, bounceRows={}, lastDismiss={}, lastReplyDismiss={}, lastFuSnooze={}, lastFuKill={};
     (r.data||[]).forEach(function(a){
       if (a.kind!=='system') return;
       var t = new Date(a.created_at).getTime();
       if ((a.body||'').indexOf('⚠️ Email bounced') === 0) {
-        if (!lastBounce[a.pipeline_entry_id] || t > lastBounce[a.pipeline_entry_id]) lastBounce[a.pipeline_entry_id] = t;
+        if (!lastBounce[a.pipeline_entry_id] || t > lastBounce[a.pipeline_entry_id]) {
+          lastBounce[a.pipeline_entry_id] = t; bounceRows[a.pipeline_entry_id] = a;
+        }
       } else if ((a.body||'').indexOf('✓ Bounce dismissed') === 0) {
         if (!lastDismiss[a.pipeline_entry_id] || t > lastDismiss[a.pipeline_entry_id]) lastDismiss[a.pipeline_entry_id] = t;
       } else if ((a.body||'').indexOf('✓ Reply dismissed') === 0) {
@@ -4239,6 +4378,9 @@ function loadActivities(ids, seq){
       p.replyDismissTs = lastReplyDismiss[p.uuid] || 0; // "no reply needed" — cleared if a newer inbound lands
       p.fuSnoozeTs = lastFuSnooze[p.uuid] || 0; // follow-up snooze — restarts the 7d quiet clock
       p.fuKillTs = lastFuKill[p.uuid] || 0; // permanent follow-up dismiss — a newer outbound re-arms
+      p.lastBounceTs = lastBounce[p.uuid] || 0;
+      p.bounceId = bounceRows[p.uuid] ? bounceRows[p.uuid].id : null;
+      p.bounceEmail = bouncedAddress(bounceRows[p.uuid] && bounceRows[p.uuid].body);
       p.bounced = (lastBounce[p.uuid] || 0) > Math.max(p.lastOutboundTs, lastDismiss[p.uuid] || 0); // re-send OR dismiss clears it; a fresh bounce re-surfaces
     });
     actsReady = true; renderHomeIfReady();
@@ -4248,15 +4390,13 @@ function loadActivities(ids, seq){
 }
 var actsReady = false, schedReady = false;
 function renderHomeIfReady(){ if (actsReady && schedReady) renderHome(); }
-function loadScheduled(ids, seq){
-  sb.from('scheduled_messages').select('*').in('pipeline_entry_id',ids).in('status',['scheduled','ready']).order('created_at',{ascending:false}).then(function(r){
-    if (seq !== undefined && seq !== loadSeq) return; // stale — a newer cycle owns the UI
-    var byEntry={};
-    (r.data||[]).forEach(function(m){ if(!byEntry[m.pipeline_entry_id]) byEntry[m.pipeline_entry_id]=m; });
-    pipeline.forEach(function(p){ p.sched = byEntry[p.uuid]||null; });
-    schedReady = true; renderHomeIfReady();
-    if (currentScreen==='pipeline') renderPipeline();
-    rerenderOpenDetail();
+function loadScheduled(ids,seq){
+  sb.from('scheduled_messages').select('*').in('pipeline_entry_id',ids).order('created_at',{ascending:false}).then(function(r){
+    if(seq!==undefined&&seq!==loadSeq)return;
+    if(r.error){showToast('Outbox could not refresh: '+r.error.message,true);return;}
+    var byEntry={};(r.data||[]).forEach(function(m){if(!byEntry[m.pipeline_entry_id])byEntry[m.pipeline_entry_id]=m;});
+    pipeline.forEach(function(p){var m=byEntry[p.uuid];p.sched=m&&m.status!=='sent'&&!restoredMessages[m.id]?m:null;});
+    schedReady=true;renderHomeIfReady();if(currentScreen==='pipeline')renderPipeline();rerenderOpenDetail();
   });
 }
 // If the user is watching a venue, re-render it live with fresh data — UNLESS
@@ -4266,7 +4406,7 @@ function rerenderOpenDetail(){
   if(currentScreen!=='detail' || !currentDetailUuid) return;
   var ae = document.activeElement;
   if (ae && (ae.tagName==='INPUT' || ae.tagName==='TEXTAREA' || ae.tagName==='SELECT')) return;
-  for(var i=0;i<pipeline.length;i++){ if(pipeline[i].uuid===currentDetailUuid){ openDetail(i); break; } }
+  for(var i=0;i<pipeline.length;i++){ if(pipeline[i].uuid===currentDetailUuid){ openDetail(pipeline[i].id); break; } }
 }
 
 function updateHomeStats(){
@@ -4281,7 +4421,7 @@ function updateHomeStats(){
 
 // ── Status changes ──────────────────────────────────────
 function setDealTicket(id, t){
-  var p = pipeline[id]; if (!p || p.t === t) return;
+  var p = dealFor(id); if (!p || p.t === t) return;
   p.t = t; p.tOverride = t;
   openDetail(id);
   sb.from('pipeline_entries').update({ ticket_type: t }).eq('id', p.uuid).then(function(r){
@@ -4292,7 +4432,7 @@ function setDealTicket(id, t){
 // Rooms in play: one opportunity, several of the booker's rooms.
 var addRoomOpen = {};
 function toggleAddRoom(id){
-  var p = pipeline[id];
+  var p = dealFor(id);
   addRoomOpen[p.uuid] = !addRoomOpen[p.uuid];
   openDetail(id);
   var inp = document.getElementById('ar-room-q'); if (inp) inp.focus();
@@ -4301,16 +4441,16 @@ function addRoomSearch(id, q){
   var out = document.getElementById('ar-room-results'); if (!out) return;
   q = (q || '').toLowerCase();
   if (q.length < 2) { out.innerHTML = ''; return; }
-  var p = pipeline[id];
+  var p = dealFor(id);
   var taken = [p.venueId].concat((p.dealVenues||[]).map(function(x){ return x.id; }));
-  var hits = venues.filter(function(v){ return taken.indexOf(v.id) < 0 && (v.name + ' ' + v.city).toLowerCase().indexOf(q) >= 0; }).slice(0, 5);
+  var hits = venues.filter(function(v){ return !v.archived && taken.indexOf(v.id) < 0 && (v.name + ' ' + v.city).toLowerCase().indexOf(q) >= 0; }).slice(0, 5);
   out.innerHTML = hits.map(function(v){
     // Address shown — same-name multi-location rooms must be tellable apart.
     return '<div class="ws-row" onclick="addDealVenue(' + id + ',\'' + v.id + '\')"><div class="ws-name">' + esc(v.name) + '</div><div class="ws-addr">' + esc([v.address, v.city].filter(Boolean).join(' · ')) + '</div></div>';
   }).join('') || '<div class="ws-row" style="cursor:default;color:var(--text-secondary);font-size:12px">No match.</div>';
 }
 function addDealVenue(id, venueId){
-  var p = pipeline[id];
+  var p = dealFor(id);
   addRoomOpen[p.uuid] = false;
   sb.from('deal_venues').insert({ entry_id: p.uuid, venue_id: venueId }).then(function(r){
     if (r.error) { showToast('Could not add: ' + r.error.message, true); return; }
@@ -4319,7 +4459,7 @@ function addDealVenue(id, venueId){
   });
 }
 function removeDealVenue(id, venueId){
-  var p = pipeline[id];
+  var p = dealFor(id);
   sb.from('deal_venues').delete().eq('entry_id', p.uuid).eq('venue_id', venueId).then(function(){ fetchDealVenues(p); });
 }
 function fetchDealVenues(p){
@@ -4331,8 +4471,9 @@ function fetchDealVenues(p){
 
 // Promote a room from the set: it becomes the deal's home; the old primary
 // stays in play. Conversation, notes, stage all carry.
-function promoteDealVenue(id, venueId, venueName){
-  var p = pipeline[id];
+function promoteDealVenue(id, venueId){
+  var venueName = (venues.find(function(v){return v.id===venueId;}) || {}).name || 'Venue';
+  var p = dealFor(id);
   var oldPrimary = p.venueId;
   sb.from('pipeline_entries').update({ venue_id: venueId }).eq('id', p.uuid).then(function(r){
     if (r.error) { showToast('Could not promote: ' + r.error.message, true); return; }
@@ -4351,7 +4492,7 @@ function promoteDealVenue(id, venueId, venueName){
 // Delete a deal — armed double-tap; the venue and its intel stay.
 var dealDelTimer = null;
 function deleteDealArmed(id){
-  var p = pipeline[id];
+  var p = dealFor(id);
   var btn = document.getElementById('deal-del-' + id); if (!btn) return;
   if (!btn.classList.contains('armed')) {
     btn.classList.add('armed');
@@ -4362,43 +4503,25 @@ function deleteDealArmed(id){
     return;
   }
   clearTimeout(dealDelTimer);
-  // defensive child cleanup, then the entry (venue untouched)
-  Promise.all([
-    sb.from('scheduled_messages').delete().eq('pipeline_entry_id', p.uuid),
-    sb.from('activities').delete().eq('pipeline_entry_id', p.uuid)
-  ]).then(function(){
-    sb.from('pipeline_entries').delete().eq('id', p.uuid).then(function(r){
-      if (r.error) { showToast('Could not delete: ' + r.error.message, true); return; }
-      showToast('Deal deleted — venue stays in Discover');
-      loadPipeline();
-      go('pipeline');
-    });
+  sb.from('pipeline_entries').delete().eq('id',p.uuid).then(function(r){
+    if(r.error){showToast('Could not delete: '+r.error.message,true);return;}
+    showToast('Deal deleted — venue stays in Discover'); loadPipeline(); go('pipeline');
   });
 }
 function setStatus(id, s){
-  var p = pipeline[id]; if(!p) return;
-  var terminal = (s==='passed' || s==='dead');
-  var patch = { last_activity_at: new Date().toISOString() };
-  if (p.s === s) {
-    if (!terminal) return;
-    // Tapping the lit toggle reopens the deal where it left off.
-    s = p.prev || 'talks';
-    patch.prev_status = null; p.prev = null;
-  } else if (terminal && p.s!=='passed' && p.s!=='dead') {
-    patch.prev_status = p.s; p.prev = p.s; // remember for the un-tap
-  }
-  patch.status = s;
-  p.s = s; p.days = 0;
-  if ((s === 'booked' || s === 'played') && p.venueId) {
-    sb.from('venue_wins').upsert({ venue_id: p.venueId, artist_id: ME, author_name: profile.name || 'A member', avatar_url: profile.avatar_url || null, status: s }).then(function(){ feedCache = null; });
-  }
-  p.activity.unshift({kind:'status_change', dot:dotFor('status_change'), text:'Moved to ' + statusLabel[s], time:'Just now'});
-  openDetail(id);
-  updateHomeStats();
+  var p = dealFor(id);
+  var terminal = s==='passed' || s==='dead';
+  var patch={last_activity_at:new Date().toISOString()};
+  if(p.s===s){if(!terminal)return;s=p.prev || 'talks';patch.prev_status=null;}
+  else if(terminal && ['passed','dead'].indexOf(p.s)<0)patch.prev_status=p.s;
+  patch.status=s;
   sb.from('pipeline_entries').update(patch).eq('id',p.uuid).then(function(r){
-    if(r.error) showToast('Could not save status: ' + r.error.message, true);
+    if(r.error){showToast('Could not save status: '+r.error.message,true);return;}
+    p.s=s;p.days=0;
+    if((s==='booked'||s==='played')&&p.venueId)sb.from('venue_wins').upsert({venue_id:p.venueId,artist_id:ME,author_name:profile.name||'A member',avatar_url:profile.avatar_url||null,status:s}).then(function(){feedCache=null;});
+    sb.from('activities').insert({pipeline_entry_id:p.uuid,kind:'status_change',body:'Moved to '+statusLabel[s],source:'manual'}).then(function(){});
+    showToast(['passed','dead'].indexOf(s)>=0 ? 'Deal closed — pending sends canceled' : 'Status updated'); loadPipeline();
   });
-  sb.from('activities').insert({pipeline_entry_id:p.uuid, kind:'status_change', body:'Moved to ' + statusLabel[s], source:'manual'}).then(function(){});
 }
 
 // ── Add venue wizard persistence ────────────────────────
@@ -4632,14 +4755,14 @@ function openVenueDetail(id){
     + '<div class="vchips" style="margin:0">'
     + (function(){
         var myIdx = -1; pipeline.forEach(function(pp, pi){ if (myIdx < 0 && pp.venueId === v.id) myIdx = pi; });
-        if (myIdx >= 0) return '<button class="vchip done" onclick="openDetail(' + myIdx + ')" title="Open your deal on this room"><i class="ti ti-check"></i> In pipeline — open deal</button>';
+        if (myIdx >= 0) return '<button class="vchip done" onclick="openDetail(' + pipeline[myIdx].id + ')" title="Open your deal on this room"><i class="ti ti-check"></i> In pipeline — open deal</button>';
         var euuid = dealVenueMap[v.id];
         var di = euuid ? pipeline.map(function(pp){return pp.uuid;}).indexOf(euuid) : -1;
-        if (di >= 0) return '<button class="vchip done" onclick="openDetail(' + di + ')" title="Open the deal this room is in play on"><i class="ti ti-check"></i> In play — ' + esc(pipeline[di].venue) + '</button>';
+        if (di >= 0) return '<button class="vchip done" onclick="openDetail(' + pipeline[di].id + ')" title="Open the deal this room is in play on"><i class="ti ti-check"></i> In play — ' + esc(pipeline[di].venue) + '</button>';
         return '<button class="vchip primary" onclick="addVenueToPipeline(\'' + v.id + '\')"><i class="ti ti-plus"></i> to Pipeline</button>';
       })()
     + '<button class="vchip" onclick="openVenueEdit(\'' + v.id + '\')"><i class="ti ti-pencil"></i> Edit</button>'
-    + '<button class="vchip danger" id="vdel-chip" onclick="deleteVenueArmed(\'' + v.id + '\')"><i class="ti ti-trash"></i> Delete</button>'
+    + (v.archived ? '<button class="vchip" onclick="restoreVenue(\''+v.id+'\')">Restore archived venue</button>' : '<button class="vchip danger" id="vdel-chip" onclick="deleteVenueArmed(\'' + v.id + '\')"><i class="ti ti-archive"></i> Archive</button>')
     + '</div></div>'
     + '<div class="detail-header"><div class="detail-icon"><i class="ti ' + venueIcon(v.vtype) + '"></i></div>'
     + '<div style="flex:1"><div class="detail-venue">' + esc(v.name) + '</div>'
@@ -4781,28 +4904,28 @@ function renderVenuePulse(venueId, count){
       }).catch(function(){ var el2 = document.getElementById('venue-pulse'); if (el2) el2.innerHTML=''; });
   });
 }
-// Delete a venue — armed double-confirm (it's SHARED: deletes for the whole
-// collective and cascades contacts, pipeline entries, comments, wins).
+// Archive a shared venue while preserving every artist's private history.
+function restoreVenue(id){sb.from('venues').update({archived_at:null}).eq('id',id).then(function(r){if(r.error){showToast(r.error.message,true);return;}showToast('Venue restored');loadVenues();go('discover');});}
 var vdelTimer = null;
 function deleteVenueArmed(venueId){
   var chip = document.getElementById('vdel-chip');
   if (!chip) return;
   if (!chip.classList.contains('armed')) {
     chip.classList.add('armed');
-    chip.innerHTML = '<i class="ti ti-alert-triangle"></i> Deletes for everyone — tap again';
+    chip.innerHTML = '<i class="ti ti-archive"></i> Archive venue — tap again';
     clearTimeout(vdelTimer);
     vdelTimer = setTimeout(function(){
       if (!chip.isConnected) return;
       chip.classList.remove('armed');
-      chip.innerHTML = '<i class="ti ti-trash"></i> Delete';
+      chip.innerHTML = '<i class="ti ti-archive"></i> Archive';
     }, 3500);
     return;
   }
   clearTimeout(vdelTimer);
-  chip.innerHTML = '<i class="ti ti-loader-2"></i> Deleting…';
-  sb.from('venues').delete().eq('id', venueId).then(function(r){
-    if (r.error) { showToast('Could not delete: ' + r.error.message, true); chip.classList.remove('armed'); chip.innerHTML = '<i class="ti ti-trash"></i> Delete'; return; }
-    showToast('Venue deleted for the collective');
+  chip.innerHTML = '<i class="ti ti-loader-2"></i> Archiving…';
+  sb.from('venues').update({archived_at:new Date().toISOString()}).eq('id', venueId).then(function(r){
+    if (r.error) { showToast('Could not archive: ' + r.error.message, true); chip.classList.remove('armed'); chip.innerHTML = '<i class="ti ti-archive"></i> Archive'; return; }
+    showToast('Venue archived — all deal history is preserved');
     feedCache = null;
     loadVenues(); loadPipeline();
     go('discover');
