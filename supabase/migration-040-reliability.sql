@@ -275,4 +275,11 @@ grant all on message_drafts,calendar_busy_days,reminder_deliveries to service_ro
 revoke insert,update,delete on message_drafts,calendar_busy_days,reminder_deliveries from authenticated,anon;
 
 alter publication supabase_realtime add table message_drafts,calendar_busy_days;
+-- Connection health is read from artists; publish changes so open browsers
+-- can show revoked/reconnected access without waiting for a page reload.
+do $$ begin
+  if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='artists') then
+    alter publication supabase_realtime add table artists;
+  end if;
+end $$;
 commit;

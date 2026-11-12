@@ -26,7 +26,7 @@ All 18 findings in the November 7 audit have local code fixes. These changes hav
 ## Validation
 
 - `npm test`: **54 passing offline regression tests**, including rendering the complete app script against a simulated DOM, worker concurrency/failure cases, draft recovery, sync, reminder delivery, and SSRF boundaries.
-- `npm run test:database`: passes against isolated PostgreSQL 15 using the real schema and every migration through 040. Includes **35 SQL assertions**, competing queue requests, competing worker claims, and preservation/review of legacy pending messages during upgrade.
+- `npm run test:database`: passes against isolated PostgreSQL 15 using the real schema and every migration through 040. Includes **36 SQL assertions**, competing queue requests, competing worker claims, and preservation/review of legacy pending messages during upgrade.
 - JavaScript syntax checks and `git diff --check` pass.
 - Tests use synthetic mail and mocked Google/push responses. Real browser layout, production RLS/schema drift, OAuth configuration, and live Google/push delivery still need deployment smoke checks.
 

@@ -83,4 +83,5 @@ update reminder_deliveries set status='pending';
 select pg_temp.check_it(claim_reminder_delivery('40000000-0000-4000-8000-000000000001',now(),'device'),'failed reminder retries');
 update reminder_deliveries set status='sent';
 select pg_temp.check_it(not claim_reminder_delivery('40000000-0000-4000-8000-000000000001',now(),'device'),'successful reminder never repeats');
+select pg_temp.check_it(exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='artists'),'connection health updates reach open browsers');
 rollback;
