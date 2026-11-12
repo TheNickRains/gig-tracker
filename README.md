@@ -19,7 +19,7 @@ The full intent and behavioral contract live in [`knowledge base/agent-framework
 
 | Piece | What it is |
 |---|---|
-| `app/index.html` | The entire client — one file, no build step, `supabase-js` over CDN. |
+| `app/index.html` | Client UI plus `app/draft-store.js` recovery logic; no build step, `supabase-js` over CDN. |
 | `server.js` | Zero-dependency static server; generates `/config.js` from env at runtime. |
 | `worker/index.js` | Background service: Gmail push + poll, AI drafting, calendar sync, scheduled sends. |
 | `supabase/` | Postgres schema + numbered migrations. RLS keeps pipelines private; venue intel is shared. |

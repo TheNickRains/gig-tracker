@@ -1,6 +1,6 @@
 # Reliability patches — November 8, 2026
 
-All 18 findings in the November 7 audit have local code fixes. These changes have **not been deployed**, and migration 040 has **not been applied to production**. No real emails were sent by the patch verification.
+All 18 findings in the November 7 audit are **deployed to production as of November 12, 2026**. Migration 040 is applied. The app and worker both successfully deployed release commit `8326a09027047fe56eff63a6a1d63742f34ce45a` from PR #1. No real emails were sent by verification.
 
 | Finding | Result |
 | --- | --- |
@@ -28,11 +28,24 @@ All 18 findings in the November 7 audit have local code fixes. These changes hav
 - `npm test`: **54 passing offline regression tests**, including rendering the complete app script against a simulated DOM, worker concurrency/failure cases, draft recovery, sync, reminder delivery, and SSRF boundaries.
 - `npm run test:database`: passes against isolated PostgreSQL 15 using the real schema and every migration through 040. Includes **36 SQL assertions**, competing queue requests, competing worker claims, and preservation/review of legacy pending messages during upgrade.
 - JavaScript syntax checks and `git diff --check` pass.
-- Tests use synthetic mail and mocked Google/push responses. Real browser layout, production RLS/schema drift, OAuth configuration, and live Google/push delivery still need deployment smoke checks.
+- Production checks passed for the actual schema, restricted queue/delete permissions, and authenticated draft-save / queue / idempotency / cancellation RPCs in a rolled-back transaction. Both Railway services reached SUCCESS on the same commit; origin app assets match the release, and worker startup logs showed no application errors.
+- Tests use synthetic mail and mocked Google/push responses. Real browser layout, a live outbound Gmail send, and device push delivery were not exercised. Railway rejects the malformed-URL probe at its proxy with HTTP 502; the app remained healthy afterward. The local handler regression confirms HTTP 400.
 
 The database runner requires an isolated local PostgreSQL server; defaults are socket `/private/tmp`, port `55440`, binaries `/opt/homebrew/opt/postgresql@15/bin`. Set `PGHOST`, `PGPORT`, and `PG_BIN` as needed. It creates and removes only its uniquely named test database. It rejects remote hosts.
 
-## Rollout order
+## Production rollout record
+
+- PR: https://github.com/TheNickRains/gig-tracker/pull/1
+- Migration: `040`, applied after stopping both old deployments and verifying a private local backup.
+- App deployment: `f734b63d-83cf-4ded-b103-02421d772f12` — SUCCESS.
+- Worker deployment: `67967b5c-c724-4837-a4a8-178f2719f417` — SUCCESS.
+- Both deployments used commit `8326a09027047fe56eff63a6a1d63742f34ce45a`.
+- Data preserved at cutover: 159 scheduled-message records, 129 deals, 714 activities, 6 artists, 132 venues, and 14 manual/legacy availability records.
+- Outbox after migration: 154 sent, 1 canceled, 1 definite failure, 1 future queued message held ready for review, and 2 older failed attempts held uncertain pending delivery verification. No queued message was released by the rollout.
+- Recovery backup is in the git-ignored `recovery.local/release-040-2026-11-12T22-30-13-288Z/` directory.
+- Existing browser tabs must reload to use the new client and Resend controls. Cloudflare rewrites the public page's email address markup; direct Railway origin assets were compared byte-for-byte with the release.
+
+## Rollout order (completed)
 
 1. Stop all old worker instances and place the app in maintenance mode. Back up the affected database tables.
 2. Apply `supabase/migration-040-reliability.sql` after migrations 001–039. The migration pauses existing scheduled messages for review and marks already-due legacy sends and failures without a definite pre-send explanation as uncertain. It preserves their full content.
