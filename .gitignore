@@ -17,3 +17,6 @@ npm-debug.log*
 # Scratch / local-only — never commit
 notepad*
 *.local
+
+# Supabase CLI connection metadata
+supabase/.temp/

@@ -1,0 +1,318 @@
+// Offline audit probes. PASS means the named defect was reproduced in the
+// current source; these are evidence, not desired-behavior regression tests.
+// No network, production credentials, email sends, or database writes.
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const root = path.resolve(__dirname, '../..');
+const app = fs.readFileSync(path.join(root, 'app/index.html'), 'utf8');
+const worker = fs.readFileSync(path.join(root, 'worker/index.js'), 'utf8');
+function cut(source, begin, end) {
+  const start = source.indexOf(begin);
+  const stop = source.indexOf(end, start + begin.length);
+  assert.ok(start >= 0 && stop > start, 'Source markers exist: ' + begin);
+  return source.slice(start, stop);
+}
+const quiet = { log() {}, error() {} };
+const flush = () => new Promise(resolve => setImmediate(resolve));
+const queueCode = cut(worker, 'async function processScheduled()', '// Due reminders');
+const tickCode = cut(worker, 'async function tick()', '// ── Intake');
+const sendCode = cut(app, 'function scheduleSend(', '// "Send now" shouldn');
+function workerHarness(options = {}) {
+  const row = { id: 'message-1', artist_id: 'artist-1', pipeline_entry_id: 'deal-1',
+    to_email: 'old@example.com', subject: 'Original subject', body: 'Original body',
+    status: 'scheduled', human: options.human !== false, created_at: '2026-11-01T00:00:00Z' };
+  const sends = [], patches = [], deletes = [], events = [];
+  let repliesSynced = false;
+  const context = vm.createContext({
+    console: quiet,
+    sGet: async query => {
+      if (query.startsWith('scheduled_messages?')) return row.status === 'scheduled' ? [{ ...row }] : [];
+      if (query.startsWith('google_connections?')) return [{ artist_id: row.artist_id, refresh_token: 'fake' }];
+      if (query.startsWith('artists?')) return [{}];
+      if (query.startsWith('activities?')) return repliesSynced ? [{ id: 'reply' }] : [];
+      if (query.startsWith('pipeline_entries?')) return [{ status: options.stage || 'pitched' }];
+      throw Error(query);
+    },
+    sPatch: async (query, patch) => {
+      patches.push({ query, patch });
+      if (query.startsWith('scheduled_messages?') && !(options.dropSentPatch && patch.status === 'sent')) Object.assign(row, patch);
+    },
+    sDelete: async query => deletes.push(query),
+    refreshAccessToken: async () => {
+      if (options.tokenFailure) throw Error('temporary Google 503');
+      if (options.onRefresh) options.onRefresh(row);
+      return 'fake-access-token';
+    },
+    findThread: async () => null,
+    gmailSend: async (_token, to, subject, body) => {
+      sends.push({ to, subject, body }); events.push('send'); return 'gmail-' + sends.length;
+    },
+    logActivity: async () => { if (options.logFailure) throw Error('temporary database network failure'); },
+    pushDueReminders: async () => {}, ensureWatch: async () => {}, refreshToneProfile: async () => {}, syncCalendar: async () => {},
+    pollArtist: async () => { repliesSynced = true; events.push('inbox-sync'); }
+  });
+  vm.runInContext(queueCode + '\n' + tickCode, context);
+  return { context, row, sends, patches, deletes, events };
+}
+function clientHarness() {
+  const writes = [], toasts = [];
+  const inputs = { 'tpl-body-0': { value: 'Private draft for venue A', tagName: 'TEXTAREA' } };
+  const context = vm.createContext({
+    console: quiet, ME: 'artist-1', pipeline: [{ id: 0, uuid: 'A', email: 'a@example.com', s: 'lead', activity: [] }],
+    currentScreen: 'detail', currentDetailUuid: 'A', draftText: { A: inputs['tpl-body-0'].value },
+    draftAI: {}, draftSubject: {}, draftAngle: {}, sendChipDays: {}, profile: { name: 'Artist' },
+    qlDir: {}, quickLogChannel: {}, composeOpen: {},
+    document: { getElementById: id => inputs[id] || null, activeElement: inputs['tpl-body-0'] },
+    openDetail() {}, showToast: message => toasts.push(message), pokeWorker() {},
+    renderHome() {}, renderPipeline() {}, updateHomeStats() {}, backfillWins() {}, retryPendingRoute() {},
+    loadActivities() {}, loadScheduled() {}, loadDealVenueMap() {}, loadPipeline() {}, daysAgo: () => 0,
+    sb: { from(table) {
+      let payload;
+      const chain = {
+        insert(data) { payload = data; return chain; }, update(data) { payload = data; return chain; },
+        select() { return chain; }, single() { return chain; }, eq() { return chain; }, order() { return chain; },
+        then(resolve) {
+          if (payload) writes.push({ table, payload });
+          const data = payload ? { ...payload, id: 'saved-' + writes.length } : context.nextRows || [];
+          return Promise.resolve({ data, error: context.dbError || null }).then(resolve);
+        }
+      };
+      return chain;
+    } }
+  });
+  vm.runInContext(cut(app, 'function defaultSubject()', '// ── Slice C') + sendCode, context);
+  return { context, writes, inputs, toasts };
+}
+
+test('A01: a realtime reorder routes venue A’s open draft to venue B', async () => {
+  const h = clientHarness();
+  vm.runInContext(cut(app, 'var loadSeq = 0;', '// Secondary rooms') + cut(app, 'function rerenderOpenDetail()', 'function updateHomeStats()'), h.context);
+  h.context.nextRows = [
+    { id: 'B', person: { email: 'b@example.com' }, venue: { name: 'B' } },
+    { id: 'A', person: { email: 'a@example.com' }, venue: { name: 'A' } }
+  ];
+  h.context.loadPipeline(); await flush();
+  h.context.rerenderOpenDetail(); // intentionally holds the old DOM while typing
+  assert.equal(h.context.currentDetailUuid, 'A');
+  h.context.sendNowInline(0); await flush();
+  const sent = h.writes.find(w => w.table === 'scheduled_messages').payload;
+  assert.equal(sent.pipeline_entry_id, 'B');
+  assert.equal(sent.to_email, 'b@example.com');
+  assert.equal(sent.body, 'Private draft for venue A');
+});
+
+test('A02: ordinary Send now double-click creates two queue rows', async () => {
+  const h = clientHarness();
+  h.context.sendNowInline(0); h.context.sendNowInline(0); await flush();
+  assert.equal(h.writes.filter(w => w.table === 'scheduled_messages').length, 2);
+});
+
+test('A02: two overlapping worker runs send the same row twice', async () => {
+  const h = workerHarness();
+  await Promise.all([h.context.processScheduled(), h.context.processScheduled()]);
+  assert.equal(h.sends.length, 2);
+});
+
+test('A02: a failed sent-status write leaves the message eligible to send again', async () => {
+  const h = workerHarness({ dropSentPatch: true });
+  await h.context.processScheduled(); await h.context.processScheduled();
+  assert.equal(h.sends.length, 2);
+  assert.equal(h.row.status, 'scheduled');
+});
+
+test('A02: the real database PATCH helper does not reject an HTTP 503', async () => {
+  const c = vm.createContext({ console: quiet, SUPA: 'https://example.invalid', sHeaders: {},
+    fetch: async () => ({ ok: false, status: 503, text: async () => 'temporarily unavailable' }) });
+  vm.runInContext(cut(worker, 'async function sPatch(', 'async function sDelete('), c);
+  await assert.doesNotReject(() => c.sPatch('scheduled_messages?id=eq.test', { status: 'sent' }));
+});
+
+test('A03: cancellation after the worker reads the row still sends and overwrites canceled', async () => {
+  const h = workerHarness({ onRefresh: row => { row.status = 'canceled'; } });
+  await h.context.processScheduled();
+  assert.equal(h.sends.length, 1);
+  assert.equal(h.row.status, 'sent');
+});
+
+test('A03: edits made while a send is starting do not replace the old body', async () => {
+  const h = workerHarness({ onRefresh: row => { row.body = 'Corrected body'; } });
+  await h.context.processScheduled();
+  assert.equal(h.sends[0].body, 'Original body');
+  assert.equal(h.row.body, 'Corrected body');
+});
+
+test('A04: a temporary token error deletes the saved Google grant', async () => {
+  const h = workerHarness({ tokenFailure: true });
+  h.context.processScheduled = async () => {};
+  await h.context.tick();
+  assert.equal(h.deletes.length, 1);
+  assert.match(h.deletes[0], /^google_connections/);
+});
+
+test('A04: a browser refuses to downgrade stale connected status', () => {
+  const c = vm.createContext({ googleConnected: false, renderGoogleStatus() {} });
+  vm.runInContext(cut(app, 'function setGoogleConnectedUI(', 'function renderGoogleStatus('), c);
+  c.setGoogleConnectedUI(true); c.setGoogleConnectedUI(false);
+  assert.equal(c.googleConnected, true);
+});
+
+test('A05: a Gmail-accepted message becomes failed if later activity logging throws', async () => {
+  const h = workerHarness({ logFailure: true });
+  await h.context.processScheduled();
+  assert.equal(h.sends.length, 1);
+  assert.equal(h.row.status, 'failed');
+});
+
+test('A05: failed and canceled messages are omitted by the client loader', async () => {
+  let statuses;
+  const p = { uuid: 'A', sched: { status: 'scheduled' } };
+  const c = vm.createContext({ pipeline: [p], currentScreen: 'detail', renderHomeIfReady() {}, rerenderOpenDetail() {},
+    sb: { from() { const q = { select() { return q; }, in(column, values) { if (column === 'status') statuses = values; return q; }, order() { return q; }, then(resolve) { return Promise.resolve({ data: [] }).then(resolve); } }; return q; } } });
+  vm.runInContext(cut(app, 'function loadScheduled(', '// If the user is watching'), c);
+  c.loadScheduled(['A']); await flush();
+  assert.equal(statuses.includes('failed'), false);
+  assert.equal(statuses.includes('canceled'), false);
+  assert.equal(p.sched, null);
+});
+
+test('A06: reloading the script resets unscheduled draft bodies and subjects', () => {
+  const declarations = cut(app, 'var draftText = {};', '// ── Links in drafts');
+  const c = vm.createContext({}); vm.runInContext(declarations, c);
+  c.draftText.A = 'Hand-edited draft'; c.draftSubject.A = 'Custom subject';
+  vm.runInContext(declarations, c);
+  assert.equal(c.draftText.A, undefined);
+  assert.equal(c.draftSubject.A, undefined);
+});
+
+test('A06: failed quick-log save clears the typed text permanently', async () => {
+  const h = clientHarness(); h.context.dbError = { message: 'offline' };
+  vm.runInContext(cut(app, 'function saveQuickLog(', '// ── Slice B:'), h.context);
+  const input = { value: 'Important phone-call outcome' };
+  h.context.saveQuickLog({ key: 'Enter', target: input }, 0); await flush();
+  assert.equal(input.value, '');
+  assert.match(h.toasts.at(-1), /Could not log/);
+});
+
+test('A07: correcting a contact after scheduling leaves the queued recipient unchanged', async () => {
+  const h = clientHarness(); h.context.sendNowInline(0); await flush();
+  h.context.pipeline[0].email = 'corrected@example.com';
+  assert.equal(h.writes[0].payload.to_email, 'a@example.com');
+  const w = workerHarness();
+  await w.context.processScheduled();
+  assert.equal(w.sends[0].to, 'old@example.com');
+});
+
+test('A08: due follow-ups send before the polling tick imports fresh replies', async () => {
+  const h = workerHarness({ human: false });
+  await h.context.tick();
+  assert.deepEqual(h.events, ['send', 'inbox-sync']);
+});
+
+test('A09: a closed deal still sends a previously queued message', async () => {
+  const h = workerHarness({ human: false, stage: 'dead' });
+  await h.context.processScheduled();
+  assert.equal(h.sends.length, 1);
+});
+
+test('A10: opening a booking form is recorded as a submitted pitch even if the popup fails', async () => {
+  const h = clientHarness(); h.context.pipeline[0].form = 'https://example.invalid/book';
+  h.context.window = { open: () => null }; h.context.linkUrl = value => value;
+  vm.runInContext(cut(app, 'function openBookingForm(', '// ── Venue lookup'), h.context);
+  h.context.openBookingForm(0); await flush();
+  assert.match(h.writes[0].payload.body, /^Submitted via booking form:/);
+  assert.equal(h.context.pipeline[0].s, 'pitched');
+});
+
+test('A11: a reminder is marked pushed even when notification delivery fails', async () => {
+  const patches = [];
+  const c = vm.createContext({ console: quiet, sGet: async () => [{ id: 'reminder', artist_id: 'artist', venue: { name: 'Room' } }],
+    notify: async () => { throw Error('push service unavailable'); }, sPatch: async (q, patch) => patches.push(patch) });
+  vm.runInContext(cut(worker, 'async function pushDueReminders()', 'async function tick()'), c);
+  await c.pushDueReminders();
+  assert.equal(patches[0].reminder_pushed, true);
+});
+
+test('A12: multi-day calendar events only block their first day and disappear without cleanup', async () => {
+  const writes = [], patches = [], existing = [];
+  let items = [{ start: { date: '2026-11-08' }, end: { date: '2026-11-11' }, summary: 'Travel' }];
+  const c = vm.createContext({ console: quiet, SUPA: 'https://example.invalid', sHeaders: {},
+    fetch: async (url, opts) => {
+      if (url.includes('/calendar/')) return { ok: true, json: async () => ({ items }) };
+      if (opts?.method === 'POST') { writes.push(JSON.parse(opts.body)); existing.push(...JSON.parse(opts.body)); }
+      return { ok: true };
+    },
+    sGet: async q => q.startsWith('availability?') ? existing : [], sPatch: async (...args) => patches.push(args), logActivity: async () => {}
+  });
+  vm.runInContext(cut(worker, 'async function syncCalendar(', '// Slice B: fire'), c);
+  await c.syncCalendar('artist', 'fake');
+  assert.deepEqual(writes[0].map(row => row.day), ['2026-11-08']);
+  items = []; await c.syncCalendar('artist', 'fake');
+  assert.equal(existing.length, 1);
+  assert.equal(patches.length, 0);
+});
+
+test('A13: mail history ignores its next page and advances the cursor after API errors', async () => {
+  let fetches = 0;
+  const c = vm.createContext({ console: quiet, fetch: async () => { fetches++; return { ok: true, json: async () => ({ nextPageToken: 'more', history: [{ messagesAdded: [{ message: { id: 'first-page-only' } }] }] }) }; } });
+  vm.runInContext(cut(worker, 'async function gmailHistory(', 'function header('), c);
+  const ids = await c.gmailHistory('fake', '100');
+  assert.equal(fetches, 1); assert.equal(ids.length, 1);
+  const patches = [];
+  Object.assign(c, { sGet: async q => q.startsWith('artists?') ? [{ id: 'artist' }] : [{ refresh_token: 'fake', history_id: '100' }],
+    fetch: async () => ({ ok: false, status: 503, text: async () => 'temporary failure' }),
+    refreshAccessToken: async () => 'fake', sPatch: async (q, patch) => patches.push(patch) });
+  vm.runInContext(cut(worker, 'async function handlePush(', '// POLL path (fallback):'), c);
+  await c.handlePush('artist@example.com', '200');
+  assert.equal(patches.at(-1).history_id, '200');
+});
+
+test('A14: shared venue text reaches the detail innerHTML without escaping', () => {
+  // Execute the real header expression with a harmless HTML marker.
+  const start = app.indexOf("+ '<div class=\"detail-header\"");
+  const end = app.indexOf('    + dealType', start);
+  assert.ok(start > 0 && end > start);
+  const c = vm.createContext({ p: { venueId: 'venue', venue: '<img src="x" onerror="void(0)" data-audit="marker">',
+    vtype: 'Bar', city: 'City', state: 'ST', pay: '$100', s: 'lead' }, venueIcon: () => 'icon', statusLabel: { lead: 'Lead' } });
+  const rendered = vm.runInContext("'' " + app.slice(start, end), c);
+  assert.match(rendered, /<img src="x" onerror="void\(0\)" data-audit="marker">/);
+});
+
+test('A15: a late AI draft overwrites edits typed while generation was in progress', async () => {
+  const h = clientHarness(); let release;
+  h.context.activeTpl = {}; h.context.WORKER_URL = 'https://example.invalid';
+  h.context.sb.auth = { getSession: async () => ({ data: { session: { access_token: 'fake' } } }) };
+  h.context.fetch = () => new Promise(resolve => { release = resolve; });
+  vm.runInContext(cut(app, 'function aiDraft(', 'function emailTpl('), h.context);
+  h.context.aiDraft(0); await flush();
+  h.context.draftText.A = 'Human edits after clicking AI'; h.inputs['tpl-body-0'].value = h.context.draftText.A;
+  release({ ok: true, json: async () => ({ draft: 'Late AI output' }) }); await flush();
+  assert.equal(h.context.draftText.A, 'Late AI output');
+  assert.equal(h.inputs['tpl-body-0'].value, 'Late AI output');
+});
+
+test('A17: a malformed URL throws out of the static-server request handler', () => {
+  const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+  let handler;
+  const c = vm.createContext({ __dirname: root, process: { env: {} }, console: quiet,
+    require(name) {
+      if (name === 'http') return { createServer(fn) { handler = fn; return { listen() {} }; } };
+      if (name === 'path') return path;
+      if (name === 'fs') return {};
+      throw Error(name);
+    }
+  });
+  vm.runInContext(server, c);
+  assert.throws(() => handler({ url: '/bad%escape' }, {}), /URI malformed/);
+});
+
+test('A18: profile intake accepts internal HTTP destinations without validation', async () => {
+  const requested = [];
+  const c = vm.createContext({ fetch: async url => { requested.push(url); return { text: async () => 'Local fixture '.repeat(30) }; } });
+  vm.runInContext(cut(worker, 'async function fetchSiteText(', '// ── /ai/draft:'), c);
+  const result = await c.fetchSiteText('http://127.0.0.1:8080/internal-fixture');
+  assert.equal(requested[0], 'http://127.0.0.1:8080/internal-fixture');
+  assert.ok(result.includes('Local fixture'));
+});

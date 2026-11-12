@@ -12,6 +12,9 @@
 
 const http = require("http");
 const webpush = require("web-push");
+const { createMailProcessor } = require('./reliable-mail');
+const { safeSiteFetch } = require('./safe-site-fetch');
+const { dayInZone, eventDays } = require('./calendar-days');
 
 const SUPA = (process.env.SUPABASE_URL || "").trim();
 const SVC = (process.env.SUPABASE_SERVICE_KEY || "").trim();
@@ -34,15 +37,29 @@ console.log("Supabase key — role:", keyClaim(SVC, "role"), "ref:", keyClaim(SV
 
 const sHeaders = { apikey: SVC, Authorization: "Bearer " + SVC, "Content-Type": "application/json" };
 async function sGet(path) {
-  const r = await fetch(`${SUPA}/rest/v1/${path}`, { headers: sHeaders });
-  if (!r.ok) { console.error("Supabase GET failed", path.split("?")[0], r.status, (await r.text()).slice(0, 200)); return []; }
-  return r.json();
+  const rows = []; const paged = !/[?&]limit=/.test(path);
+  for (let offset = 0; ; offset += 1000) {
+    const suffix = paged ? (path.includes('?') ? '&' : '?') + `limit=1000&offset=${offset}` : '';
+    const r = await fetch(`${SUPA}/rest/v1/${path}${suffix}`, { headers: sHeaders, signal: AbortSignal.timeout(30000) });
+    if (!r.ok) throw new Error(`Supabase GET ${path.split('?')[0]} ${r.status}`);
+    const page = await r.json(); rows.push(...page);
+    if (!paged || page.length < 1000) return rows;
+  }
 }
 async function sPatch(path, body) {
-  const r = await fetch(`${SUPA}/rest/v1/${path}`, { method: "PATCH", headers: { ...sHeaders, Prefer: "return=minimal" }, body: JSON.stringify(body) });
-  if (!r.ok) console.error("Supabase PATCH failed", path.split("?")[0], r.status, (await r.text()).slice(0, 200));
+  const r = await fetch(`${SUPA}/rest/v1/${path}`, { method: "PATCH", headers: { ...sHeaders, Prefer: "return=representation" }, body: JSON.stringify(body), signal: AbortSignal.timeout(30000) });
+  if (!r.ok) throw new Error(`Supabase PATCH ${path.split('?')[0]} ${r.status}`);
+  return r.json();
 }
-async function sDelete(path) { await fetch(`${SUPA}/rest/v1/${path}`, { method: "DELETE", headers: sHeaders }); }
+async function sDelete(path) {
+  const r = await fetch(`${SUPA}/rest/v1/${path}`, { method: "DELETE", headers: sHeaders, signal: AbortSignal.timeout(30000) });
+  if (!r.ok) throw new Error(`Supabase DELETE ${path.split('?')[0]} ${r.status}`);
+}
+async function sRpc(name, body) {
+  const r = await fetch(`${SUPA}/rest/v1/rpc/${name}`, { method:'POST', headers:sHeaders, body:JSON.stringify(body), signal:AbortSignal.timeout(30000) });
+  if (!r.ok) throw new Error(`Supabase RPC ${name} ${r.status}: ${(await r.text()).slice(0,180)}`);
+  return r.status === 204 ? null : r.json();
+}
 // Insert activity; unique index on email_message_id dedupes. Returns true if new.
 async function logActivity(row) {
   // Dedup with a plain lookup instead of ON CONFLICT — avoids the partial-index
@@ -54,7 +71,7 @@ async function logActivity(row) {
   const r = await fetch(`${SUPA}/rest/v1/activities`, {
     method: "POST", headers: { ...sHeaders, Prefer: "return=representation" }, body: JSON.stringify(row),
   });
-  if (!r.ok) { console.error("activity insert failed", r.status, (await r.text()).slice(0, 200)); return null; }
+  if (!r.ok) { if (r.status === 409) return null; throw new Error('Activity insert failed: ' + r.status); }
   const j = await r.json().catch(() => []);
   return Array.isArray(j) && j.length ? j[0] : null; // row when new, null when duplicate
 }
@@ -114,19 +131,26 @@ async function aiEnrich(entry, activityId, replyText) {
 
 async function refreshAccessToken(refreshToken) {
   const body = new URLSearchParams({ client_id: GCID, client_secret: GCS, refresh_token: refreshToken, grant_type: "refresh_token" });
-  const r = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
-  if (!r.ok) throw new Error(`token ${r.status}: ${(await r.text()).slice(0, 150)}`);
-  return (await r.json()).access_token;
+  const r = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body, signal:AbortSignal.timeout(30000) });
+  const j = await r.json();
+  if (!r.ok || !j.access_token) { const e = new Error(j.error === 'invalid_grant' ? 'Google access expired or was revoked — reconnect Gmail' : `Google token service unavailable (${r.status})`); e.oauthCode = j.error; throw e; }
+  return j.access_token;
 }
 async function gmailSearch(token, q) {
-  const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=20`, { headers: { Authorization: "Bearer " + token } });
-  return r.ok ? (await r.json()).messages || [] : [];
+  const messages = []; let pageToken;
+  do {
+    const params = new URLSearchParams({ q, maxResults:'500' }); if (pageToken) params.set('pageToken',pageToken);
+    const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`, { headers:{ Authorization:'Bearer ' + token }, signal:AbortSignal.timeout(30000) });
+    if (!r.ok) throw new Error('Gmail search failed: ' + r.status);
+    const j = await r.json(); messages.push(...(j.messages || [])); pageToken = j.nextPageToken;
+  } while (pageToken);
+  return messages;
 }
 async function gmailGet(token, id) {
-  // format=full gives the snippet (the reply's content preview) + body, which we
-  // surface as activity context now and will summarize with Gemini in slice C.
-  const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`, { headers: { Authorization: "Bearer " + token } });
-  return r.ok ? r.json() : null;
+  const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`, { headers: { Authorization: "Bearer " + token }, signal:AbortSignal.timeout(30000) });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error('Gmail message lookup failed: ' + r.status);
+  return r.json();
 }
 function decodeEntities(s) {
   return (s || "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ");
@@ -148,12 +172,17 @@ function isRealMail(full) {
   return !l.includes("DRAFT") && !l.includes("SPAM") && !l.includes("TRASH");
 }
 async function gmailHistory(token, startHistoryId) {
-  const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/history?startHistoryId=${startHistoryId}&historyTypes=messageAdded&maxResults=100`, { headers: { Authorization: "Bearer " + token } });
-  if (!r.ok) { console.error("history failed", r.status, (await r.text()).slice(0, 150)); return []; }
-  const j = await r.json();
-  const ids = [];
-  (j.history || []).forEach((h) => (h.messagesAdded || []).forEach((m) => { if (m.message && m.message.id) ids.push(m.message.id); }));
-  return Array.from(new Set(ids));
+  const ids = new Set(); let pageToken, historyId = startHistoryId;
+  do {
+    const params = new URLSearchParams({ startHistoryId, historyTypes:'messageAdded', maxResults:'500' });
+    if (pageToken) params.set('pageToken',pageToken);
+    const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/history?${params}`, { headers:{ Authorization:'Bearer ' + token }, signal:AbortSignal.timeout(30000) });
+    if (!r.ok) { const e = new Error('Gmail history failed: ' + r.status); e.status = r.status; throw e; }
+    const j = await r.json();
+    (j.history || []).forEach(h => (h.messagesAdded || []).forEach(m => { if (m.message?.id) ids.add(m.message.id); }));
+    historyId = j.historyId || historyId; pageToken = j.nextPageToken;
+  } while (pageToken);
+  return { ids:[...ids], historyId };
 }
 function header(msg, name) {
   const hs = (msg.payload && msg.payload.headers) || [];
@@ -184,16 +213,18 @@ function mdToHtml(t) {
   parts.push(linkify((t || "").slice(last)));
   return parts.join("").replace(/\r?\n/g, "<br>");
 }
-async function gmailSend(token, to, subject, body, thread, sig) {
+async function gmailSend(token, to, subject, body, thread, sig, messageId) {
+  if (!/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(to) || /[\r\n]/.test(subject)) { const e = new Error('Invalid recipient or subject'); e.definitive = true; throw e; }
   let headers = `To: ${to}\r\nSubject: ${mimeWord(subject)}\r\nMIME-Version: 1.0\r\n`;
-  if (thread && thread.msgId) headers += `In-Reply-To: ${thread.msgId}\r\nReferences: ${thread.msgId}\r\n`;
+  if (messageId) headers += `Message-ID: <${messageId}>\r\n`;
+  if (thread && thread.msgId && !/[\r\n]/.test(thread.msgId)) headers += `In-Reply-To: ${thread.msgId}\r\nReferences: ${thread.msgId}\r\n`;
   // Always multipart/alternative (even without a signature) so [text](url)
   // links render everywhere; plain-text readers get the degraded body.
   const hasSig = sig && (sig.logo || sig.name);
   const sigText = hasSig ? "\n\n--\n" + [sig.name, sig.phone, sig.site].filter(Boolean).join(" · ") : "";
   const sigHtml = hasSig
     ? '<br><br><div style="border-top:1px solid #ddd;padding-top:12px;margin-top:4px">'
-      + (sig.logo ? '<img src="' + sig.logo + '" width="120" alt="' + escHtml(sig.name || "") + '" style="display:block;margin-bottom:8px"><br>' : "")
+      + (sig.logo ? '<img src="' + escHtml(sig.logo) + '" width="120" alt="' + escHtml(sig.name || "") + '" style="display:block;margin-bottom:8px"><br>' : "")
       + '<strong style="font:14px -apple-system,Segoe UI,Helvetica,Arial,sans-serif">' + escHtml(sig.name || "") + "</strong>"
       + '<div style="font:12px/1.5 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#666">'
       + [sig.phone, sig.site].filter(Boolean).map(escHtml).join(" · ") + "</div></div>"
@@ -209,15 +240,15 @@ async function gmailSend(token, to, subject, body, thread, sig) {
   const payload = { raw: b64url(raw) };
   if (thread && thread.threadId) payload.threadId = thread.threadId;
   const r = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-    method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(payload), signal:AbortSignal.timeout(30000),
   });
-  if (!r.ok) throw new Error(`send ${r.status}: ${(await r.text()).slice(0, 150)}`);
+  if (!r.ok) { const e = new Error(`Gmail send failed (${r.status})`); e.definitive = r.status >= 400 && r.status < 500 && r.status !== 408; throw e; }
   return (await r.json()).id;
 }
-// We always reply IN THREAD: find the latest exchange with this contact and
-// continue it (threadId + In-Reply-To + "Re:" subject). New thread only if none.
+// Find a potential reply thread; dispatch only attaches it when the saved
+// subject matches. A custom subject is never silently replaced.
 async function findThread(token, email) {
-  const msgs = await gmailSearch(token, `(from:${email} OR to:${email})`);
+  const msgs = await gmailSearch(token, `(from:${email} OR to:${email}) -in:drafts -in:trash -in:spam`);
   if (!msgs.length) return null;
   const full = await gmailGet(token, msgs[0].id);
   if (!full) return null;
@@ -244,6 +275,7 @@ async function recordUnmatched(artistId, selfEmail, full) {
   };
   if (full.internalDate) row.created_at = new Date(Number(full.internalDate)).toISOString();
   const r = await fetch(`${SUPA}/rest/v1/unmatched_mail`, { method: "POST", headers: { ...sHeaders, Prefer: "return=minimal" }, body: JSON.stringify(row) });
+  if (!r.ok && r.status !== 409) throw new Error('Unmatched mail insert failed: ' + r.status);
   if (r.ok) {
     console.log("unmatched parked:", fromEmail, row.subject.slice(0, 40));
     // Speed to lead: push for a brand-new lead too — but only genuinely fresh
@@ -267,7 +299,7 @@ async function ingestContactHistory(artistId, token, entryId) {
   if (!email) return { added: 0, error: "no email on contact" };
   const msgs = await gmailSearch(token, `(from:${email} OR to:${email})`);
   let added = 0, newest = null;
-  for (const m of msgs.slice(0, 25)) {
+  for (const m of msgs) {
     const full = await gmailGet(token, m.id);
     if (!full || !isRealMail(full)) continue;
     const from = (header(full, "From") || "").toLowerCase();
@@ -299,10 +331,8 @@ async function ingestContactHistory(artistId, token, entryId) {
   if (newest && (!entry.last_activity_at || newest > entry.last_activity_at)) {
     await sPatch(`pipeline_entries?id=eq.${entry.id}`, { last_activity_at: newest });
   }
-  // Purge phantom rows from past ingests: draft autosaves that were logged as
-  // sent mail. Gmail deletes an autosave's message id when the draft changes or
-  // sends, so a hard 404 (or a lingering DRAFT label) proves the row was never
-  // real mail. Only email_sync rows with a message id are candidates — manual
+  // Purge only confirmed draft autosaves from past ingests. A missing Gmail
+  // message may have been genuine mail deleted later; preserve its history. Only email_sync rows with a message id are candidates — manual
   // notes and system markers are untouchable.
   let removed = 0;
   const logged = await sGet(`activities?pipeline_entry_id=eq.${entry.id}&source=eq.email_sync&kind=in.(email_in,email_out)&email_message_id=not.is.null&select=id,email_message_id&limit=100`);
@@ -310,8 +340,8 @@ async function ingestContactHistory(artistId, token, entryId) {
   for (const a of logged) {
     if (liveIds.has(a.email_message_id)) continue;
     const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${a.email_message_id}?format=minimal`, { headers: { Authorization: "Bearer " + token } });
-    if (r.status === 404) { await sDelete(`activities?id=eq.${a.id}`); removed++; continue; }
-    if (r.ok && !isRealMail(await r.json())) { await sDelete(`activities?id=eq.${a.id}`); removed++; }
+    if (r.status === 404) continue; // Deleted real mail is still valid conversation history.
+    if (r.ok && ((await r.json()).labelIds || []).includes('DRAFT')) { await sDelete(`activities?id=eq.${a.id}`); removed++; }
   }
   console.log("history ingest:", email, "added", added, "of", msgs.length, removed ? `— purged ${removed} phantom draft(s)` : "");
   return { added, removed };
@@ -335,7 +365,7 @@ async function applyMessage(entry, full, contactEmail, artistId) {
     const fullText = cleanSnippet(extractPlainText(full.payload));
     const snippet = cleanSnippet(full.snippet);
     const body = (fullText || snippet) ? (fullText || snippet).slice(0, 1200) : "Reply: " + subject;
-    const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_in", body: body, source: "email_sync", email_message_id: full.id, from_name: senderName(full) });
+    const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_in", body: body, source: "email_sync", email_message_id: full.id, from_name: senderName(full), created_at:new Date(Number(full.internalDate) || Date.now()).toISOString() });
     console.log("  inbound reply on entry", entry.id, "newly logged:", !!isNew);
     if (isNew) {
       const patch = { last_activity_at: new Date().toISOString() };
@@ -352,7 +382,7 @@ async function applyMessage(entry, full, contactEmail, artistId) {
     const outFull = cleanSnippet(extractPlainText(full.payload));
     const outSnippet = cleanSnippet(full.snippet);
     const outBody = (outFull || outSnippet) ? (outFull || outSnippet).slice(0, 1200) : "Sent: " + subject;
-    const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_out", body: outBody, source: "email_sync", email_message_id: full.id });
+    const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "email_out", body: outBody, source: "email_sync", email_message_id: full.id, created_at:new Date(Number(full.internalDate) || Date.now()).toISOString() });
     // You pitched from Gmail like a human -> the card moves itself: Lead -> Pitched.
     if (isNew && ["lead", "outreach"].includes(entry.status)) {
       await sPatch(`pipeline_entries?id=eq.${entry.id}`, { status: "pitched", last_activity_at: new Date().toISOString() });
@@ -372,7 +402,7 @@ async function ensureWatch(artistId, conn, token) {
   if (!r.ok) { console.error("watch failed", artistId, r.status, (await r.text()).slice(0, 150)); return; }
   const j = await r.json();
   const patch = { watch_expiry: new Date(Number(j.expiration)).toISOString() };
-  if (!conn.history_id && j.historyId) patch.history_id = String(j.historyId);
+  // The history cursor is committed only after a successful mailbox scan.
   await sPatch(`google_connections?artist_id=eq.${artistId}`, patch);
   console.log("watch armed", artistId, "exp", patch.watch_expiry);
 }
@@ -406,34 +436,65 @@ async function venueContactMap(artistId) {
   return map;
 }
 
-// PUSH path: a Pub/Sub notification arrived for emailAddress.
-async function handlePush(emailAddress, notifHistoryId) {
-  const arts = await sGet(`artists?email=eq.${encodeURIComponent(emailAddress)}&select=id`);
-  if (!arts.length) { console.log("push: no artist for", emailAddress); return; }
-  const artistId = arts[0].id;
-  const conns = await sGet(`google_connections?artist_id=eq.${artistId}&select=refresh_token,history_id`);
-  if (!conns.length) return;
-  const conn = conns[0];
-  let token;
-  try { token = await refreshAccessToken(conn.refresh_token); } catch (e) { console.error("push refresh failed", e.message); return; }
-  if (!conn.history_id) { await sPatch(`google_connections?artist_id=eq.${artistId}`, { history_id: String(notifHistoryId) }); return; }
-  const ids = await gmailHistory(token, conn.history_id);
-  if (ids.length) {
-    const map = await venueContactMap(artistId);
-    for (const id of ids) {
-      const full = await gmailGet(token, id);
-      if (!full) continue;
-      const blob = ((header(full, "From") || "") + " " + (header(full, "To") || "")).toLowerCase();
-      let entry = null, cemail = null;
-      for (const em in map) { if (blob.includes(em)) { entry = map[em]; cemail = em; break; } }
-      var fromAddr = ((header(full, "From") || "").match(/[\w.+-]+@[\w.-]+/) || ["?"])[0];
-      console.log("push msg from", fromAddr, entry ? ("-> matched entry " + entry.id) : "-> unmatched, parking");
-      if (entry) await applyMessage(entry, full, cemail, artistId);
-      else if (!(blob.includes((emailAddress || "").toLowerCase()) && fromAddr.toLowerCase() === (emailAddress || "").toLowerCase())) await recordUnmatched(artistId, emailAddress, full).catch(() => {});
-    }
-    console.log("push: processed", ids.length, "new msg(s) for", emailAddress);
+// Serialize pushes per account in this process; the checkpoint CAS also
+// prevents a slower worker from moving a newer history cursor backwards.
+const pushRuns = new Map();
+function handlePush(emailAddress, notifHistoryId) {
+  const previous = pushRuns.get(emailAddress) || Promise.resolve();
+  const run = previous.catch(() => {}).then(() => processPush(emailAddress, notifHistoryId));
+  pushRuns.set(emailAddress,run);
+  return run.finally(() => { if (pushRuns.get(emailAddress) === run) pushRuns.delete(emailAddress); });
+}
+async function mailboxProfile(token) {
+  const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', { headers:{Authorization:'Bearer '+token}, signal:AbortSignal.timeout(30000) });
+  if (!r.ok) throw new Error('Gmail profile failed: '+r.status);
+  return r.json();
+}
+async function resyncMailbox(artistId, token, conn) {
+  const profile = await mailboxProfile(token); // checkpoint BEFORE scanning
+  const map = await venueContactMap(artistId);
+  for (const entry of new Map(Object.values(map).map(e => [e.id,e])).values()) await ingestContactHistory(artistId,token,entry.id);
+  const since = conn.history_synced_at;
+  const query = 'in:inbox' + (since ? ' after:' + Math.floor(Date.parse(since)/1000) : '');
+  for (const m of await gmailSearch(token,query)) {
+    const full = await gmailGet(token,m.id); if (!full) continue;
+    const from = ((header(full,'From') || '').match(/[\w.+-]+@[\w.-]+/) || [''])[0].toLowerCase();
+    if (map[from]) await applyMessage(map[from],full,from,artistId);
+    else await recordUnmatched(artistId,profile.emailAddress,full);
   }
-  await sPatch(`google_connections?artist_id=eq.${artistId}`, { history_id: String(notifHistoryId) });
+  return profile.historyId;
+}
+async function processPush(emailAddress, notifHistoryId) {
+  const linked = await sGet(`google_connections?google_email=eq.${encodeURIComponent(emailAddress.toLowerCase())}&select=artist_id`);
+  const arts = linked.length ? linked.map(c => ({id:c.artist_id})) : await sGet(`artists?email=eq.${encodeURIComponent(emailAddress)}&select=id`);
+  for (const artist of arts) {
+    const artistId = artist.id;
+    const [conn] = await sGet(`google_connections?artist_id=eq.${artistId}&select=refresh_token,history_id,history_synced_at,updated_at`);
+    if (!conn) continue;
+    const token = await refreshAccessToken(conn.refresh_token);
+    let next;
+    try {
+      if (!conn.history_id) next = await resyncMailbox(artistId,token,conn);
+      else {
+        const history = await gmailHistory(token,conn.history_id);
+        const map = await venueContactMap(artistId);
+        for (const id of history.ids) {
+          const full = await gmailGet(token,id); if (!full) continue;
+          if (/mailer-daemon|postmaster/i.test(header(full,'From') || '')) continue;
+          const addresses = ((header(full,'From') || '')+' '+(header(full,'To') || '')).toLowerCase().match(/[\w.+-]+@[\w.-]+/g) || [];
+          const email = addresses.find(address => map[address]);
+          if (email) await applyMessage(map[email],full,email,artistId);
+          else await recordUnmatched(artistId,emailAddress,full);
+        }
+        next = history.historyId;
+      }
+    } catch (e) {
+      if (e.status !== 404) throw e;
+      next = await resyncMailbox(artistId,token,conn);
+    }
+    const oldCursor = conn.history_id ? 'eq.'+encodeURIComponent(conn.history_id) : 'is.null';
+    await sPatch(`google_connections?artist_id=eq.${artistId}&history_id=${oldCursor}`, { history_id:String(next),history_synced_at:new Date().toISOString() });
+  }
 }
 
 // POLL path (fallback): scan each connection's pipeline contacts for recent mail.
@@ -446,7 +507,7 @@ async function sweepBounces(artistId, token, map) {
     const text = (extractPlainText(full.payload) || full.snippet || "").toLowerCase();
     for (const [email, entry] of Object.entries(map)) {
       if (failed.includes(email) || text.includes(email)) {
-        const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "system", body: "⚠️ Email bounced — " + email + " doesn’t exist. Fix the contact’s address and re-send.", source: "email_sync", email_message_id: full.id });
+        const isNew = await logActivity({ pipeline_entry_id: entry.id, kind: "system", body: "⚠️ Email bounced — " + email + " doesn’t exist. Fix the contact’s address and re-send.", source: "email_sync", email_message_id: full.id, created_at:new Date(Number(full.internalDate) || Date.now()).toISOString() });
         if (isNew) {
           await sPatch(`pipeline_entries?id=eq.${entry.id}`, { last_activity_at: new Date().toISOString() });
           notify(artistId, "Email bounced ⚠️", email + " doesn’t exist — fix the address", "/app#entry/" + entry.id).catch(() => {});
@@ -466,7 +527,7 @@ async function pollArtist(artistId, token) {
     const selfRows = await sGet(`artists?id=eq.${artistId}&select=email`);
     const selfEmail = (selfRows[0] && selfRows[0].email) || "";
     const inbox = await gmailSearch(token, "in:inbox newer_than:2d");
-    for (const m of inbox.slice(0, 20)) {
+    for (const m of inbox) {
       const full = await gmailGet(token, m.id);
       if (!full) continue;
       const fromAddr = (((header(full, "From") || "").match(/[\w.+-]+@[\w.-]+/) || [""])[0]).toLowerCase();
@@ -682,37 +743,30 @@ async function syncCalendar(artistId, token) {
   try {
     const now = new Date();
     const max = new Date(now.getTime() + 60 * 86400000);
-    // -- import busy days --
-    const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&timeMin=${encodeURIComponent(now.toISOString())}&timeMax=${encodeURIComponent(max.toISOString())}&maxResults=250&fields=items(start,end,status,transparency,summary)`, { headers: { Authorization: "Bearer " + token } });
-    if (r.ok) {
-      const items = (await r.json()).items || [];
-      const busyDays = new Set();
-      items.forEach((ev) => {
-        if (ev.status === "cancelled" || ev.transparency === "transparent") return;
-        if ((ev.summary || "").includes("(Gig Collective)")) return; // our own export — not an external busy
-        const d = (ev.start && (ev.start.date || (ev.start.dateTime || "").slice(0, 10))) || null;
-        if (d) busyDays.add(d);
-      });
-      if (busyDays.size) {
-        const existing = await sGet(`availability?artist_id=eq.${artistId}&select=day`);
-        const have = new Set(existing.map((x) => x.day));
-        const rows = [...busyDays].filter((d) => !have.has(d)).map((d) => ({ artist_id: artistId, day: d, status: "busy" }));
-        if (rows.length) {
-          await fetch(`${SUPA}/rest/v1/availability`, { method: "POST", headers: { ...sHeaders, Prefer: "return=minimal" }, body: JSON.stringify(rows) });
-          console.log("calendar: imported", rows.length, "busy day(s)", artistId);
-        }
-      }
-    } else console.error("calendar list failed", r.status, (await r.text()).slice(0, 120));
+    // Read every page before replacing the imported window. Manual choices
+    // live in availability and never get overwritten by this reconciliation.
+    const items = []; let pageToken, timeZone = 'UTC';
+    do {
+      const params = new URLSearchParams({ singleEvents:'true', timeMin:new Date(now.getTime()-86400000).toISOString(), timeMax:max.toISOString(), maxResults:'250', fields:'nextPageToken,timeZone,items(id,start,end,status,transparency,summary)' });
+      if (pageToken) params.set('pageToken',pageToken);
+      const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, { headers:{Authorization:'Bearer '+token}, signal:AbortSignal.timeout(30000) });
+      if (!r.ok) throw new Error('Calendar list failed: '+r.status);
+      const j = await r.json(); items.push(...(j.items || [])); timeZone = j.timeZone || timeZone; pageToken = j.nextPageToken;
+    } while (pageToken);
+    const from = dayInZone(now,timeZone), until = dayInZone(max,timeZone);
+    const rows = items.flatMap(ev => eventDays(ev,timeZone,from,until).map(day => ({event_id:ev.id,day})));
+    await sRpc('replace_calendar_busy',{p_artist:artistId,p_from:from,p_until:until,p_rows:rows});
     // -- export holds/bookings + flip played --
     // Agent policy: the worker CREATES events on its own, but only EDITS or
     // DELETES one when the ARTIST changed the date in the app (gig_date_dirty).
-    const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&status=in.(hold,booked,played)&or=(gig_date.not.is.null,google_event_id.not.is.null)&select=id,status,gig_date,google_event_id,gig_date_dirty,gig_pay,gig_costs,venue:venues!pipeline_entries_venue_id_fkey(name)`);
+    const entries = await sGet(`pipeline_entries?artist_id=eq.${artistId}&or=(and(status.in.(hold,booked,played),gig_date.not.is.null),google_event_id.not.is.null)&select=id,status,gig_date,google_event_id,gig_date_dirty,gig_pay,gig_costs,venue:venues!pipeline_entries_venue_id_fkey(name)`);
     for (const e of entries) {
       const evUrl = (idp) => `https://www.googleapis.com/calendar/v3/calendars/primary/events${idp ? "/" + idp : ""}`;
       // Date cleared by the artist -> remove the event.
-      if (!e.gig_date) {
+      if (!e.gig_date || ['passed','dead'].includes(e.status)) {
         if (e.google_event_id && e.gig_date_dirty) {
-          await fetch(evUrl(e.google_event_id), { method: "DELETE", headers: { Authorization: "Bearer " + token } }).catch(() => {});
+          const deleted = await fetch(evUrl(e.google_event_id), { method:'DELETE', headers:{Authorization:'Bearer '+token}, signal:AbortSignal.timeout(30000) });
+          if (!deleted.ok && ![404,410].includes(deleted.status)) throw new Error('Calendar delete failed: '+deleted.status);
           await sPatch(`pipeline_entries?id=eq.${e.id}`, { google_event_id: null, gig_date_dirty: false });
           console.log("calendar: event removed (date cleared)", e.id);
         }
@@ -740,7 +794,10 @@ async function syncCalendar(artistId, token) {
         else console.error("calendar update failed", e.id, er.status, (await er.text()).slice(0, 120));
         continue;
       }
-      const er = await fetch(evUrl(), { method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(ev) });
+      // A deterministic event ID also makes a retry after a database outage safe.
+      ev.id = e.id.replace(/-/g,'');
+      const er = await fetch(evUrl(), { method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(ev), signal:AbortSignal.timeout(30000) });
+      if (er.status === 409) { await sPatch(`pipeline_entries?id=eq.${e.id}`, {google_event_id:ev.id,gig_date_dirty:true}); continue; }
       if (er.ok) {
         const j = await er.json();
         if (j.id) await sPatch(`pipeline_entries?id=eq.${e.id}`, { google_event_id: j.id, gig_date_dirty: false });
@@ -750,78 +807,50 @@ async function syncCalendar(artistId, token) {
   } catch (err) { console.error("syncCalendar", artistId, err.message); }
 }
 
-// Slice B: fire due scheduled messages.
-// reply since scheduling -> cancel (intelligent disconnect); auto-send off -> 'ready'
-// (the app surfaces "review & send"); auto-send on -> send from the artist's Gmail.
-async function processScheduled() {
-  const due = await sGet(`scheduled_messages?status=eq.scheduled&send_at=lte.${encodeURIComponent(new Date().toISOString())}&select=*`);
-  for (const m of due) {
-    try {
-      // Human-initiated ("Send now") skips BOTH gates: the artist is the
-      // authority, and they're often deliberately replying to a fresh message.
-      if (!m.human) {
-        const replies = await sGet(`activities?pipeline_entry_id=eq.${m.pipeline_entry_id}&kind=eq.email_in&created_at=gte.${encodeURIComponent(m.created_at)}&select=id&limit=1`);
-        if (replies.length) {
-          await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "canceled", cancel_reason: "They replied first" });
-          await logActivity({ pipeline_entry_id: m.pipeline_entry_id, kind: "system", body: "Scheduled follow-up canceled — they replied first", source: "email_sync" });
-          console.log("scheduled: canceled (reply arrived)", m.id);
-          continue;
-        }
-        // No review gate: every scheduled message is human intention — it fires.
-        // (allow_auto_send is reserved for future agent-initiated mail.)
-      }
-      const conns = await sGet(`google_connections?artist_id=eq.${m.artist_id}&select=refresh_token`);
-      if (!conns.length) {
-        await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "failed", cancel_reason: "Gmail not connected" });
-        continue;
-      }
-      const token = await refreshAccessToken(conns[0].refresh_token);
-      const thread = await findThread(token, m.to_email).catch(() => null);
-      const sigRows = await sGet(`artists?id=eq.${m.artist_id}&select=display_name,phone,website,sig_logo_url,sig_enabled,sig_show_website,sig_show_phone`);
-      const sa = sigRows[0] || {};
-      // Artist-controlled signature: master toggle kills it entirely; the
-      // website/phone toggles trim it. Columns default true (migration 034).
-      const sig = sa.sig_enabled === false ? null : {
-        name: sa.display_name,
-        phone: sa.sig_show_phone === false ? "" : sa.phone,
-        site: sa.sig_show_website === false ? "" : sa.website,
-        logo: sa.sig_logo_url,
-      };
-      const gid = await gmailSend(token, m.to_email, (thread && thread.subject) || m.subject, m.body, thread, sig);
-      await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "sent", sent_at: new Date().toISOString() });
-      await logActivity({ pipeline_entry_id: m.pipeline_entry_id, kind: "email_out", body: m.body.slice(0, 600), source: "email_sync", email_message_id: gid });
-      const entries = await sGet(`pipeline_entries?id=eq.${m.pipeline_entry_id}&select=status`);
-      const patch = { last_activity_at: new Date().toISOString() };
-      if (entries.length && ["lead", "outreach"].includes(entries[0].status)) patch.status = "pitched";
-      await sPatch(`pipeline_entries?id=eq.${m.pipeline_entry_id}`, patch);
-      // No push for successful sends — push is for things that NEED you
-      // (replies, bounces, new leads); the activity log records the send.
-      console.log("scheduled: SENT", m.id, "->", m.to_email);
-      // Incremental learning: this send carries a generation->sent diff — retrain now.
-      if (m.ai_draft) refreshToneProfile(m.artist_id, token, true).then(() => console.log("tone: incremental retrain after diff-send")).catch(() => {});
-    } catch (e) {
-      console.error("scheduled error", m.id, e.message);
-      await sPatch(`scheduled_messages?id=eq.${m.id}`, { status: "failed", cancel_reason: (e.message || "error").slice(0, 180) });
-    }
+const mailProcessor = createMailProcessor({
+  get:sGet, patch:sPatch, rpc:sRpc, refresh:refreshAccessToken, search:gmailSearch,
+  message:gmailGet, thread:findThread, send:gmailSend, log:logActivity,
+  error:(...args) => console.error(...args),
+  async signature(artistId) {
+    const [a = {}] = await sGet(`artists?id=eq.${artistId}&select=display_name,phone,website,sig_logo_url,sig_enabled,sig_show_website,sig_show_phone`);
+    return a.sig_enabled === false ? null : { name:a.display_name, phone:a.sig_show_phone === false ? '' : a.phone,
+      site:a.sig_show_website === false ? '' : a.website, logo:/^https:\/\//i.test(a.sig_logo_url || '') ? a.sig_logo_url : '' };
   }
-}
+});
+async function processScheduled() { return mailProcessor.process(); }
 
 // Due reminders push ONCE (your own promise deserves a buzz — this is
 // exactly the "needs you" bar that sends-confirmations failed).
 async function pushDueReminders() {
-  const due = await sGet(`pipeline_entries?reminder_at=lte.${encodeURIComponent(new Date().toISOString())}&reminder_pushed=eq.false&select=id,artist_id,reminder_note,venue:venues!pipeline_entries_venue_id_fkey(name),org:orgs(name)&limit=50`);
+  if (!VAPID_PUB) return;
+  const due = await sGet(`pipeline_entries?reminder_at=lte.${encodeURIComponent(new Date().toISOString())}&reminder_pushed=eq.false&select=id,artist_id,reminder_at,reminder_note,venue:venues!pipeline_entries_venue_id_fkey(name),org:orgs(name)&limit=50`);
   for (const e of due) {
-    const name = (e.venue && e.venue.name) || (e.org && e.org.name) || "a deal";
-    notify(e.artist_id, "⏰ Reminder — " + (e.reminder_note || name), e.reminder_note ? name : "You asked to come back to this", "/app#entry/" + e.id).catch(() => {});
-    await sPatch(`pipeline_entries?id=eq.${e.id}`, { reminder_pushed: true });
+    const subs = await sGet(`push_subscriptions?artist_id=eq.${e.artist_id}&select=endpoint,p256dh,auth`);
+    if (!subs.length) continue;
+    const name = e.venue?.name || e.org?.name || 'a deal';
+    for (const sub of subs) {
+      const claimed = await sRpc('claim_reminder_delivery',{p_entry:e.id,p_at:e.reminder_at,p_endpoint:sub.endpoint});
+      if (!claimed) continue;
+      const path = `reminder_deliveries?entry_id=eq.${e.id}&reminder_at=eq.${encodeURIComponent(e.reminder_at)}&endpoint=eq.${encodeURIComponent(sub.endpoint)}`;
+      try {
+        await webpush.sendNotification({endpoint:sub.endpoint,keys:{p256dh:sub.p256dh,auth:sub.auth}},JSON.stringify({title:'⏰ Reminder — '+(e.reminder_note || name),body:e.reminder_note ? name : 'You asked to come back to this',url:'/app#entry/'+e.id,tag:'reminder-'+e.id+'-'+e.reminder_at}));
+        await sPatch(path,{status:'sent',updated_at:new Date().toISOString()});
+      } catch (err) {
+        if ([404,410].includes(err.statusCode)) await sDelete(`push_subscriptions?endpoint=eq.${encodeURIComponent(sub.endpoint)}`);
+        await sPatch(path,{status:'pending',updated_at:new Date().toISOString()});
+      }
+    }
+    const active = await sGet(`push_subscriptions?artist_id=eq.${e.artist_id}&select=endpoint`);
+    const sent = await sGet(`reminder_deliveries?entry_id=eq.${e.id}&reminder_at=eq.${encodeURIComponent(e.reminder_at)}&status=eq.sent&select=endpoint`);
+    if (active.length && active.every(sub => sent.some(row => row.endpoint === sub.endpoint)))
+      await sPatch(`pipeline_entries?id=eq.${e.id}&reminder_at=eq.${encodeURIComponent(e.reminder_at)}`,{reminder_pushed:true});
   }
-  if (due.length) console.log("reminders pushed:", due.length);
 }
 async function tick() {
   try {
     await processScheduled();
     try { await pushDueReminders(); } catch (e) { console.error("reminders", e.message); }
-    const conns = await sGet("google_connections?select=artist_id,refresh_token,history_id,watch_expiry");
+    const conns = await sGet("google_connections?select=artist_id,refresh_token,history_id,watch_expiry,google_email");
     console.log(new Date().toISOString(), "poll", conns.length, "connection(s)");
     for (const c of conns) {
       try {
@@ -829,13 +858,20 @@ async function tick() {
         try { token = await refreshAccessToken(c.refresh_token); }
         catch (e) {
           console.error("refresh failed", c.artist_id, e.message);
-          await sPatch(`artists?id=eq.${c.artist_id}`, { gmail_connected: false });
-          await sDelete(`google_connections?artist_id=eq.${c.artist_id}`);
+          if (e.oauthCode === 'invalid_grant') await sPatch(`artists?id=eq.${c.artist_id}`, { gmail_connected: false });
+          // A temporary outage must never destroy the account's refresh token.
           continue;
+        }
+        await sPatch(`artists?id=eq.${c.artist_id}`, { gmail_connected:true });
+        if (!c.google_email) {
+          const profile = await mailboxProfile(token);
+          c.google_email = profile.emailAddress.toLowerCase();
+          await sPatch(`google_connections?artist_id=eq.${c.artist_id}`, { google_email:profile.emailAddress.toLowerCase() });
         }
         try { await ensureWatch(c.artist_id, c, token); } catch (e) { console.error("watch error", c.artist_id, e.message); }
         try { await refreshToneProfile(c.artist_id, token); } catch (e) { console.error("tone error", c.artist_id, e.message); }
         await syncCalendar(c.artist_id, token);
+        await handlePush(c.google_email);
         await pollArtist(c.artist_id, token);
       } catch (e) { console.error("artist error", c.artist_id, e.message); }
     }
@@ -870,8 +906,7 @@ async function spotifyArtistInfo(url) {
 async function fetchSiteText(url) {
   try {
     if (!url) return null;
-    const full = /^https?:\/\//i.test(url) ? url : "https://" + url;
-    const html = await fetch(full, { headers: { "User-Agent": "Mozilla/5.0" }, redirect: "follow" }).then((r) => r.text());
+    const html = await safeSiteFetch(url);
     const text = html
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
