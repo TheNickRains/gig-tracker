@@ -35,7 +35,7 @@ The database runner requires an isolated local PostgreSQL server; defaults are s
 ## Rollout order
 
 1. Stop all old worker instances and place the app in maintenance mode. Back up the affected database tables.
-2. Apply `supabase/migration-040-reliability.sql` after migrations 001–039. The migration pauses existing scheduled messages for review and marks legacy failures without a definite pre-send explanation as uncertain. It preserves their full content.
+2. Apply `supabase/migration-040-reliability.sql` after migrations 001–039. The migration pauses existing scheduled messages for review and marks already-due legacy sends and failures without a definite pre-send explanation as uncertain. It preserves their full content.
 3. Deploy the matching app and worker together, then resume traffic. Old app tabs must reload: direct browser queue writes are intentionally revoked.
 4. Verify account connection status, draft recovery across reload/browser, queued address review, cancel/edit behavior, and calendar import. Use a deliberate test message to an account you control for the live Gmail check. Review paused/uncertain legacy attempts against Gmail Sent before releasing any message.
 

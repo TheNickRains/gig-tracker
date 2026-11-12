@@ -16,11 +16,11 @@ function asyncSQL(sql){return new Promise(resolve=>{const child=spawn(psql,[...a
   file('tests/fixtures/supabase-local.sql');file('supabase/schema.sql');
   const oldArtist='b1000000-0000-4000-8000-000000000001',oldEntry='b4000000-0000-4000-8000-000000000001';
   for(const f of fs.readdirSync('supabase').filter(n=>/^migration-/.test(n)).sort()){
-   if(f.startsWith('migration-040'))run(`insert into auth.users values('${oldArtist}','legacy@example.com');insert into venues(id,name)values('b2000000-0000-4000-8000-000000000001','Legacy room');insert into pipeline_entries(id,artist_id,venue_id,status)values('${oldEntry}','${oldArtist}','b2000000-0000-4000-8000-000000000001','lead');insert into scheduled_messages(artist_id,pipeline_entry_id,to_email,subject,body,send_at,status)values('${oldArtist}','${oldEntry}','buyer@example.com','Pending','Keep pending',now(),'scheduled'),('${oldArtist}','${oldEntry}','buyer@example.com','Unknown','Keep uncertain',now(),'failed');`);
+   if(f.startsWith('migration-040'))run(`insert into auth.users values('${oldArtist}','legacy@example.com');insert into venues(id,name)values('b2000000-0000-4000-8000-000000000001','Legacy room');insert into pipeline_entries(id,artist_id,venue_id,status)values('${oldEntry}','${oldArtist}','b2000000-0000-4000-8000-000000000001','lead');insert into scheduled_messages(artist_id,pipeline_entry_id,to_email,subject,body,send_at,status)values('${oldArtist}','${oldEntry}','buyer@example.com','Pending','Keep pending',now()+interval '1 day','scheduled'),('${oldArtist}','${oldEntry}','buyer@example.com','Unknown','Keep uncertain',now(),'failed'),('${oldArtist}','${oldEntry}','buyer@example.com','Due','Keep due',now(),'scheduled');`);
    file('supabase/'+f);
   }
-  assert.deepEqual(JSON.parse(run(`select json_agg(status order by status) from scheduled_messages where artist_id='${oldArtist}'`)),['ready','uncertain']);
-  assert.equal(run(`select count(*) from scheduled_messages where body like 'Keep %'`),'2');
+  assert.deepEqual(JSON.parse(run(`select json_agg(status order by status) from scheduled_messages where artist_id='${oldArtist}'`)),['ready','uncertain','uncertain']);
+  assert.equal(run(`select count(*) from scheduled_messages where body like 'Keep %'`),'3');
   run(`update scheduled_messages set status='canceled' where artist_id='${oldArtist}';delete from auth.users where id='${oldArtist}';`);
   console.log('Upgrade preserves legacy bodies and pauses unverified attempts.');
   file('tests/database-reliability.sql');console.log('All ownership, state transition, calendar and reminder SQL checks passed.');

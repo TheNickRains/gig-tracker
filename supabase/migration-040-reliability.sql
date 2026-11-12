@@ -16,7 +16,11 @@ alter table google_connections add column if not exists google_email text;
 
 -- The old worker had no durable claims/receipts. Keep outstanding work for
 -- review at cutover; do not replay potentially accepted legacy sends.
-update scheduled_messages set status='ready',cancel_reason='Saved before the reliability update — review before sending'
+update scheduled_messages set
+  status=case when send_at<=clock_timestamp() then 'uncertain' else 'ready' end,
+  cancel_reason=case when send_at<=clock_timestamp()
+    then 'Earlier due send has no receipt. Verify Gmail Sent before retrying'
+    else 'Saved before the reliability update — review before sending' end
   where status='scheduled';
 update scheduled_messages set status='uncertain',cancel_reason='Earlier attempt has no delivery receipt. Verify Gmail Sent before retrying'
   where status='failed' and coalesce(cancel_reason,'') not ilike '%Gmail not connected%';
