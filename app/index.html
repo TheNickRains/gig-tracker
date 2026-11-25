@@ -269,6 +269,8 @@
   .publishing-row h3 { font-size: 14px; line-height: 1.4; font-weight: 600; }
   .publishing-meta, .publishing-address { margin-bottom: 3px; }
   .publishing-issue { background: var(--followup-bg); color: var(--followup-text); border-radius: var(--radius-md); padding: 7px 8px; margin: 7px 0; font-size: 12px; }
+  .publishing-issue ul { margin-left: 16px; }
+  .publishing-issue li + li { margin-top: 4px; }
   .publishing-actions { margin-top: 7px; }
   .publishing-actions .publishing-link, .publishing-actions .publishing-button { border: 0; padding: 3px 0; }
   .publishing-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--text-secondary); }
@@ -4222,9 +4224,9 @@ function publishingTime(time){
   var hour = Number(parts[1]);
   return (hour % 12 || 12) + ':' + parts[2] + (hour < 12 ? ' AM' : ' PM');
 }
-function publishingRow(row){
+function publishingRow(row, mode){
   var show = row.listing || {};
-  var labels = { preview:'Ready for review', review:'Needs review', pending:'Queued', working:'Publishing', published:'Published', removed:'Removed', ignored:'Held back' };
+  var labels = { preview:'Ready to publish', review:'Needs review', pending:'Queued', working:'Publishing', published:'Published', removed:'Removed', ignored:'Held back' };
   var tones = { preview:'waiting', review:'followup', published:'won' };
   var date = /^\d{4}-\d{2}-\d{2}$/.test(show.date || '')
     ? new Intl.DateTimeFormat('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric', timeZone:'UTC' })
@@ -4237,26 +4239,33 @@ function publishingRow(row){
         .formatToParts(new Date(show.showAt)).find(function(part){ return part.type === 'timeZoneName'; });
       if (zone) advertised += ' ' + zone.value;
     } catch {}
-    advertised = (/Show time note|venue time zone/.test(row.issue || '') ? 'Calendar start ' : 'Show ') + advertised;
+    advertised = (/“Show time:|event’s time zone/.test(row.issue || '') ? 'Calendar start ' : 'Show ') + advertised;
   }
   var details = [date, advertised, location].filter(Boolean).join(' · ');
   var ticket = [show.doors && 'Doors ' + publishingTime(show.doors), show.ticketPrice].filter(Boolean).join(' · ');
   var destinations = show.exclusion ? '' : (show.type === 'original' ? 'Bandsintown + Live site' : 'Bandsintown');
   var calendarLink = /^https:\/\/www\.google\.com\/calendar\//.test(row.calendar_link || '')
-    ? '<a class="publishing-link" href="' + esc(row.calendar_link) + '" target="_blank" rel="noopener">Open in Calendar <i class="ti ti-external-link" aria-hidden="true"></i></a>' : '';
+    ? '<a class="publishing-link" href="' + esc(row.calendar_link) + '" target="_blank" rel="noopener">' +
+      (show.validationIssue ? 'Fix in Calendar' : 'Open in Calendar') + ' <i class="ti ti-external-link" aria-hidden="true"></i></a>' : '';
   var eventLink = /^\d+$/.test(row.bandsintown_id || '')
     ? '<a class="publishing-link" href="https://www.bandsintown.com/e/' + row.bandsintown_id + '" target="_blank" rel="noopener">View on Bandsintown</a>' : '';
   var ticketLink = !show.exclusion && /^https:\/\//.test(show.ticketUrl || '')
     ? '<a class="publishing-link" href="' + esc(show.ticketUrl) + '" target="_blank" rel="noopener">Ticket link</a>' : '';
-  var retry = row.status === 'review' && !show.validationIssue && (show.title || row.bandsintown_id)
+  var retry = (mode === 'pilot' || mode === 'live') && row.status === 'review' && !show.validationIssue && (show.title || row.bandsintown_id)
     ? '<button type="button" class="publishing-button" data-publishing-event="' + esc(row.event_id) + '" onclick="retryPublishing(this)">Retry Bandsintown</button>' : '';
+  var trial = mode === 'preview' && row.status === 'preview' && /^[\w-]{1,512}$/.test(row.event_id || '')
+    ? '<button type="button" class="publishing-button" data-publishing-event="' + esc(row.event_id) +
+      '" onclick="copyPublishingTrial(this)"><i class="ti ti-copy" aria-hidden="true"></i> Copy trial ID</button>' : '';
+  var issues = String(row.issue || show.exclusion || '').split('\n').filter(Boolean);
+  var instructions = issues.length > 1
+    ? '<div class="publishing-issue"><ul>' + issues.map(function(issue){ return '<li>' + esc(issue) + '</li>'; }).join('') + '</ul></div>'
+    : issues.length ? '<p class="publishing-issue">' + esc(issues[0]) + '</p>' : '';
   return '<li class="publishing-row"><header><h3>' + esc(show.title || 'Calendar change') + '</h3>' +
     '<span class="badge badge-' + (tones[row.status] || 'outreach') + '">' + esc(labels[row.status] || '') + '</span></header>' +
     (details ? '<p class="publishing-meta">' + esc(details) + '</p>' : '') +
     (show.address ? '<p class="publishing-address">' + esc(show.address) + '</p>' : '') +
     (ticket || destinations ? '<p class="publishing-meta">' + esc([ticket,destinations].filter(Boolean).join(' · ')) + '</p>' : '') +
-    (row.issue || show.exclusion ? '<p class="publishing-issue">' + esc(row.issue || show.exclusion) + '</p>' : '') +
-    '<div class="publishing-actions">' + calendarLink + eventLink + ticketLink + retry + '</div></li>';
+    instructions + '<div class="publishing-actions">' + calendarLink + eventLink + ticketLink + retry + trial + '</div></li>';
 }
 async function loadPublishingInbox(){
   if (!ME) return;
@@ -4302,15 +4311,24 @@ async function loadPublishingInbox(){
   });
   var rows = results[0].data || [];
   document.getElementById('publishing-rows').innerHTML = rows.length
-    ? rows.slice(0, publishingLimit).map(publishingRow).join('')
+    ? rows.slice(0, publishingLimit).map(function(row){ return publishingRow(row, result?.mode); }).join('')
     : '<li class="publishing-row publishing-meta">' + (filter === 'review' ? 'No shows need review.' : filter === 'off' ? 'No upcoming dates are held back.' : 'No upcoming shows.') + '</li>';
   document.getElementById('publishing-more').hidden = rows.length <= publishingLimit;
   if (result) {
     document.getElementById('publishing-mode').textContent =
       result.mode === 'preview' ? 'Preview only' : result.mode === 'pilot' ? 'One-show trial' : 'Automatic publishing';
     document.getElementById('publishing-next').textContent = result.mode === 'preview'
-      ? 'Review the dates, then sign in to Bandsintown for the one-show trial.'
-      : result.runnerConnected ? 'Bandsintown browser connected.' : 'Waiting for the Bandsintown browser.';
+      ? 'Sign in to Bandsintown for Artists and use Copy trial ID on one show you want to test.'
+      : result.runnerConnected ? 'Bandsintown browser connected.' : 'Open the signed-in Bandsintown browser and start the local runner.';
+  }
+}
+async function copyPublishingTrial(button){
+  var id = button.dataset.publishingEvent;
+  try {
+    await navigator.clipboard.writeText(id);
+    showToast('Trial ID copied. Paste it into SHOW_SYNC_PILOT_EVENT_ID in Railway.');
+  } catch {
+    showToast('Copy this trial ID manually: ' + id, true);
   }
 }
 function reconcilePublishing(event){
@@ -4328,10 +4346,18 @@ async function requestPublishing(route, message){
     var response = await fetch(WORKER_URL + '/calendar-publish/' + route, {
       method:'POST', headers:{ Authorization:'Bearer ' + session.access_token }
     });
+    if (response.status === 401 || response.status === 403) {
+      feedback.textContent = 'Sign in to Gig Tracker with the publishing account and try again.';
+      return;
+    }
+    if (response.status === 409) {
+      feedback.textContent = 'Resolve the issue shown on the date, then try again.';
+      return;
+    }
     if (!response.ok) throw new Error();
     feedback.textContent = message;
   } catch {
-    feedback.textContent = 'Could not queue the request.';
+    feedback.textContent = 'Refresh this page and try again.';
   }
 }
 

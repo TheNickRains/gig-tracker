@@ -101,6 +101,10 @@ function addressFromLocation(location, notes) {
   };
 }
 
+function quotedNote(field, value) {
+  return '“' + field + ': ' + value.slice(0, 96) + (value.length > 96 ? '…' : '') + '”';
+}
+
 function publicUrl(value) {
   try {
     const url = new URL(value);
@@ -143,17 +147,28 @@ async function projectEvent(event, options) {
     });
   }
   let venue = addressFromLocation(event.location, notes);
-  let issue = notes['show type'] && !['original', 'cover', 'busking'].includes(type) ? 'Choose Original, Cover, or Busking in Calendar.' : null;
+  const issues = [];
+  if (notes['show type'] && !['original', 'cover', 'busking'].includes(type)) {
+    issues.push('In the Calendar description, replace ' + quotedNote('Show type', notes['show type']) +
+      ' with “Show type: Original”, “Show type: Cover”, or “Show type: Busking”.');
+  }
   if (options.resolveVenue && (!venue.address || !venue.city || !venue.country || !venue.venue)) {
     const match = await options.resolveVenue(event.location || [notes.venue, notes.city, notes.region].filter(Boolean).join(', '));
     if (match) venue = { ...match, ...Object.fromEntries(Object.entries(venue).filter(([, value]) => value)) };
   }
-  if (!venue.venue || !venue.city || !venue.country || (/^(US|CA)$/i.test(venue.country) && !venue.region)) {
-    issue ||= 'Add the venue, city, region, and country to the Calendar location.';
+  const missing = [
+    !venue.venue && 'venue name', !venue.city && 'city',
+    /^(US|CA)$/i.test(venue.country) && !venue.region && 'state or province', !venue.country && 'country',
+  ].filter(Boolean);
+  if (missing.length) {
+    issues.push('In Calendar → Location, add the missing ' + missing.join(', ') +
+      '. Use the venue’s full location, including its name and address.');
   }
 
-  const doors = clockRange(notes.doors || notes['door time']);
-  const advertised = clockRange(notes['show time']);
+  const doorNote = notes.doors || notes['door time'];
+  const showNote = notes['show time'];
+  const doors = clockRange(doorNote);
+  const advertised = clockRange(showNote);
   const timeZone = notes.timezone || notes['time zone'] || venue.timeZone ||
     CLOCK_ZONES[advertised?.zone] || CLOCK_ZONES[doors?.zone] || event.start.timeZone || options.timeZone;
   const calendarStart = Date.parse(event.start.dateTime);
@@ -166,20 +181,41 @@ async function projectEvent(event, options) {
       const candidates = showInstants(times.date, advertised, timeZone);
       const candidate = candidates.length === 1 ? candidates[0] :
         candidates.find(instant => instant === Math.floor(calendarStart / 60000) * 60000);
-      if (candidate == null || candidate <= options.now) {
-        issue ||= 'Check the Show time note against the venue’s time zone and date.';
+      if (candidate == null) {
+        const note = quotedNote('Show time', showNote);
+        if (candidates.length > 1) {
+          const zones = candidates.map(instant => localParts(instant, timeZone).zone);
+          issues.push('In the Calendar description, add ' + zones.join(' or ') + ' to ' + note +
+            ' to specify which occurrence of that time to use.');
+        } else {
+          issues.push('In the Calendar description, replace ' + note +
+            ' with a valid local time on ' + times.date + ' in ' + timeZone + '.');
+        }
+      } else if (candidate <= options.now) {
+        issues.push('In Calendar, update the event date or ' + quotedNote('Show time', showNote) +
+          ' to the upcoming show date and time.');
       } else {
         showAt = candidate;
         times = localParts(showAt, timeZone);
       }
     }
     if (doors?.zone && !showInstants(times.date, doors, timeZone).length) {
-      issue ||= 'Check the Doors note against the venue’s time zone.';
+      issues.push('In the Calendar description, change ' + quotedNote('Doors', doorNote) +
+        ' to the venue-local doors time in ' + timeZone + '.');
     }
   } catch {
-    issue ||= 'Confirm the venue time zone in Calendar.';
+    issues.push('In Calendar, edit the event’s time zone to match the venue. If the description has a “Time zone:” line, correct it to a name like “America/New_York”.');
   }
-  if (notes['show time'] && !advertised) issue ||= 'Check the Show time note in Calendar. Use a time like 8:00 PM, or remove the note to use the Calendar start.';
+  if (showNote && !advertised) {
+    const startHint = times ? ' (' + times.time + ' ' + times.zone + ')' : '';
+    issues.push('In the Calendar description, replace ' + quotedNote('Show time', showNote) +
+      ' with the advertised time, using a format like “Show time: 8:00 PM”. Delete that line to use the Calendar start' + startHint + '.');
+  }
+  if (doorNote && !doors) {
+    issues.push('In the Calendar description, replace ' + quotedNote('Doors', doorNote) +
+      ' with a time like “Doors: 7:00 PM”, or delete the line to omit doors from the listing.');
+  }
+  const issue = issues.length ? issues.join('\n') : null;
   const ticketUrl = publicUrl(notes['ticket url']);
   const listing = {
     title: title || venue.venue, type, ...venue, timeZone: timeZone || null, date: times?.date,

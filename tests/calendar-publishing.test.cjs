@@ -76,7 +76,7 @@ test('green marks a confirmed gig and original titles and common show-time notes
   const paidMarker = await projectEvent({ ...event, summary: '$$$ Geiger Key', description: '' }, options);
   assert.equal(paidMarker.listing.title, 'Geiger Key');
   const ambiguous = await projectEvent({ ...event, description: 'Show time: 8 or 9 PM' }, options);
-  assert.match(ambiguous.issue, /Check the Show time note/);
+  assert.match(ambiguous.issue, /replace “Show time: 8 or 9 PM”.*“Show time: 8:00 PM”/);
 });
 
 test('an advertised time with a zone overrides the booking block', async () => {
@@ -109,12 +109,26 @@ test('venue-zone resolution distinguishes a DST fold and rejects an invalid wall
   assert.equal(daylight.issue, null);
   assert.equal(daylight.listing.showAt, '2026-11-01T05:30:00.000Z');
   const uncertain = await projectEvent({ ...event, start, description: 'Show time: 1:30 AM' }, before);
-  assert.match(uncertain.issue, /venue’s time zone/);
+  assert.match(uncertain.issue, /add (EDT or EST|EST or EDT) to “Show time: 1:30 AM”/);
   const nonexistent = await projectEvent({ ...event,
     start: { dateTime: '2026-03-08T00:00:00-05:00', timeZone: 'America/New_York' },
     description: 'Show time: 2:30 AM ET',
   }, before);
-  assert.match(nonexistent.issue, /venue’s time zone/);
+  assert.match(nonexistent.issue, /replace “Show time: 2:30 AM ET” with a valid local time on 2026-03-08/);
+});
+
+test('review instructions name each field and quote what needs to change', async () => {
+  const show = await projectEvent({
+    ...event, location: 'Room somewhere',
+    description: 'Show type: Mystery\nShow time: after dinner\nDoors: early',
+  }, options);
+  assert.equal(show.listing.validationIssue, true);
+  const lines = show.issue.split('\n');
+  assert.equal(lines.length, 4);
+  assert.match(lines[0], /replace “Show type: Mystery”/);
+  assert.match(lines[1], /Calendar → Location, add the missing city, country/);
+  assert.match(lines[2], /replace “Show time: after dinner”/);
+  assert.match(lines[3], /replace “Doors: early”/);
 });
 
 test('the direct booking Calendar watch picks up manual creates, notes edits, and deletions', async t => {

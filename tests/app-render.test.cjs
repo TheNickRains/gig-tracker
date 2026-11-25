@@ -33,7 +33,7 @@ test('publishing preview shows venue-local time, destination, and a safe Calenda
  assert.match(row,/Dec 2, 2026 · 8:00 PM · Example venue · Key West, FL/);
  assert.match(row,/Bandsintown \+ Live site/);
  assert.match(row,/Check the advertised time/);
- assert.match(row,/Open in Calendar/);
+ assert.match(row,/Fix in Calendar/);
  assert.doesNotMatch(row,/Retry Bandsintown/);
  const off = c.publishingRow({ status:'ignored', listing:{ title:'Geiger Key', exclusion:'Gray on Calendar' } });
  assert.match(off,/Gray on Calendar/);
@@ -48,4 +48,19 @@ test('publishing preview labels doors and advertised show time separately', () =
  } });
  assert.match(row,/Show 10:00 PM EST/);
  assert.match(row,/Doors 8:00 PM · Free/);
+});
+
+test('the preview supplies a one-show trial ID and keeps fixes on flagged rows', () => {
+ const { c } = appHarness();
+ const ready = c.publishingRow({ event_id:'show-42', status:'preview', listing:{ title:'The Reserve' } }, 'preview');
+ assert.match(ready,/Ready to publish/);
+ assert.match(ready,/data-publishing-event="show-42".*Copy trial ID/);
+ const flagged = c.publishingRow({ event_id:'show-43', status:'review',
+  calendar_link:'https://www.google.com/calendar/event?eid=example',
+  issue:'Replace Show time: <evening>\nAdd the address in Calendar → Location.',
+  listing:{ title:'The Reserve', validationIssue:true },
+ }, 'preview');
+ assert.match(flagged, /<li>Replace Show time: &lt;evening&gt;<\/li><li>Add the address/);
+ assert.match(flagged, /Fix in Calendar/);
+ assert.doesNotMatch(flagged, /Copy trial ID|Retry Bandsintown/);
 });
