@@ -84,4 +84,24 @@ select pg_temp.check_it(claim_reminder_delivery('40000000-0000-4000-8000-0000000
 update reminder_deliveries set status='sent';
 select pg_temp.check_it(not claim_reminder_delivery('40000000-0000-4000-8000-000000000001',now(),'device'),'successful reminder never repeats');
 select pg_temp.check_it(exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='artists'),'connection health updates reach open browsers');
+
+insert into calendar_publish_state (artist_id, calendar_id) values ('10000000-0000-4000-8000-000000000001','booking@nickrainsmusic.com');
+set local role service_role;
+select calendar_publish_receive('10000000-0000-4000-8000-000000000001');
+select pg_temp.check_it(calendar_publish_apply('10000000-0000-4000-8000-000000000001','cursor-1',null,1,
+  '[{"event_id":"show1","fingerprint":"upsert-v1","operation":"upsert","listing":{"title":"First show"}},{"event_id":"show2","fingerprint":"other-v1","operation":"upsert","listing":{"title":"Second show"}}]',false,null)=2,'initial sync previews both shows');
+select pg_temp.check_it((select count(*)=0 from calendar_publish_claim('10000000-0000-4000-8000-000000000001',null)),'preview stays out of the browser queue');
+select pg_temp.check_it(calendar_publish_apply('10000000-0000-4000-8000-000000000001','cursor-2','cursor-1',1,
+  '[{"event_id":"show1","fingerprint":"upsert-v1","operation":"upsert","listing":{"title":"First show"}},{"event_id":"show2","fingerprint":"other-v1","operation":"upsert","listing":{"title":"Second show"}}]',true,'show1')=1,'pilot promotes one event');
+select pg_temp.check_it((select event_id='show1' and status='working' from calendar_publish_claim('10000000-0000-4000-8000-000000000001','show1')),'pilot can claim only its intended show');
+select pg_temp.check_it(calendar_publish_apply('10000000-0000-4000-8000-000000000001','stale','cursor-1',1,
+  '[{"event_id":"show1","fingerprint":"remove-v1","operation":"remove"}]',true,'show1')=-1,'stale cursor cannot mutate desired work');
+select pg_temp.check_it(calendar_publish_apply('10000000-0000-4000-8000-000000000001','cursor-3','cursor-2',1,
+  '[{"event_id":"show1","fingerprint":"remove-v1","operation":"remove"}]',true,'show1')=1,'current deletion supersedes a job in progress');
+select pg_temp.check_it((select operation='remove' and status='pending' from calendar_publish_shows where event_id='show1'),'in-flight removal remains queued for verification');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000002',true);
+select pg_temp.check_it((select count(*)=0 from calendar_publish_shows),'publishing inbox is owner-only');
+reset role;
 rollback;

@@ -1162,6 +1162,16 @@
       <span><span class="leg-dot" style="background:var(--text-primary);border-radius:50%"></span>Gig</span>
       <span style="color:var(--text-tertiary)">Tap a day to cycle · clear on third tap</span>
     </div>
+    <section id="publishing-inbox" class="card" aria-label="Show publishing" hidden style="margin-top:18px;padding:12px">
+      <details id="publishing-details">
+        <summary style="cursor:pointer"><span id="publishing-summary">Show publishing</span></summary>
+        <div id="publishing-rows" aria-live="polite"></div>
+        <form onsubmit="reconcilePublishing(event)" style="margin-top:10px">
+          <button type="submit" class="btn btn-ghost">Recheck Calendar</button>
+          <span id="publishing-feedback" role="status"></span>
+        </form>
+      </details>
+    </section>
     <div class="section-label" style="margin-top:18px">Weekly blocks</div>
     <div class="card">
       <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">Block a day of the week, every week (e.g. Sundays off). Painting a specific day overrides it.</div>
@@ -4143,7 +4153,64 @@ function showApp(session){
 }
 
 // ── Load ────────────────────────────────────────────────
-function loadAll(){ loadDrafts(); loadProfile(); loadVenues(); loadPipeline(); loadAvail(); loadUnmatched(); subscribeRealtime(); pokeWorker(); }
+function loadAll(){ loadDrafts(); loadProfile(); loadVenues(); loadPipeline(); loadAvail(); loadUnmatched(); loadPublishingInbox(); subscribeRealtime(); pokeWorker(); }
+
+async function loadPublishingInbox(){
+  if (!ME) return;
+  var artist = ME;
+  var fields = 'event_id,listing,status,issue,calendar_link,bandsintown_id,updated_at';
+  var results = await Promise.all([
+    sb.from('calendar_publish_shows').select(fields, { count:'exact' }).eq('artist_id', artist)
+      .eq('status', 'review').order('updated_at', { ascending:false }).limit(15),
+    sb.from('calendar_publish_shows').select(fields).eq('artist_id', artist)
+      .in('status', ['preview','pending','working','published','removed'])
+      .order('updated_at', { ascending:false }).limit(15)
+  ]);
+  if (artist !== ME || results.some(function(result){ return result.error; })) return;
+  var rows = (results[0].data || []).concat(results[1].data || []);
+  var inbox = document.getElementById('publishing-inbox');
+  if (!inbox) return;
+  inbox.hidden = !rows.length;
+  var reviewCount = results[0].count || 0;
+  document.getElementById('publishing-summary').textContent = reviewCount
+    ? 'Show publishing · ' + reviewCount + ' to review' : 'Show publishing';
+  var labels = { preview:'Preview', review:'Needs review', pending:'Queued', working:'Updating Bandsintown', published:'Published', removed:'Removed' };
+  document.getElementById('publishing-rows').innerHTML = rows.slice(0, 15).map(function(row){
+      var listing = row.listing || {};
+      var calendarLink = /^https:\/\/www\.google\.com\/calendar\//.test(row.calendar_link || '')
+        ? '<a href="' + esc(row.calendar_link) + '" target="_blank" rel="noopener">Open in Calendar</a>' : '';
+      var eventLink = /^\d+$/.test(row.bandsintown_id || '')
+        ? '<a href="https://www.bandsintown.com/e/' + row.bandsintown_id + '" target="_blank" rel="noopener">View on Bandsintown</a>' : '';
+      var retry = row.status === 'review' && !listing.validationIssue && (listing.title || row.bandsintown_id)
+        ? '<button type="button" class="btn btn-ghost" data-publishing-event="' + esc(row.event_id) +
+          '" onclick="retryPublishing(this)">Retry Bandsintown</button>' : '';
+      return '<div style="margin-top:12px"><strong>' + esc(listing.title || 'Calendar change') + '</strong>' +
+        '<div>' + esc([listing.date, labels[row.status]].filter(Boolean).join(' · ')) + '</div>' +
+        (row.issue ? '<div>' + esc(row.issue) + '</div>' : '') +
+        '<div style="display:flex;gap:12px">' + calendarLink + eventLink + retry + '</div></div>';
+    }).join('');
+}
+function reconcilePublishing(event){
+  event.preventDefault();
+  requestPublishing('reconcile', 'Calendar check requested.');
+}
+function retryPublishing(button){
+  requestPublishing('retry?event=' + encodeURIComponent(button.dataset.publishingEvent), 'Bandsintown retry queued.');
+}
+async function requestPublishing(route, message){
+  var feedback = document.getElementById('publishing-feedback');
+  feedback.textContent = 'Sending request…';
+  try {
+    var session = (await sb.auth.getSession()).data.session;
+    var response = await fetch(WORKER_URL + '/calendar-publish/' + route, {
+      method:'POST', headers:{ Authorization:'Bearer ' + session.access_token }
+    });
+    if (!response.ok) throw new Error();
+    feedback.textContent = message;
+  } catch {
+    feedback.textContent = 'Could not queue the request.';
+  }
+}
 
 // Live updates over websockets: when the worker writes a reply/stage change,
 // Supabase Realtime pushes it here and we refresh — no manual reload. RLS means
@@ -4163,6 +4230,7 @@ function subscribeRealtime(){
   var ch = sb.channel('pipeline-rt')
     .on('postgres_changes', { event:'UPDATE', schema:'public', table:'artists', filter:'id=eq.'+ME }, function(){ loadProfile(); })
     .on('postgres_changes', { event:'*', schema:'public', table:'message_drafts' }, function(){ loadDrafts(); })
+    .on('postgres_changes', { event:'*', schema:'public', table:'calendar_publish_shows', filter:'artist_id=eq.'+ME }, function(){ loadPublishingInbox(); })
     .on('postgres_changes', { event:'*', schema:'public', table:'calendar_busy_days' }, function(){ if(currentScreen==='calendar') loadAvail(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, function(){ loadPipeline(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pipeline_entries' }, function(){ loadPipeline(); })
@@ -4179,7 +4247,7 @@ function subscribeRealtime(){
     })
     .subscribe(function(status){
       if (ch !== rtChannel) return; // a torn-down channel reporting CLOSED — ignore
-      if (status === 'SUBSCRIBED') { rtRetryMs = 2000; return; }
+      if (status === 'SUBSCRIBED') { rtRetryMs = 2000; loadPublishingInbox(); return; }
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') scheduleRtRetry();
     });
   rtChannel = ch;

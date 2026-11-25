@@ -15,6 +15,7 @@ const webpush = require("web-push");
 const { createMailProcessor } = require('./reliable-mail');
 const { safeSiteFetch } = require('./safe-site-fetch');
 const { dayInZone, eventDays } = require('./calendar-days');
+const { createCalendarPublisher } = require('./calendar-publish');
 
 const SUPA = (process.env.SUPABASE_URL || "").trim();
 const SVC = (process.env.SUPABASE_SERVICE_KEY || "").trim();
@@ -1060,10 +1061,62 @@ async function handleAiDraft(req, res, bodyStr) {
   }
 }
 
+async function resolveShowVenue(location) {
+  if (!PLACES_KEY || !location) return null;
+  const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json', 'X-Goog-Api-Key': PLACES_KEY,
+      'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.addressComponents,places.location',
+    },
+    body: JSON.stringify({ textQuery: location, maxResultCount: 3 }),
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!response.ok) return null;
+  const { places = [] } = await response.json();
+  const normalize = value => (value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const name = normalize(location.split(',')[0]);
+  const candidates = places.filter(place => normalize(place.displayName?.text) === name ||
+    normalize(place.formattedAddress) === normalize(location));
+  if (candidates.length !== 1) return null;
+  const place = candidates[0];
+  const part = (kind, short) => place.addressComponents?.find(item => item.types.includes(kind))?.[short ? 'shortText' : 'longText'] || '';
+  let timeZone;
+  if (place.location) {
+    const query = new URLSearchParams({
+      location: place.location.latitude + ',' + place.location.longitude,
+      timestamp: String(Math.floor(Date.now() / 1000)), key: PLACES_KEY,
+    });
+    const zone = await fetch('https://maps.googleapis.com/maps/api/timezone/json?' + query, { signal: AbortSignal.timeout(12000) });
+    if (zone.ok) timeZone = (await zone.json()).timeZoneId;
+  }
+  return {
+    venue: place.displayName?.text, address: place.formattedAddress,
+    city: part('locality') || part('postal_town'), region: part('administrative_area_level_1', true),
+    country: part('country', true), postcode: part('postal_code'), timeZone,
+  };
+}
+
+const calendarPublisher = createCalendarPublisher({
+  get: sGet, patch: sPatch, rpc: sRpc, refresh: refreshAccessToken, user: verifyUser,
+  cors: corsHeaders, notify, resolveVenue: resolveShowVenue,
+  async createState(body) {
+    const response = await fetch(SUPA + '/rest/v1/calendar_publish_state', {
+      method: 'POST', headers: { ...sHeaders, Prefer: 'resolution=ignore-duplicates' },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(30000),
+    });
+    if (!response.ok) throw new Error('Could not initialize Calendar publishing state (' + response.status + ')');
+  },
+});
+
 // HTTP: health + the Pub/Sub push webhook + AI drafting.
-http.createServer((req, res) => {
+const workerServer = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   if (req.method === "OPTIONS") { res.writeHead(204, corsHeaders(req)); res.end(); return; }
+  if (calendarPublisher && u.pathname.startsWith('/calendar-publish/')) {
+    void calendarPublisher.route(req, res, u.pathname);
+    return;
+  }
   if (req.method === "GET" && u.pathname === "/") { res.writeHead(200); res.end("ok"); return; }
   if (req.method === "POST" && u.pathname === "/ai/draft") {
     let body = "";
@@ -1099,7 +1152,13 @@ http.createServer((req, res) => {
     return;
   }
   return handleHttp(req, res, u);
-}).listen(PORT, () => console.log("Gig worker HTTP on :" + PORT));
+});
+calendarPublisher?.attach(workerServer);
+workerServer.on('close', () => calendarPublisher?.close());
+workerServer.listen(PORT, () => {
+  console.log("Gig worker HTTP on :" + PORT);
+  void calendarPublisher?.start();
+});
 // Google's place types → our venue taxonomy, so "every listing saved as a bar"
 // stops happening. Primary type wins; the types array breaks ties. Returns
 // null when Google doesn't know — the select keeps its default, no bad guess.
