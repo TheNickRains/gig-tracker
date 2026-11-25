@@ -16,11 +16,11 @@ function createCalendarPublisher(deps, env = process.env) {
   const fetchGoogle = deps.fetch || fetch;
   const live = env.SHOW_SYNC_LIVE === 'true';
   const pilot = env.SHOW_SYNC_PILOT_EVENT_ID || null;
-  const calendarId = env.SHOW_SYNC_CALENDAR_ID || 'booking@nickrainsmusic.com';
+  const bookingAccount = 'booking@nickrainsmusic.com';
+  const calendarId = env.SHOW_SYNC_CALENDAR_ID || bookingAccount;
   const address = new URL('/calendar-publish/google', env.SHOW_SYNC_URL);
-  if (address.protocol !== 'https:' || !env.SHOW_SYNC_GOOGLE_REFRESH_TOKEN ||
-    !env.SHOW_SYNC_RUNNER_TOKEN || env.SHOW_SYNC_RUNNER_TOKEN.length < 32) {
-    throw new Error('Show publishing requires an HTTPS URL, a Calendar refresh token, and a runner token of at least 32 characters.');
+  if (address.protocol !== 'https:' || (live && (env.SHOW_SYNC_RUNNER_TOKEN || '').length < 32)) {
+    throw new Error('Show publishing requires an HTTPS URL and live mode requires a runner token of at least 32 characters.');
   }
   const statePath = 'calendar_publish_state?' + filtered('artist_id', artist);
   const showsPath = 'calendar_publish_shows?' + filtered('artist_id', artist);
@@ -47,6 +47,18 @@ function createCalendarPublisher(deps, env = process.env) {
       if (socket.readyState === WebSocket.OPEN && socket.bufferedAmount < 4096) socket.send('pending');
     }
   };
+
+  async function calendarAccessToken() {
+    if (env.SHOW_SYNC_GOOGLE_REFRESH_TOKEN) return deps.refresh(env.SHOW_SYNC_GOOGLE_REFRESH_TOKEN);
+    const [connection] = await deps.get('google_connections?' + filtered('artist_id', artist) + '&select=refresh_token&limit=1');
+    if (!connection?.refresh_token) throw new Error('Connect the booking Google account in Gig Collective.');
+    const token = await deps.refresh(connection.refresh_token);
+    const account = await deps.googleAccount(token);
+    if (account?.emailAddress?.toLowerCase() !== bookingAccount) {
+      throw new Error('The connected Google account must be booking@nickrainsmusic.com.');
+    }
+    return token;
+  }
 
   async function google(url, token, body) {
     const headers = { Authorization: 'Bearer ' + token };
@@ -195,7 +207,7 @@ function createCalendarPublisher(deps, env = process.env) {
         const current = await state();
         const expires = Math.max(0, ...current.channels.filter(channel => channel.resourceId).map(channel => channel.expiration));
         const renewing = expires - Date.now() <= DAY;
-        const token = await deps.refresh(env.SHOW_SYNC_GOOGLE_REFRESH_TOKEN);
+        const token = await calendarAccessToken();
         const expiration = renewing ? await replaceWatch(current, token) : expires;
         // Full watch-renewal reconciliation also extends indefinite recurrences.
         scanAll ||= renewing || !current.cursor;

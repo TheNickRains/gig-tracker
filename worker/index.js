@@ -1099,7 +1099,7 @@ async function resolveShowVenue(location) {
 
 const calendarPublisher = createCalendarPublisher({
   get: sGet, patch: sPatch, rpc: sRpc, refresh: refreshAccessToken, user: verifyUser,
-  cors: corsHeaders, notify, resolveVenue: resolveShowVenue,
+  cors: corsHeaders, notify, resolveVenue: resolveShowVenue, googleAccount: mailboxProfile,
   async createState(body) {
     const response = await fetch(SUPA + '/rest/v1/calendar_publish_state', {
       method: 'POST', headers: { ...sHeaders, Prefer: 'resolution=ignore-duplicates' },

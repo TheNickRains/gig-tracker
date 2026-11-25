@@ -76,9 +76,23 @@ test('the direct booking Calendar watch picks up manual creates, notes edits, an
       assert.equal(artist_id, 'artist');
       store.calendar_id ??= calendar_id;
     },
-    get: async key => key.startsWith('calendar_publish_state') ? [structuredClone(store)] : [...rows.values()],
+    get: async key => {
+      if (key.startsWith('calendar_publish_state')) return [structuredClone(store)];
+      if (key.startsWith('google_connections')) {
+        assert.equal(key, 'google_connections?artist_id=eq.artist&select=refresh_token&limit=1');
+        return [{ refresh_token: 'existing-booking-grant' }];
+      }
+      return [...rows.values()];
+    },
     patch: async (key, patch) => Object.assign(store, patch),
-    refresh: async () => 'google-token',
+    refresh: async refreshToken => {
+      assert.equal(refreshToken, 'existing-booking-grant');
+      return 'google-token';
+    },
+    googleAccount: async token => {
+      assert.equal(token, 'google-token');
+      return { emailAddress: 'booking@nickrainsmusic.com' };
+    },
     user: async req => req.headers['test-user'],
     cors: () => ({ 'Content-Type': 'application/json' }),
     notify: async () => {},
@@ -93,7 +107,7 @@ test('the direct booking Calendar watch picks up manual creates, notes edits, an
     },
   };
   const publisher = createCalendarPublisher(deps, {
-    SHOW_SYNC_ARTIST_ID: 'artist', SHOW_SYNC_GOOGLE_REFRESH_TOKEN: 'google-token', SHOW_SYNC_LIVE: 'true',
+    SHOW_SYNC_ARTIST_ID: 'artist', SHOW_SYNC_LIVE: 'true',
     SHOW_SYNC_URL: 'https://worker.example', SHOW_SYNC_RUNNER_TOKEN: 'runner-secret-long-enough-for-testing',
   });
   t.after(() => publisher.close());
@@ -143,6 +157,24 @@ test('the direct booking Calendar watch picks up manual creates, notes edits, an
   await waitFor(() => store.processed === 3);
   assert.equal(rows.get(event.id).operation, 'remove');
   assert.ok(calls.every(url => url === eventsUrl + '/watch' || url.startsWith(eventsUrl + '?')));
+});
+
+test('an artist connection for a different Google account never starts a Calendar watch', async t => {
+  const messages = [];
+  const calendarId = 'booking@nickrainsmusic.com';
+  const publisher = createCalendarPublisher({
+    createState: async () => {},
+    get: async key => key.startsWith('calendar_publish_state')
+      ? [{ calendar_id: calendarId, channels: [] }] : [{ refresh_token: 'different-account' }],
+    refresh: async () => 'google-token',
+    googleAccount: async () => ({ emailAddress: 'other-artist@example.com' }),
+    fetch: async url => { messages.push(url); },
+  }, { SHOW_SYNC_ARTIST_ID: 'artist', SHOW_SYNC_URL: 'https://worker.example' });
+  t.after(() => publisher.close());
+  const log = t.mock.method(console, 'error', () => {});
+  await publisher.start();
+  assert.equal(messages.length, 0);
+  assert.match(log.mock.calls[0].arguments.join(' '), /connected Google account must be booking/);
 });
 
 async function waitFor(predicate) {
