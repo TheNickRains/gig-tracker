@@ -79,6 +79,44 @@ test('green marks a confirmed gig and original titles and common show-time notes
   assert.match(ambiguous.issue, /Check the Show time note/);
 });
 
+test('an advertised time with a zone overrides the booking block', async () => {
+  const show = await projectEvent({
+    ...event, summary: 'Original: Kill Your Idol (Gig Collective)',
+    start: { dateTime: '2026-12-02T20:00:00-05:00', timeZone: 'America/Chicago' },
+    description: [
+      'Show type: Original', 'Doors: 8pm', 'Show time: 10PM EST', 'Set length: 45-90mins',
+      'Ticket price: Free', 'Ticket URL: n/a', 'Public notes: Show is during art basel in miami',
+    ].join('\n'),
+  }, options);
+  assert.equal(show.issue, null);
+  assert.equal(show.listing.timeZone, 'America/New_York');
+  assert.equal(show.listing.date, '2026-12-02');
+  assert.equal(show.listing.time, '22:00');
+  assert.equal(show.listing.showAt, '2026-12-03T03:00:00.000Z');
+  assert.equal(show.listing.doors, '20:00');
+  assert.equal(show.listing.ticketPrice, 'Free');
+  assert.equal(show.listing.ticketUrl, '');
+  assert.doesNotMatch(JSON.stringify(show), /45-90mins/);
+});
+
+test('venue-zone resolution distinguishes a DST fold and rejects an invalid wall time', async () => {
+  const start = { dateTime: '2026-11-01T00:00:00-04:00', timeZone: 'America/New_York' };
+  const before = { ...options, now: Date.parse('2026-01-01T00:00:00Z') };
+  const standard = await projectEvent({ ...event, start, description: 'Show time: 1:30 AM EST' }, before);
+  assert.equal(standard.issue, null);
+  assert.equal(standard.listing.showAt, '2026-11-01T06:30:00.000Z');
+  const daylight = await projectEvent({ ...event, start, description: 'Show time: 1:30 AM EDT' }, before);
+  assert.equal(daylight.issue, null);
+  assert.equal(daylight.listing.showAt, '2026-11-01T05:30:00.000Z');
+  const uncertain = await projectEvent({ ...event, start, description: 'Show time: 1:30 AM' }, before);
+  assert.match(uncertain.issue, /venue’s time zone/);
+  const nonexistent = await projectEvent({ ...event,
+    start: { dateTime: '2026-03-08T00:00:00-05:00', timeZone: 'America/New_York' },
+    description: 'Show time: 2:30 AM ET',
+  }, before);
+  assert.match(nonexistent.issue, /venue’s time zone/);
+});
+
 test('the direct booking Calendar watch picks up manual creates, notes edits, and deletions', async t => {
   const store = { cursor: null, channels: [], received: 0, processed: 0 };
   let changes = [];

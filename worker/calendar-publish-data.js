@@ -1,6 +1,14 @@
 const { createHash } = require('node:crypto');
 
 const CONFIRMED_COLORS = new Set(['2', '10']); // Google Calendar Sage and Basil.
+const HOUR = 3600000;
+const CLOCK_ZONES = {
+  ET: 'America/New_York', EST: 'America/New_York', EDT: 'America/New_York',
+  CT: 'America/Chicago', CST: 'America/Chicago', CDT: 'America/Chicago',
+  MT: 'America/Denver', MST: 'America/Denver', MDT: 'America/Denver',
+  PT: 'America/Los_Angeles', PST: 'America/Los_Angeles', PDT: 'America/Los_Angeles',
+  UTC: 'UTC', GMT: 'UTC',
+};
 const PUBLIC_FIELDS = ['show type', 'publish', 'doors', 'door time', 'show time', 'ticket price', 'ticket url', 'public notes', 'venue', 'city', 'region', 'country', 'timezone', 'time zone'];
 
 function publicNotes(description) {
@@ -17,11 +25,10 @@ function publicNotes(description) {
 }
 
 function clock(value) {
-  const normalized = value?.trim().replace(/([ap])\s*\.\s*m\.?/gi, '$1m');
-  const parts = (normalized || '').split(/\s*(?:[–—-]|\bto\b)\s*/i);
-  if (parts.length > 2 || (parts.length === 2 && !clock(parts[1]))) return null;
-  const match = parts[0].match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+  const match = value?.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*([a-z]{2,3})?$/i);
   if (!match) return null;
+  const zone = match[4]?.toUpperCase();
+  if (zone && !Object.hasOwn(CLOCK_ZONES, zone)) return null;
   let hour = Number(match[1]);
   const minutes = Number(match[2] || '0');
   if (match[3]) {
@@ -29,15 +36,52 @@ function clock(value) {
     hour = hour % 12 + (match[3].toLowerCase() === 'pm' ? 12 : 0);
   } else if (!match[2] || hour > 23) return null;
   if (minutes > 59) return null;
-  return [hour, minutes].map(n => String(n).padStart(2, '0')).join(':');
+  const time = [hour, minutes].map(n => String(n).padStart(2, '0')).join(':');
+  return { time, zone };
+}
+
+function clockRange(value) {
+  const normalized = value?.trim().replace(/([ap])\s*\.\s*m\.?/gi, '$1m');
+  const parts = (normalized || '').split(/\s*(?:[–—-]|\bto\b)\s*/i);
+  const start = clock(parts[0]);
+  if (!start || parts.length > 2) return null;
+  if (parts.length === 1) return start;
+  const end = clock(parts[1]);
+  if (!end || (start.zone && end.zone && CLOCK_ZONES[start.zone] !== CLOCK_ZONES[end.zone])) return null;
+  return { time: start.time, zone: start.zone || end.zone };
 }
 
 function localParts(timestamp, zone) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
     timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZoneName: 'short',
   }).formatToParts(timestamp).map(part => [part.type, part.value]));
-  return { date: [parts.year, parts.month, parts.day].join('-'), time: parts.hour + ':' + parts.minute };
+  return {
+    date: [parts.year, parts.month, parts.day].join('-'),
+    time: parts.hour + ':' + parts.minute,
+    zone: parts.timeZoneName,
+  };
+}
+
+function matchesClockZone(written, actual) {
+  if (!written) return true;
+  if (written === 'UTC' || written === 'GMT') return actual === 'UTC' || actual === 'GMT';
+  if (written.length === 2) return actual === written[0] + 'ST' || actual === written[0] + 'DT';
+  return written === actual;
+}
+
+function showInstants(date, clock, timeZone) {
+  const wall = Date.parse(date + 'T' + clock.time + ':00Z');
+  // Sample on both sides of the day so a DST fold can produce two candidates.
+  const offsets = new Set([-24, 24].map(hours => {
+    const sample = wall + hours * HOUR;
+    const local = localParts(sample, timeZone);
+    return Date.parse(local.date + 'T' + local.time + ':00Z') - sample;
+  }));
+  return [...offsets].map(offset => wall - offset).filter(instant => {
+    const local = localParts(instant, timeZone);
+    return local.date === date && local.time === clock.time && matchesClockZone(clock.zone, local.zone);
+  });
 }
 
 function addressFromLocation(location, notes) {
@@ -93,7 +137,7 @@ async function projectEvent(event, options) {
     try { times = localParts(showAt, timeZone); }
     catch { times = localParts(showAt, 'UTC'); }
     return desired(event, 'remove', {
-      title, type, ...times, showAt: showAt.toISOString(),
+      title, type, date: times.date, time: times.time, showAt: showAt.toISOString(),
       exclusion: isHeld ? 'Held, tentative, or marked private in Calendar'
         : String(event.colorId) === '8' ? 'Gray on Calendar' : 'Set the Calendar event color to Sage or Basil',
     });
@@ -108,29 +152,39 @@ async function projectEvent(event, options) {
     issue ||= 'Add the venue, city, region, and country to the Calendar location.';
   }
 
-  const timeZone = notes.timezone || notes['time zone'] || venue.timeZone || event.start.timeZone || options.timeZone;
+  const doors = clockRange(notes.doors || notes['door time']);
+  const advertised = clockRange(notes['show time']);
+  const timeZone = notes.timezone || notes['time zone'] || venue.timeZone ||
+    CLOCK_ZONES[advertised?.zone] || CLOCK_ZONES[doors?.zone] || event.start.timeZone || options.timeZone;
   const calendarStart = Date.parse(event.start.dateTime);
   let times;
-  try { times = localParts(calendarStart, timeZone); }
-  catch { issue ||= 'Confirm the venue time zone in Calendar.'; }
-  if (!timeZone) issue ||= 'Confirm the venue time zone in Calendar.';
-  const doors = clock(notes.doors || notes['door time']);
-  const publicTime = clock(notes['show time']);
   let showAt = calendarStart;
-  if (times && publicTime && publicTime !== times.time) {
-    const minutes = time => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
-    showAt += (minutes(publicTime) - minutes(times.time)) * 60000;
-    const explicit = localParts(showAt, timeZone);
-    if (explicit.date !== times.date || explicit.time !== publicTime || showAt <= options.now) {
-      issue ||= 'Check the advertised show time against the Calendar start.';
+  try {
+    if (!timeZone) throw new RangeError('Calendar start has no time zone');
+    times = localParts(calendarStart, timeZone);
+    if (advertised) {
+      const candidates = showInstants(times.date, advertised, timeZone);
+      const candidate = candidates.length === 1 ? candidates[0] :
+        candidates.find(instant => instant === Math.floor(calendarStart / 60000) * 60000);
+      if (candidate == null || candidate <= options.now) {
+        issue ||= 'Check the Show time note against the venue’s time zone and date.';
+      } else {
+        showAt = candidate;
+        times = localParts(showAt, timeZone);
+      }
     }
+    if (doors?.zone && !showInstants(times.date, doors, timeZone).length) {
+      issue ||= 'Check the Doors note against the venue’s time zone.';
+    }
+  } catch {
+    issue ||= 'Confirm the venue time zone in Calendar.';
   }
-  if (notes['show time'] && !publicTime) issue ||= 'Check the Show time note in Calendar. Use a time like 8:00 PM, or remove the note to use the Calendar start.';
+  if (notes['show time'] && !advertised) issue ||= 'Check the Show time note in Calendar. Use a time like 8:00 PM, or remove the note to use the Calendar start.';
   const ticketUrl = publicUrl(notes['ticket url']);
   const listing = {
     title: title || venue.venue, type, ...venue, timeZone: timeZone || null, date: times?.date,
-    time: publicTime || times?.time, showAt: Number.isFinite(showAt) ? new Date(showAt).toISOString() : null,
-    doors, ticketPrice: type === 'busking' ? 'Free' : notes['ticket price'] || '',
+    time: times?.time, showAt: new Date(showAt).toISOString(),
+    doors: doors?.time || null, ticketPrice: type === 'busking' ? 'Free' : notes['ticket price'] || '',
     ticketUrl: type === 'busking' ? '' : ticketUrl, description: notes['public notes'] || '', validationIssue: !!issue,
   };
   return desired(event, 'upsert', listing, issue);

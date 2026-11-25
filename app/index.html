@@ -4230,7 +4230,16 @@ function publishingRow(row){
     ? new Intl.DateTimeFormat('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric', timeZone:'UTC' })
       .format(new Date(show.date + 'T12:00:00Z')) : '';
   var location = [show.venue && show.venue !== show.title ? show.venue : '', [show.city, show.region].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
-  var details = [date, publishingTime(show.time), location].filter(Boolean).join(' · ');
+  var advertised = publishingTime(show.time);
+  if (advertised && !show.exclusion && show.timeZone && show.showAt) {
+    try {
+      var zone = new Intl.DateTimeFormat('en-US', { hour:'numeric',timeZone:show.timeZone,timeZoneName:'short' })
+        .formatToParts(new Date(show.showAt)).find(function(part){ return part.type === 'timeZoneName'; });
+      if (zone) advertised += ' ' + zone.value;
+    } catch {}
+    advertised = (/Show time note|venue time zone/.test(row.issue || '') ? 'Calendar start ' : 'Show ') + advertised;
+  }
+  var details = [date, advertised, location].filter(Boolean).join(' · ');
   var ticket = [show.doors && 'Doors ' + publishingTime(show.doors), show.ticketPrice].filter(Boolean).join(' · ');
   var destinations = show.exclusion ? '' : (show.type === 'original' ? 'Bandsintown + Live site' : 'Bandsintown');
   var calendarLink = /^https:\/\/www\.google\.com\/calendar\//.test(row.calendar_link || '')

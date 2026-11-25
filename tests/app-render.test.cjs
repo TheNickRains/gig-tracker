@@ -39,3 +39,13 @@ test('publishing preview shows venue-local time, destination, and a safe Calenda
  assert.match(off,/Gray on Calendar/);
  assert.doesNotMatch(off,/Bandsintown/);
 });
+
+test('publishing preview labels doors and advertised show time separately', () => {
+ const { c } = appHarness();
+ const row = c.publishingRow({ status:'preview', listing:{
+  title:'Kill Your Idol', type:'original', date:'2026-12-02', time:'22:00', doors:'20:00',
+  showAt:'2026-12-03T03:00:00.000Z', timeZone:'America/New_York', ticketPrice:'Free',
+ } });
+ assert.match(row,/Show 10:00 PM EST/);
+ assert.match(row,/Doors 8:00 PM · Free/);
+});
