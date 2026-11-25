@@ -1,5 +1,6 @@
 const { createHash } = require('node:crypto');
 
+const CONFIRMED_COLORS = new Set(['2', '10']); // Google Calendar Sage and Basil.
 const PUBLIC_FIELDS = ['show type', 'publish', 'doors', 'door time', 'show time', 'ticket price', 'ticket url', 'public notes', 'venue', 'city', 'region', 'country', 'timezone', 'time zone'];
 
 function publicNotes(description) {
@@ -16,7 +17,10 @@ function publicNotes(description) {
 }
 
 function clock(value) {
-  const match = value?.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+  const normalized = value?.trim().replace(/([ap])\s*\.\s*m\.?/gi, '$1m');
+  const parts = (normalized || '').split(/\s*(?:[–—-]|\bto\b)\s*/i);
+  if (parts.length > 2 || (parts.length === 2 && !clock(parts[1]))) return null;
+  const match = parts[0].match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
   if (!match) return null;
   let hour = Number(match[1]);
   const minutes = Number(match[2] || '0');
@@ -74,11 +78,26 @@ async function projectEvent(event, options) {
   if (!Number.isFinite(Date.parse(event.start.dateTime)) || Date.parse(event.start.dateTime) <= options.now) return desired(event, 'ignore');
   const notes = publicNotes(event.description);
   if (event.eventType && event.eventType !== 'default') return desired(event, 'remove');
-  if (event.status === 'tentative' || ['private', 'confidential'].includes(event.visibility)
-    || /\b(HOLD|PRIVATE)\b/i.test(event.summary || '') || /^no$/i.test(notes.publish || '')) return desired(event, 'remove');
+  if (['private', 'confidential'].includes(event.visibility)) return desired(event, 'remove');
 
-  const title = (event.summary || '').replace(/^\s*Gig:\s*/i, '').replace(/\s*\(Gig Collective\)\s*$/i, '').trim();
-  const type = (notes['show type'] || '').toLowerCase();
+  const summary = (event.summary || '').trim();
+  const kind = summary.match(/^(Original|Cover|Busking):\s*/i);
+  const title = summary.slice(kind?.[0].length || 0)
+    .replace(/^(?:Gig:\s*|[$]{2,}\s+)/i, '').replace(/\s*\(Gig Collective\)\s*$/i, '').trim();
+  const type = (notes['show type'] || kind?.[1] || '').toLowerCase();
+  const isHeld = event.status === 'tentative' || /\b(HOLD|PRIVATE)\b/i.test(summary) || /^no$/i.test(notes.publish || '');
+  if (isHeld || !CONFIRMED_COLORS.has(String(event.colorId))) {
+    const showAt = new Date(event.start.dateTime);
+    const timeZone = event.start.timeZone || options.timeZone || 'UTC';
+    let times;
+    try { times = localParts(showAt, timeZone); }
+    catch { times = localParts(showAt, 'UTC'); }
+    return desired(event, 'remove', {
+      title, type, ...times, showAt: showAt.toISOString(),
+      exclusion: isHeld ? 'Held, tentative, or marked private in Calendar'
+        : String(event.colorId) === '8' ? 'Gray on Calendar' : 'Set the Calendar event color to Sage or Basil',
+    });
+  }
   let venue = addressFromLocation(event.location, notes);
   let issue = notes['show type'] && !['original', 'cover', 'busking'].includes(type) ? 'Choose Original, Cover, or Busking in Calendar.' : null;
   if (options.resolveVenue && (!venue.address || !venue.city || !venue.country || !venue.venue)) {
@@ -106,7 +125,7 @@ async function projectEvent(event, options) {
       issue ||= 'Check the advertised show time against the Calendar start.';
     }
   }
-  if (notes['show time'] && !publicTime) issue ||= 'Enter a valid advertised show time in Calendar.';
+  if (notes['show time'] && !publicTime) issue ||= 'Check the Show time note in Calendar. Use a time like 8:00 PM, or remove the note to use the Calendar start.';
   const ticketUrl = publicUrl(notes['ticket url']);
   const listing = {
     title: title || venue.venue, type, ...venue, timeZone: timeZone || null, date: times?.date,

@@ -157,7 +157,13 @@ function createCalendarPublisher(deps, env = process.env) {
         }
       }
     }
-    const rows = [...project.values()].filter(row => row.operation === 'upsert' || byId.has(row.event_id));
+    const rows = [...project.values()].flatMap(row => {
+      const old = byId.get(row.event_id);
+      if (row.operation === 'upsert' || old?.bandsintown_id || old?.status === 'working') return [row];
+      if (row.listing?.exclusion) return [desired({ id: row.event_id, recurringEventId: row.series_id,
+        htmlLink: row.calendar_link }, 'ignore', row.listing)];
+      return old ? [row] : [];
+    });
     const changed = await deps.rpc('calendar_publish_apply', {
       p_artist: artist, p_cursor: selected.cursor, p_expected: expected, p_received: current.received,
       p_rows: rows, p_live: live, p_pilot_event: pilot,
@@ -357,6 +363,14 @@ function createCalendarPublisher(deps, env = process.env) {
         if (!changed.length) return response(req, res, 409);
         wake();
         return response(req, res, 202);
+      }
+      if (pathname === '/calendar-publish/status') {
+        if (await deps.user(req) !== artist) return response(req, res, 403);
+        await state();
+        const mode = live ? (pilot ? 'pilot' : 'live') : 'preview';
+        return response(req, res, 200, {
+          mode, runnerConnected: [...sockets.clients].some(socket => socket.readyState === WebSocket.OPEN),
+        });
       }
       if (pathname === '/calendar-publish/reconcile') {
         if (await deps.user(req) !== artist) return response(req, res, 403);

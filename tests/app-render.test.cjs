@@ -22,3 +22,20 @@ test('full app renders drafts and every outbox state without runtime errors',()=
 test('home surfaces failed mail and archived venue detail remains reachable',()=>{const {c,el}=appHarness();c.pipeline[0].sched={status:'failed',cancel_reason:'Reconnect Gmail'};c.actsReady=true;c.schedReady=true;c.renderHome();assert.match(el('war-needs').innerHTML,/Email was not sent/);assert.match(el('war-needs').innerHTML,/Reconnect Gmail/);
  c.venues=[{id:'venue',name:'Archived room',city:'Austin',state:'TX',archived:true}];c.openVenueDetail('venue');assert.match(el('venue-container').innerHTML,/Restore archived venue/);
 });
+
+test('publishing preview shows venue-local time, destination, and a safe Calendar link', () => {
+ const { c } = appHarness();
+ const row = c.publishingRow({
+  status:'review', issue:'Check the advertised time', listing:{ title:'Kill Your Idol', type:'original',
+   date:'2026-12-02', time:'20:00', venue:'Example venue', city:'Key West', region:'FL', validationIssue:true },
+  calendar_link:'https://www.google.com/calendar/event?eid=example'
+ });
+ assert.match(row,/Dec 2, 2026 · 8:00 PM · Example venue · Key West, FL/);
+ assert.match(row,/Bandsintown \+ Live site/);
+ assert.match(row,/Check the advertised time/);
+ assert.match(row,/Open in Calendar/);
+ assert.doesNotMatch(row,/Retry Bandsintown/);
+ const off = c.publishingRow({ status:'ignored', listing:{ title:'Geiger Key', exclusion:'Gray on Calendar' } });
+ assert.match(off,/Gray on Calendar/);
+ assert.doesNotMatch(off,/Bandsintown/);
+});

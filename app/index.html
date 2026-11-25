@@ -242,6 +242,37 @@
   /* overflow:hidden so full-bleed row hovers clip to the card's own radius */
   .card-flush { padding: 0 16px; overflow: hidden; }
 
+
+  /* ── Show publishing ── */
+  .publishing-inbox { margin-top: 18px; padding: 0; }
+  .publishing-inbox[hidden], .publishing-inbox [hidden] { display: none; }
+  .publishing-summary { display: flex; align-items: center; gap: 10px; padding: 13px 16px; cursor: pointer; list-style: none; }
+  .publishing-summary::-webkit-details-marker { display: none; }
+  .publishing-summary > i:first-child { font-size: 18px; color: var(--text-secondary); }
+  .publishing-summary .ti-chevron-down { margin-left: auto; color: var(--text-secondary); }
+  .publishing-inbox details[open] .ti-chevron-down { transform: rotate(180deg); }
+  .publishing-heading { font-size: 15px; font-weight: 600; }
+  .publishing-counts, .publishing-meta, .publishing-address { font-size: 12px; color: var(--text-secondary); }
+  .publishing-body { border-top: 1px solid var(--border-light); padding: 12px 16px; }
+  .publishing-tools, .publishing-filters, .publishing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 12px; }
+  .publishing-tools { justify-content: space-between; margin-bottom: 12px; }
+  .publishing-tools p { font-size: 12px; color: var(--text-secondary); margin-top: 5px; }
+  .publishing-link, .publishing-button, .publishing-filter {
+    display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border-mid); border-radius: var(--radius-md);
+    padding: 6px 9px; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-size: 12px; text-decoration: none; cursor: pointer;
+  }
+  .publishing-link:hover, .publishing-button:hover, .publishing-filter:hover { background: var(--bg-secondary); }
+  .publishing-filter[aria-pressed="true"] { font-weight: 600; background: var(--bg-tertiary); }
+  .publishing-list { list-style: none; margin: 8px 0 2px; }
+  .publishing-row { padding: 11px 0; border-top: 1px solid var(--border-light); overflow-wrap: anywhere; }
+  .publishing-row header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 10px; margin-bottom: 3px; }
+  .publishing-row h3 { font-size: 14px; line-height: 1.4; font-weight: 600; }
+  .publishing-meta, .publishing-address { margin-bottom: 3px; }
+  .publishing-issue { background: var(--followup-bg); color: var(--followup-text); border-radius: var(--radius-md); padding: 7px 8px; margin: 7px 0; font-size: 12px; }
+  .publishing-actions { margin-top: 7px; }
+  .publishing-actions .publishing-link, .publishing-actions .publishing-button { border: 0; padding: 3px 0; }
+  .publishing-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--text-secondary); }
+
   /* ── Badges ── */
   .badge {
     display: inline-flex; align-items: center; padding: 3px 9px;
@@ -1162,14 +1193,30 @@
       <span><span class="leg-dot" style="background:var(--text-primary);border-radius:50%"></span>Gig</span>
       <span style="color:var(--text-tertiary)">Tap a day to cycle · clear on third tap</span>
     </div>
-    <section id="publishing-inbox" class="card" aria-label="Show publishing" hidden style="margin-top:18px;padding:12px">
+    <section id="publishing-inbox" class="card publishing-inbox" aria-label="Show publishing" hidden>
       <details id="publishing-details">
-        <summary style="cursor:pointer"><span id="publishing-summary">Show publishing</span></summary>
-        <div id="publishing-rows" aria-live="polite"></div>
-        <form onsubmit="reconcilePublishing(event)" style="margin-top:10px">
-          <button type="submit" class="btn btn-ghost">Recheck Calendar</button>
-          <span id="publishing-feedback" role="status"></span>
-        </form>
+        <summary class="publishing-summary">
+          <i class="ti ti-calendar-event" aria-hidden="true"></i>
+          <span><span class="publishing-heading">Show publishing</span><br><span class="publishing-counts" id="publishing-summary"></span></span>
+          <i class="ti ti-chevron-down" aria-hidden="true"></i>
+        </summary>
+        <div class="publishing-body">
+          <div class="publishing-tools">
+            <div><span class="badge badge-waiting" id="publishing-mode">Calendar preview</span><p id="publishing-next"></p></div>
+            <a class="publishing-link" href="https://artists.bandsintown.com/" target="_blank" rel="noopener">Open Bandsintown for Artists <i class="ti ti-external-link" aria-hidden="true"></i></a>
+          </div>
+          <div class="publishing-filters" role="group" aria-label="Filter shows">
+            <button type="button" class="publishing-filter" id="publishing-upcoming" aria-pressed="true" onclick="setPublishingFilter('upcoming')">Upcoming</button>
+            <button type="button" class="publishing-filter" id="publishing-review" aria-pressed="false" onclick="setPublishingFilter('review')">Needs review</button>
+            <button type="button" class="publishing-filter" id="publishing-off" aria-pressed="false" onclick="setPublishingFilter('off')">Held back</button>
+          </div>
+          <ul class="publishing-list" id="publishing-rows"></ul>
+          <form class="publishing-footer" onsubmit="reconcilePublishing(event)">
+            <button type="button" id="publishing-more" class="publishing-button" onclick="showMorePublishing()" hidden>Show more</button>
+            <button type="submit" class="publishing-button"><i class="ti ti-refresh" aria-hidden="true"></i> Recheck Calendar</button>
+            <span id="publishing-feedback" role="status"></span>
+          </form>
+        </div>
       </details>
     </section>
     <div class="section-label" style="margin-top:18px">Weekly blocks</div>
@@ -4155,40 +4202,107 @@ function showApp(session){
 // ── Load ────────────────────────────────────────────────
 function loadAll(){ loadDrafts(); loadProfile(); loadVenues(); loadPipeline(); loadAvail(); loadUnmatched(); loadPublishingInbox(); subscribeRealtime(); pokeWorker(); }
 
+var publishingFilter = 'upcoming', publishingLimit = 12, publishingRequest = 0, publishingRefresh;
+function schedulePublishingRefresh(){
+  clearTimeout(publishingRefresh);
+  publishingRefresh = setTimeout(loadPublishingInbox, 180);
+}
+function setPublishingFilter(filter){
+  publishingFilter = filter;
+  publishingLimit = 12;
+  loadPublishingInbox();
+}
+function showMorePublishing(){
+  publishingLimit += 12;
+  loadPublishingInbox();
+}
+function publishingTime(time){
+  var parts = /^(\d{2}):(\d{2})$/.exec(time || '');
+  if (!parts) return '';
+  var hour = Number(parts[1]);
+  return (hour % 12 || 12) + ':' + parts[2] + (hour < 12 ? ' AM' : ' PM');
+}
+function publishingRow(row){
+  var show = row.listing || {};
+  var labels = { preview:'Ready for review', review:'Needs review', pending:'Queued', working:'Publishing', published:'Published', removed:'Removed', ignored:'Held back' };
+  var tones = { preview:'waiting', review:'followup', published:'won' };
+  var date = /^\d{4}-\d{2}-\d{2}$/.test(show.date || '')
+    ? new Intl.DateTimeFormat('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric', timeZone:'UTC' })
+      .format(new Date(show.date + 'T12:00:00Z')) : '';
+  var location = [show.venue && show.venue !== show.title ? show.venue : '', [show.city, show.region].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+  var details = [date, publishingTime(show.time), location].filter(Boolean).join(' · ');
+  var ticket = [show.doors && 'Doors ' + publishingTime(show.doors), show.ticketPrice].filter(Boolean).join(' · ');
+  var destinations = show.exclusion ? '' : (show.type === 'original' ? 'Bandsintown + Live site' : 'Bandsintown');
+  var calendarLink = /^https:\/\/www\.google\.com\/calendar\//.test(row.calendar_link || '')
+    ? '<a class="publishing-link" href="' + esc(row.calendar_link) + '" target="_blank" rel="noopener">Open in Calendar <i class="ti ti-external-link" aria-hidden="true"></i></a>' : '';
+  var eventLink = /^\d+$/.test(row.bandsintown_id || '')
+    ? '<a class="publishing-link" href="https://www.bandsintown.com/e/' + row.bandsintown_id + '" target="_blank" rel="noopener">View on Bandsintown</a>' : '';
+  var ticketLink = !show.exclusion && /^https:\/\//.test(show.ticketUrl || '')
+    ? '<a class="publishing-link" href="' + esc(show.ticketUrl) + '" target="_blank" rel="noopener">Ticket link</a>' : '';
+  var retry = row.status === 'review' && !show.validationIssue && (show.title || row.bandsintown_id)
+    ? '<button type="button" class="publishing-button" data-publishing-event="' + esc(row.event_id) + '" onclick="retryPublishing(this)">Retry Bandsintown</button>' : '';
+  return '<li class="publishing-row"><header><h3>' + esc(show.title || 'Calendar change') + '</h3>' +
+    '<span class="badge badge-' + (tones[row.status] || 'outreach') + '">' + esc(labels[row.status] || '') + '</span></header>' +
+    (details ? '<p class="publishing-meta">' + esc(details) + '</p>' : '') +
+    (show.address ? '<p class="publishing-address">' + esc(show.address) + '</p>' : '') +
+    (ticket || destinations ? '<p class="publishing-meta">' + esc([ticket,destinations].filter(Boolean).join(' · ')) + '</p>' : '') +
+    (row.issue || show.exclusion ? '<p class="publishing-issue">' + esc(row.issue || show.exclusion) + '</p>' : '') +
+    '<div class="publishing-actions">' + calendarLink + eventLink + ticketLink + retry + '</div></li>';
+}
 async function loadPublishingInbox(){
   if (!ME) return;
-  var artist = ME;
-  var fields = 'event_id,listing,status,issue,calendar_link,bandsintown_id,updated_at';
+  var artist = ME, request = ++publishingRequest, filter = publishingFilter;
+  var cutoff = new Date().toISOString();
+  var includesUpcoming = ['preview','pending','working','published','review'];
+  var fields = 'event_id,listing,status,issue,calendar_link,bandsintown_id';
+  var items = sb.from('calendar_publish_shows').select(fields).eq('artist_id', artist);
+  if (filter === 'off') items = items.gte('listing->>showAt',cutoff).not('listing->>exclusion','is',null);
+  else if (filter === 'review') items = items.eq('status','review');
+  else items = items.gte('listing->>showAt',cutoff).eq('operation','upsert').in('status', includesUpcoming);
   var results = await Promise.all([
-    sb.from('calendar_publish_shows').select(fields, { count:'exact' }).eq('artist_id', artist)
-      .eq('status', 'review').order('updated_at', { ascending:false }).limit(15),
-    sb.from('calendar_publish_shows').select(fields).eq('artist_id', artist)
-      .in('status', ['preview','pending','working','published','removed'])
-      .order('updated_at', { ascending:false }).limit(15)
+    items.order('listing->>showAt', { ascending:true, nullsFirst:false }).order('event_id').limit(publishingLimit + 1),
+    sb.from('calendar_publish_shows').select('event_id',{ count:'exact',head:true }).eq('artist_id',artist)
+      .eq('operation','upsert').in('status',includesUpcoming).gte('listing->>showAt',cutoff),
+    sb.from('calendar_publish_shows').select('event_id',{ count:'exact',head:true }).eq('artist_id',artist).eq('status','review'),
+    sb.from('calendar_publish_shows').select('event_id',{ count:'exact',head:true }).eq('artist_id',artist)
+      .gte('listing->>showAt',cutoff).not('listing->>exclusion','is',null)
   ]);
-  if (artist !== ME || results.some(function(result){ return result.error; })) return;
-  var rows = (results[0].data || []).concat(results[1].data || []);
+  if (artist !== ME || request !== publishingRequest || results.some(function(result){ return result.error; })) return;
+  var counts = { upcoming:results[1].count || 0, review:results[2].count || 0, off:results[3].count || 0 };
   var inbox = document.getElementById('publishing-inbox');
   if (!inbox) return;
-  inbox.hidden = !rows.length;
-  var reviewCount = results[0].count || 0;
-  document.getElementById('publishing-summary').textContent = reviewCount
-    ? 'Show publishing · ' + reviewCount + ' to review' : 'Show publishing';
-  var labels = { preview:'Preview', review:'Needs review', pending:'Queued', working:'Updating Bandsintown', published:'Published', removed:'Removed' };
-  document.getElementById('publishing-rows').innerHTML = rows.slice(0, 15).map(function(row){
-      var listing = row.listing || {};
-      var calendarLink = /^https:\/\/www\.google\.com\/calendar\//.test(row.calendar_link || '')
-        ? '<a href="' + esc(row.calendar_link) + '" target="_blank" rel="noopener">Open in Calendar</a>' : '';
-      var eventLink = /^\d+$/.test(row.bandsintown_id || '')
-        ? '<a href="https://www.bandsintown.com/e/' + row.bandsintown_id + '" target="_blank" rel="noopener">View on Bandsintown</a>' : '';
-      var retry = row.status === 'review' && !listing.validationIssue && (listing.title || row.bandsintown_id)
-        ? '<button type="button" class="btn btn-ghost" data-publishing-event="' + esc(row.event_id) +
-          '" onclick="retryPublishing(this)">Retry Bandsintown</button>' : '';
-      return '<div style="margin-top:12px"><strong>' + esc(listing.title || 'Calendar change') + '</strong>' +
-        '<div>' + esc([listing.date, labels[row.status]].filter(Boolean).join(' · ')) + '</div>' +
-        (row.issue ? '<div>' + esc(row.issue) + '</div>' : '') +
-        '<div style="display:flex;gap:12px">' + calendarLink + eventLink + retry + '</div></div>';
-    }).join('');
+  var result;
+  try {
+    var session = (await sb.auth.getSession()).data.session;
+    if (session) {
+      var status = await fetch(WORKER_URL + '/calendar-publish/status', {
+        method:'POST', headers:{ Authorization:'Bearer ' + session.access_token }
+      });
+      if (status.ok) result = await status.json();
+    }
+  } catch {}
+  if (artist !== ME || request !== publishingRequest) return;
+  inbox.hidden = !result && !counts.upcoming && !counts.review && !counts.off;
+  if (inbox.hidden) return;
+  document.getElementById('publishing-summary').textContent = counts.upcoming + ' upcoming · ' + counts.review + ' to review';
+  var titles = { upcoming:'Upcoming', review:'Needs review', off:'Held back' };
+  Object.keys(titles).forEach(function(key){
+    var button = document.getElementById('publishing-' + key);
+    button.setAttribute('aria-pressed', String(key === filter));
+    button.textContent = titles[key] + ' (' + counts[key] + ')';
+  });
+  var rows = results[0].data || [];
+  document.getElementById('publishing-rows').innerHTML = rows.length
+    ? rows.slice(0, publishingLimit).map(publishingRow).join('')
+    : '<li class="publishing-row publishing-meta">' + (filter === 'review' ? 'No shows need review.' : filter === 'off' ? 'No upcoming dates are held back.' : 'No upcoming shows.') + '</li>';
+  document.getElementById('publishing-more').hidden = rows.length <= publishingLimit;
+  if (result) {
+    document.getElementById('publishing-mode').textContent =
+      result.mode === 'preview' ? 'Preview only' : result.mode === 'pilot' ? 'One-show trial' : 'Automatic publishing';
+    document.getElementById('publishing-next').textContent = result.mode === 'preview'
+      ? 'Review the dates, then sign in to Bandsintown for the one-show trial.'
+      : result.runnerConnected ? 'Bandsintown browser connected.' : 'Waiting for the Bandsintown browser.';
+  }
 }
 function reconcilePublishing(event){
   event.preventDefault();
@@ -4230,7 +4344,7 @@ function subscribeRealtime(){
   var ch = sb.channel('pipeline-rt')
     .on('postgres_changes', { event:'UPDATE', schema:'public', table:'artists', filter:'id=eq.'+ME }, function(){ loadProfile(); })
     .on('postgres_changes', { event:'*', schema:'public', table:'message_drafts' }, function(){ loadDrafts(); })
-    .on('postgres_changes', { event:'*', schema:'public', table:'calendar_publish_shows', filter:'artist_id=eq.'+ME }, function(){ loadPublishingInbox(); })
+    .on('postgres_changes', { event:'*', schema:'public', table:'calendar_publish_shows', filter:'artist_id=eq.'+ME }, schedulePublishingRefresh)
     .on('postgres_changes', { event:'*', schema:'public', table:'calendar_busy_days' }, function(){ if(currentScreen==='calendar') loadAvail(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, function(){ loadPipeline(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pipeline_entries' }, function(){ loadPipeline(); })

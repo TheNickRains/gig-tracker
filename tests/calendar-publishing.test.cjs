@@ -6,7 +6,7 @@ const { createCalendarPublisher } = require('../worker/calendar-publish');
 
 const options = { now: Date.parse('2026-11-25T00:00:00Z'), timeZone: 'America/New_York' };
 const event = {
-  id: 'show1', summary: 'Kill Your Idol', status: 'confirmed',
+  id: 'show1', summary: 'Kill Your Idol', status: 'confirmed', colorId: '2',
   start: { dateTime: '2090-12-02T20:00:00-05:00', timeZone: 'America/New_York' },
   location: 'Kill Your Idol, 222 Española Way, Miami Beach, FL 33139, USA',
   description: 'Show type: Original<br>Doors: 7 PM<br>Ticket price: $15<br>Public notes: Full-band set<br>Set length: 40<br>Pay: $400',
@@ -48,13 +48,35 @@ test('holds, all-day bookings and Calendar deletions withdraw an existing public
   ]) {
     const row = await projectEvent({ ...event, ...state }, options);
     assert.equal(row.operation, 'remove');
-    assert.equal(row.listing, null);
+    if (!state.visibility && !state.start && state.status !== 'cancelled') assert.ok(row.listing.exclusion);
+    else assert.equal(row.listing, null);
   }
   const blocked = await projectEvent({ ...event, location: 'Room somewhere' }, options);
   assert.ok(blocked.issue);
   assert.equal(blocked.listing.validationIssue, true);
   assert.equal(recurrenceEnd({ recurrence: ['RRULE:FREQ=WEEKLY;COUNT=8'] }, options.now), null);
   assert.equal(recurrenceEnd({ recurrence: ['RRULE:FREQ=WEEKLY'] }, options.now), '2027-11-25T00:00:00.000Z');
+});
+
+test('green marks a confirmed gig and original titles and common show-time notes work', async () => {
+  const show = await projectEvent({ ...event, colorId: '10', summary: 'Original: Kill Your Idol',
+    description: 'Show time: 8 p.m. – 9 p.m.\nDoors: 7:30 p.m.' }, options);
+  assert.equal(show.operation, 'upsert');
+  assert.equal(show.listing.title, 'Kill Your Idol');
+  assert.equal(show.listing.type, 'original');
+  assert.equal(show.issue, null);
+  assert.equal(show.listing.time, '20:00');
+  assert.equal(show.listing.doors, '19:30');
+  const gray = await projectEvent({ ...event, colorId: '8' }, options);
+  assert.equal(gray.operation, 'remove');
+  assert.equal(gray.listing.exclusion, 'Gray on Calendar');
+  assert.equal(gray.listing.description, undefined);
+  const uncolored = await projectEvent({ ...event, colorId: undefined }, options);
+  assert.equal(uncolored.operation, 'remove');
+  const paidMarker = await projectEvent({ ...event, summary: '$$$ Geiger Key', description: '' }, options);
+  assert.equal(paidMarker.listing.title, 'Geiger Key');
+  const ambiguous = await projectEvent({ ...event, description: 'Show time: 8 or 9 PM' }, options);
+  assert.match(ambiguous.issue, /Check the Show time note/);
 });
 
 test('the direct booking Calendar watch picks up manual creates, notes edits, and deletions', async t => {
@@ -152,9 +174,15 @@ test('the direct booking Calendar watch picks up manual creates, notes edits, an
   await waitFor(() => store.processed === 2);
   assert.equal(rows.get(event.id).listing.ticketPrice, '$20');
   version++;
-  changes = [{ id: event.id, status: 'cancelled' }];
+  changes = [{ ...event, colorId: '8' }];
   assert.equal(await push(store.channels[0].token), 204);
   await waitFor(() => store.processed === 3);
+  assert.equal(rows.get(event.id).operation, 'ignore');
+  assert.equal(rows.get(event.id).listing.exclusion, 'Gray on Calendar');
+  version++;
+  changes = [{ id: event.id, status: 'cancelled' }];
+  assert.equal(await push(store.channels[0].token), 204);
+  await waitFor(() => store.processed === 4);
   assert.equal(rows.get(event.id).operation, 'remove');
   assert.ok(calls.every(url => url === eventsUrl + '/watch' || url.startsWith(eventsUrl + '?')));
 });
