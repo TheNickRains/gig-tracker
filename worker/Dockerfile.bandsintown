@@ -1,0 +1,10 @@
+FROM mcr.microsoft.com/playwright:v1.58.2-noble
+
+RUN apt-get update && apt-get install -y --no-install-recommends     gosu novnc openbox tini websockify x11vnc xvfb     && rm -rf /var/lib/apt/lists/*     && npm install --prefix /opt/bandsintown-browser --no-audit --no-fund playwright-core@1.58.2
+
+ENV NODE_PATH=/opt/bandsintown-browser/node_modules
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
+COPY bandsintown-runner.js bandsintown-browser.js start-bandsintown-browser.sh ./
+ENTRYPOINT ["/usr/bin/tini", "--", "/bin/bash", "/app/start-bandsintown-browser.sh"]

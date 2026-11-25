@@ -22,14 +22,32 @@ The publisher subscribes directly to the Google Calendar identified by `SHOW_SYN
    If using a dedicated grant, the existing `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` must match the OAuth client that issued its refresh token. If `PLACES_API_KEY` is set, enable Places Text Search and Time Zone for venue lookup.
 4. Review the initial queue before enabling writes. Confirm gigs by setting the event color to Sage or Basil. Gray, uncolored, and other events stay off the publishing queue and appear under **Held back**, where applicable. In Calendar notes use `Show type: Original`, `Show type: Cover`, or `Show type: Busking`. The `Original:`, `Cover:`, and `Busking:` title prefixes also work. Add public details on separate lines using `Doors:`, `Show time:`, `Ticket price:`, `Ticket URL:`, or `Public notes:`. Put the named venue and address in Location. Use `Publish: No`, `HOLD`, or `PRIVATE` to take the show out of publication.
 
-## Signed-in browser trial
+## Hosted Bandsintown browser
 
-1. Sign in to Bandsintown for Artists as an editor for artist ID `3251702` in a dedicated browser session on the machine running the browser agent. Confirm that `orca skills get computer-use --json` and `codex exec --help` both work on that machine. Leave the browser available to Orca.
-2. Install dependencies with `npm ci` in `worker/`. Set `SHOW_SYNC_URL` and `SHOW_SYNC_RUNNER_TOKEN` on that machine and run `node bandsintown-runner.js` from `worker/`. The same machine needs the authenticated Codex CLI and the computer-use skill.
-3. In **Show publishing**, use **Copy trial ID** on a show that’s ready. Set `SHOW_SYNC_PILOT_EVENT_ID` to the copied ID and turn on `SHOW_SYNC_LIVE`. Supervise a create, a time edit, and a deletion for that listing. Verify the signed-in artist, venue-local time, and fan notification controls on the current dashboard. If a browser action cannot be verified, check the listing in Bandsintown before using **Retry Bandsintown**.
-4. Remove the pilot event ID when ready to enable the full queue. Stop the browser runner any time you need to pause Bandsintown writes. Confirm that the first original appears on the live site. The site uses the production Gig worker feed by default. Set `VITE_SHOW_FEED_URL` when building the site against a different worker.
+The Calendar webhook and queue live in `gig-worker`. Run the Bandsintown browser as a second persistent service in the same Railway project. The Mac is only used to open an authenticated SSH tunnel during sign-in.
 
-The browser runner connects only after its computer-use preflight passes. An expired login or an unverified save appears in the private inbox. A job begins with the latest synced Calendar revision and checks it again before confirming a write.
+1. Create a Railway service named `bandsintown-runner` from the same repository and branch. Set its root directory to `/worker` and set `RAILWAY_DOCKERFILE_PATH=Dockerfile.bandsintown`. Attach a volume at `/data`. Keep the service private. Chromium and the sign-in viewer listen on the container loopback.
+2. Set `SHOW_SYNC_BROWSER_SETUP=true` on the browser service and deploy it. Copy its **Service Instance ID** from Railway. Add your SSH key to Railway if needed, then open the tunnel below using that ID. Open [the private browser viewer](http://127.0.0.1:6080/vnc.html?autoconnect=true) and sign in to Bandsintown for Artists as an editor for Nick Rains (artist ID `3251702`). Close the viewer and tunnel after sign-in. The browser profile stays in the Railway volume. [Railway SSH port forwarding](https://docs.railway.com/cli/ssh)
+
+   ```bash
+   ssh -N -L 127.0.0.1:6080:127.0.0.1:6080 <service-instance-id>@ssh.railway.com
+   ```
+
+3. Set the following on `bandsintown-runner`, then redeploy. Share the runner token with `gig-worker`. Use a Railway variable reference for the existing Gemini key. [Railway variable references](https://docs.railway.com/variables)
+
+   | Variable | Value |
+   |---|---|
+   | `SHOW_SYNC_BROWSER_SETUP` | `false` |
+   | `SHOW_SYNC_URL` | `https://gig-worker-production.up.railway.app` |
+   | `SHOW_SYNC_RUNNER_TOKEN` | The same dedicated random token of at least 32 characters on both services |
+   | `GEMINI_API_KEY` | Reference the worker’s existing key with `${{gig-worker.GEMINI_API_KEY}}` |
+
+4. In **Show publishing**, use **Copy trial ID** for one show. In a single Railway deploy for `gig-worker`, set `SHOW_SYNC_PILOT_EVENT_ID` to that ID, set the runner token, and set `SHOW_SYNC_LIVE=true`. Verify the pilot listing and the update/delete workflow before removing the pilot ID. A trial on a cover show exercises Bandsintown. An original also exercises the separate live-site feed. Keep the active site on the production Gig worker feed or set `VITE_SHOW_FEED_URL` for a different host.
+5. If Bandsintown expires the session, turn on browser setup mode, reconnect the private tunnel, and sign in again. Return the runner to normal mode and use **Retry Bandsintown** after checking the affected listing.
+
+If Bandsintown takes you to a particular dashboard URL after login, you can set `SHOW_SYNC_BANDSINTOWN_URL` to that URL on the browser service. Use the Bandsintown for Artists address without temporary sign-in or callback parameters.
+
+The hosted runner verifies that a Calendar job is current before interacting with a dashboard control. Uncertain saves go into the private review queue. Stop the hosted browser service to pause Bandsintown writes.
 
 ## Weekly Sheets view
 
