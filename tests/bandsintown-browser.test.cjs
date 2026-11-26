@@ -14,26 +14,32 @@ test('the hosted browser stays on the artist dashboard and only trusts Bandsinto
 
 test('dashboard writes require a current revision and never fill a login field', async () => {
   let clicked = 0;
+  let url = 'https://artists.bandsintown.com/artists/3251702/events/1234';
   const locator = { isVisible: async () => true, click: async () => { clicked++; } };
   const page = {
     getByRole: () => ({ count: async () => 1, nth: () => locator }),
-    url: () => 'https://artists.bandsintown.com/events/1234',
+    url: () => url,
   };
   const publish = { action: 'click', role: 'button', name: 'Publish' };
   await assert.rejects(() => browserAction(page, publish, async () => false), /no longer current/);
   assert.equal(clicked, 0);
   await browserAction(page, publish, async () => true);
   assert.equal(clicked, 1);
+  url = 'https://artists.bandsintown.com/artists/32517029/events/1234';
+  await assert.rejects(() => browserAction(page, publish, async () => true), /no longer current/);
+  assert.equal(clicked, 1);
   const login = await browserAction(page, { action: 'fill', role: 'textbox', name: 'Password', value: 'anything' }, async () => true);
   assert.match(login, /sign in as Nick Rains/i);
 });
 
-test('the hosted operator reuses the dashboard tab and verifies the saved event ID', async () => {
+test('the hosted operator starts at Upcoming Events and verifies the saved event ID', async () => {
+  const upcoming = 'https://artists.bandsintown.com/artists/3251702/events/upcoming';
+  let url = 'https://artists.bandsintown.com/artists/3251702/events/past';
   let routeHandler;
   let clicks = 0;
   let modelCalls = 0;
   const page = {
-    url: () => 'https://www.artists.bandsintown.com/artists/3251702/events',
+    url: () => url,
     setDefaultTimeout() {},
     route: async (pattern, handler) => {
       assert.equal(pattern, '**/*');
@@ -44,7 +50,7 @@ test('the hosted operator reuses the dashboard tab and verifies the saved event 
       assert.equal(handler, routeHandler);
       routeHandler = undefined;
     },
-    goto: async () => assert.fail('Keep the dashboard tab at its current URL'),
+    goto: async target => { assert.equal(target, upcoming); url = target; },
     locator: selector => {
       if (selector.includes('password')) return { first: () => ({ isVisible: async () => false }) };
       if (selector === 'body') return { ariaSnapshot: async () => '- heading "Nick Rains"\n- button "Save"' };
@@ -58,18 +64,19 @@ test('the hosted operator reuses the dashboard tab and verifies the saved event 
   };
   const signInTab = { url: () => 'https://artists.bandsintown.com/en-US/account/login' };
   const operate = createHostedOperator({ GEMINI_API_KEY: 'test' }, {
-    connect: async () => ({ contexts: () => [{
+    connect: async () => ({ isConnected: () => true, contexts: () => [{
       pages: () => [page, signInTab],
       newPage: async () => assert.fail('Reuse the dashboard tab'),
     }] }),
     fetch: async (target, req) => {
       assert.match(target, /generativelanguage\.googleapis\.com/);
       assert.equal(req.headers['x-goog-api-key'], 'test');
+      assert.equal(JSON.parse(JSON.parse(req.body).contents[0].parts[0].text).url, upcoming);
       const step = [
         { action: 'verified', bandsintown_id: '1234' },
         { action: 'click', role: 'button', name: 'Save' },
         { action: 'verified', bandsintown_id: '1234' },
-      ][modelCalls++];
+      ][modelCalls++] || { action: 'click', role: 'table', name: 'Drafts' };
       return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(step) }] } }] });
     },
   });
@@ -77,6 +84,11 @@ test('the hosted operator reuses the dashboard tab and verifies the saved event 
     { status: 'verified', bandsintown_id: '1234' });
   assert.equal(clicks, 1);
   assert.equal(routeHandler, undefined);
+  const stalled = await operate({ operation: 'upsert', listing: { title: 'Test show' } }, async () => true);
+  assert.equal(stalled.status, 'review');
+  assert.match(stalled.issue, /runner stalled at “Drafts”/);
+  assert.equal(modelCalls, 6);
+  assert.equal(clicks, 1);
 });
 
 test('a signed-out browser leaves a sign-in tab open for the owner', async () => {
@@ -87,7 +99,10 @@ test('a signed-out browser leaves a sign-in tab open for the owner', async () =>
     setDefaultTimeout() {},
     route: async () => {},
     unroute: async () => {},
-    goto: async target => { url = target; },
+    goto: async target => {
+      assert.equal(target, 'https://artists.bandsintown.com/artists/3251702/events/upcoming');
+      url = 'https://artists.bandsintown.com/en-US/account/login';
+    },
     waitForURL: async matches => {
       assert.equal(matches(new URL(url)), false);
       throw new Error('Still signed out');

@@ -48,7 +48,7 @@ children+=("$!")
 chrome="$(node -p "require('playwright-core').chromium.executablePath()")"
 start_page=()
 if [[ ! -f "$profile/Default/Preferences" ]]; then
-  start_page+=(https://artists.bandsintown.com/en-US/account/login)
+  start_page+=(https://artists.bandsintown.com/artists/3251702/events/upcoming)
 fi
 xvfb-runner "$chrome" --no-first-run --no-default-browser-check --no-sandbox --disable-dev-shm-usage \
   --no-proxy-server --password-store=basic --user-data-dir="$profile" --restore-last-session \
