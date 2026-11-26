@@ -32,6 +32,30 @@ test('dashboard writes require a current revision and never fill a login field',
   assert.match(login, /sign in as Nick Rains/i);
 });
 
+test('a blocked time-picker click uses its exact enabled option and rechecks the revision', async () => {
+  let current = true;
+  let dispatched = 0;
+  const locator = {
+    isVisible: async () => true,
+    isEnabled: async () => true,
+    click: async () => { throw Object.assign(new Error('Time option click timed out'), { name: 'TimeoutError' }); },
+    dispatchEvent: async name => { assert.equal(name, 'click'); dispatched++; },
+  };
+  const page = {
+    getByRole: () => ({ count: async () => 1, nth: () => locator }),
+    url: () => 'https://artists.bandsintown.com/artists/3251702/events/new',
+  };
+  const time = { action: 'click', role: 'button', name: '7:00 PM' };
+  assert.match(await browserAction(page, time, async () => current), /Verify the selected time/);
+  await assert.rejects(() => browserAction(page, time, async () => {
+    const previous = current;
+    current = false;
+    return previous;
+  }), /no longer current/);
+  await assert.rejects(() => browserAction(page, { ...time, name: 'Publish' }, async () => true), /click timed out/);
+  assert.equal(dispatched, 1);
+});
+
 test('the hosted operator starts at Upcoming Events and verifies the saved event ID', async () => {
   const upcoming = 'https://artists.bandsintown.com/artists/3251702/events/upcoming';
   let url = 'https://artists.bandsintown.com/artists/3251702/events/past';

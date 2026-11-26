@@ -3,6 +3,7 @@ const ARTIST_PATH = '/artists/3251702';
 const UPCOMING_PATH = ARTIST_PATH + '/events/upcoming';
 const ENTRY = 'https://artists.bandsintown.com' + UPCOMING_PATH;
 const ADD_EVENT = /^\+?\s*Add Event$/i;
+const TIME_LABEL = /^(?:1[0-2]|[1-9]):[0-5]\d\s*[AP]M$/i;
 const CONTROL_ACTIONS = ['click', 'fill', 'select', 'press'];
 const ROLES = new Set(['button', 'link', 'textbox', 'searchbox', 'combobox', 'spinbutton', 'checkbox', 'radio',
   'option', 'tab', 'menuitem', 'menuitemcheckbox', 'gridcell', 'switch']);
@@ -67,10 +68,29 @@ async function browserAction(page, step, check) {
   const index = step.occurrence == null && count === 1 ? 0 : step.occurrence - 1;
   if (!Number.isInteger(index) || index < 0 || index >= count) return 'Choose an unambiguous visible control.';
   const locator = matches.nth(index);
+  const isCurrent = async () => isArtistPage(page.url()) && await check();
+  if (step.action === 'click' && step.role === 'option' &&
+      await locator.evaluate(element => element instanceof HTMLOptionElement && Boolean(element.closest('select')))) {
+    if (!await isCurrent()) throw new Error('Browser job is no longer current');
+    const value = await locator.getAttribute('value');
+    await locator.locator('xpath=ancestor::select[1]').selectOption(value == null ? { label: step.name } : { value });
+    return 'Selected the native dropdown option. Inspect the current dashboard state.';
+  }
   if (!await locator.isVisible()) return 'Choose a visible control.';
-  if (!isArtistPage(page.url()) || !await check()) throw new Error('Browser job is no longer current');
+  if (!await isCurrent()) throw new Error('Browser job is no longer current');
   switch (step.action) {
-    case 'click': await locator.click(); break;
+    case 'click':
+      try {
+        await locator.click();
+      } catch (error) {
+        if (error.name !== 'TimeoutError' || !TIME_LABEL.test(step.name) ||
+            !['button', 'option', 'gridcell'].includes(step.role) ||
+            !await locator.isVisible() || !await locator.isEnabled()) throw error;
+        if (!await isCurrent()) throw new Error('Browser job is no longer current');
+        await locator.dispatchEvent('click');
+        return 'Activated the time option directly. Verify the selected time before proceeding.';
+      }
+      break;
     case 'fill':
       if (typeof step.value !== 'string' || step.value.length > 3500 ||
           !['textbox', 'searchbox', 'combobox', 'spinbutton'].includes(step.role)) return 'Use fill on an editable field.';
