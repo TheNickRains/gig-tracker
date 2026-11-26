@@ -42,7 +42,7 @@ test('a blocked time-picker click uses its exact enabled option and rechecks the
     dispatchEvent: async name => { assert.equal(name, 'click'); dispatched++; },
   };
   const page = {
-    getByRole: () => ({ count: async () => 1, nth: () => locator }),
+    getByRole: role => role === 'option' ? { filter: () => ({ count: async () => 0 }) } : { count: async () => 1, nth: () => locator },
     url: () => 'https://artists.bandsintown.com/artists/3251702/events/new',
   };
   const time = { action: 'click', role: 'button', name: '7:00 PM' };
@@ -54,6 +54,28 @@ test('a blocked time-picker click uses its exact enabled option and rechecks the
   }), /no longer current/);
   await assert.rejects(() => browserAction(page, { ...time, name: 'Publish' }, async () => true), /click timed out/);
   assert.equal(dispatched, 1);
+});
+
+test('a time button nested in a menu option activates the option itself', async () => {
+  let selected = false;
+  const button = {};
+  const option = {
+    filter({ has }) { assert.equal(has, button); return this; },
+    count: async () => 1,
+    isVisible: async () => true,
+    isEnabled: async () => true,
+    dispatchEvent: async name => { assert.equal(name, 'click'); selected = true; },
+  };
+  const page = {
+    getByRole: (role, { name, exact }) => {
+      assert.equal(name, '7:00 PM');
+      assert.equal(exact, true);
+      return role === 'option' ? option : button;
+    },
+    url: () => 'https://artists.bandsintown.com/artists/3251702/events/new',
+  };
+  assert.match(await browserAction(page, { action: 'click', role: 'button', name: '7:00 PM' }, async () => true), /Activated the time menu option/);
+  assert.equal(selected, true);
 });
 
 test('the hosted operator starts at Upcoming Events and verifies the saved event ID', async () => {

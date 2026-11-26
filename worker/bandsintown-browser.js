@@ -38,7 +38,7 @@ const INSTRUCTIONS = [
   'Start in Nick Rains → Upcoming Events. For upsert with an ID, edit that exact event. Otherwise inspect Upcoming Events for the same artist, venue, and local date and time. Also check any pending or draft listings if shown. The empty state “You have no upcoming events” clears the upcoming-list check. If no draft control is visible, continue to Add Event. Do not open Past Events for a future show. Reuse an exact match. Send uncertain or promoter-controlled matches for review.',
   'On Upcoming Events, the header Add Event and empty-state Add Event both open the new event form. Use occurrence 1 if their exact roles and names match. In the form, prefer Single-Page Mode if offered.',
   'Use the venue-local date, show time, and time zone. Include doors, price, description, and ticket link where supplied. Never invent a venue, price, schedule, URL, or field. Set follower notifications off and report review if you cannot verify that SMS or email promotion will stay off.',
-  'The timeFields array contains the actual values of visible time inputs and selects. When the show start time already matches the Calendar (19:00 means 7:00 PM), continue to the next required field. A time printed on a closed picker can be its current value. Use a fill action with HH:MM only for an input whose type is time, or use the dropdown options.',
+  'The timeFields array contains the actual values of visible time inputs and selects. When the show start time already matches the Calendar (19:00 means 7:00 PM), continue to the next required field. A time printed on a closed picker can be its current value. Use a fill action with HH:MM only for an input whose type is time. If the time menu lists an option containing a button with the same time, choose the outer option.',
   'For removal, delete only the exact stored listing ID on the expected artist account. If you cannot verify the ID or artist, report review.',
   'After a save or delete, inspect the result. Return verified only when the dashboard confirms it. Upserts also need the numeric saved event ID from the dashboard. If a click or save is uncertain, return review without retrying. If signed out, tell the owner to sign in through the hosted browser. Never fill or submit login fields.',
   'For action review, give the owner one concrete next action, with no login details, secrets, or unrelated account data.',
@@ -65,12 +65,21 @@ async function browserAction(page, step, check) {
   if (/password|passcode|sign.?in|log.?in|verification code|email address/i.test(step.name)) {
     return REVIEW_SIGN_IN;
   }
+  const isCurrent = async () => isArtistPage(page.url()) && await check();
+  if (step.action === 'click' && TIME_LABEL.test(step.name) && ['button', 'option'].includes(step.role)) {
+    const name = { name: step.name, exact: true };
+    const choice = page.getByRole('option', name).filter({ has: page.getByRole('button', name) });
+    if (await choice.count() === 1 && await choice.isVisible() && await choice.isEnabled()) {
+      if (!await isCurrent()) throw new Error('Browser job is no longer current');
+      await choice.dispatchEvent('click');
+      return 'Activated the time menu option. Verify the selected time before proceeding.';
+    }
+  }
   const matches = page.getByRole(step.role, { name: step.name, exact: true });
   const count = await matches.count();
   const index = step.occurrence == null && count === 1 ? 0 : step.occurrence - 1;
   if (!Number.isInteger(index) || index < 0 || index >= count) return 'Choose an unambiguous visible control.';
   const locator = matches.nth(index);
-  const isCurrent = async () => isArtistPage(page.url()) && await check();
   if (step.action === 'click' && step.role === 'option' &&
       await locator.evaluate(element => element instanceof HTMLOptionElement && Boolean(element.closest('select')))) {
     if (!await isCurrent()) throw new Error('Browser job is no longer current');
