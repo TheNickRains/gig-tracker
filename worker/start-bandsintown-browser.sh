@@ -9,6 +9,15 @@ fi
 
 profile="$volume/chromium"
 install -d -m 700 -o pwuser -g pwuser "$profile"
+if [[ -n "${RAILWAY_VOLUME_MOUNT_PATH:-}" ]]; then
+  # Railway mounts the volume to one deployment at a time. Chromium's
+  # singleton symlinks can outlive a container that is stopped abruptly.
+  for entry in SingletonLock SingletonCookie SingletonSocket; do
+    if [[ -L "$profile/$entry" ]]; then
+      rm -- "$profile/$entry"
+    fi
+  done
+fi
 export DISPLAY=:99
 xvfb-runner() {
   exec gosu pwuser env -i PATH=/usr/bin:/bin HOME=/home/pwuser LANG=C.UTF-8 DISPLAY="$DISPLAY" "$@"
