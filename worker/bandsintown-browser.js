@@ -4,6 +4,7 @@ const UPCOMING_PATH = ARTIST_PATH + '/events/upcoming';
 const ENTRY = 'https://artists.bandsintown.com' + UPCOMING_PATH;
 const ADD_EVENT = /^\+?\s*Add Event$/i;
 const TIME_LABEL = /^(?:1[0-2]|[1-9]):[0-5]\d\s*[AP]M$/i;
+const CLOCK_VALUE = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const CONTROL_ACTIONS = ['click', 'fill', 'select', 'press'];
 const ROLES = new Set(['button', 'link', 'textbox', 'searchbox', 'combobox', 'spinbutton', 'checkbox', 'radio',
   'option', 'tab', 'menuitem', 'menuitemcheckbox', 'gridcell', 'switch']);
@@ -37,6 +38,7 @@ const INSTRUCTIONS = [
   'Start in Nick Rains → Upcoming Events. For upsert with an ID, edit that exact event. Otherwise inspect Upcoming Events for the same artist, venue, and local date and time. Also check any pending or draft listings if shown. The empty state “You have no upcoming events” clears the upcoming-list check. If no draft control is visible, continue to Add Event. Do not open Past Events for a future show. Reuse an exact match. Send uncertain or promoter-controlled matches for review.',
   'On Upcoming Events, the header Add Event and empty-state Add Event both open the new event form. Use occurrence 1 if their exact roles and names match. In the form, prefer Single-Page Mode if offered.',
   'Use the venue-local date, show time, and time zone. Include doors, price, description, and ticket link where supplied. Never invent a venue, price, schedule, URL, or field. Set follower notifications off and report review if you cannot verify that SMS or email promotion will stay off.',
+  'The timeFields array contains the actual values of visible time inputs and selects. When the show start time already matches the Calendar (19:00 means 7:00 PM), continue to the next required field. A time printed on a closed picker can be its current value. Use a fill action with HH:MM only for an input whose type is time, or use the dropdown options.',
   'For removal, delete only the exact stored listing ID on the expected artist account. If you cannot verify the ID or artist, report review.',
   'After a save or delete, inspect the result. Return verified only when the dashboard confirms it. Upserts also need the numeric saved event ID from the dashboard. If a click or save is uncertain, return review without retrying. If signed out, tell the owner to sign in through the hosted browser. Never fill or submit login fields.',
   'For action review, give the owner one concrete next action, with no login details, secrets, or unrelated account data.',
@@ -225,14 +227,26 @@ function createHostedOperator(env = process.env, dependencies = {}) {
         const links = await page.locator('a[href]').evaluateAll(anchors => anchors.map(anchor => anchor.href));
         const observed = Array.from(new Set([page.url(), ...links].map(eventId).filter(Boolean)));
         const { origin, pathname } = new URL(page.url());
+        const timeFields = await page.locator('input,select').evaluateAll(controls => controls.flatMap(control => {
+          const label = control.getAttribute('aria-label') || [...(control.labels || [])].map(node => node.textContent.trim()).join(' ') || control.placeholder || control.name;
+          if (!control.getClientRects().length || !(control.type === 'time' || /\btime\b/i.test(label))) return [];
+          return [{ label: String(label || '').slice(0, 60), type: control.type, value: control.value }];
+        }));
         stage = 'reading the next browser action';
-        const step = await nextStep({ job: data, snapshot, url: origin + pathname, listingIds: observed, history: history.slice(-8) }, signal);
+        const step = await nextStep({ job: data, snapshot, url: origin + pathname, listingIds: observed, timeFields, history: history.slice(-8) }, signal);
         if (step.action === 'review') return review(String(step.issue || 'Verify the matching listing in Bandsintown, then retry.').slice(0, 250));
         const attempt = JSON.stringify([pathname, snapshot, step.action, step.role, step.name, step.occurrence, step.value, step.bandsintown_id]);
         const count = (attempts.get(attempt) || 0) + 1;
         attempts.set(attempt, count);
         if (count > 2) {
           if (step.action === 'verified') return review('Open Nick Rains → Upcoming Events and find this show. Share its Bandsintown link if it appears. The runner could not confirm the event ID.');
+          if (TIME_LABEL.test(step.name)) {
+            const lines = snapshot.split('\n');
+            const picker = lines.findIndex(line => line.includes(step.name));
+            const context = picker < 0 ? [] : lines.slice(Math.max(0, picker - 3), picker + 4)
+              .filter(line => /\b(time|hours?|minutes?|option|combobox|textbox|spinbutton)\b|\d{1,2}:\d{2}/i.test(line));
+            console.info('Bandsintown time picker:', { role: step.role, fields: timeFields.filter(field => CLOCK_VALUE.test(field.value) || TIME_LABEL.test(field.value)), nearby: context });
+          }
           const control = typeof step.name === 'string' && step.name.trim() ? ` at “${step.name.trim().replace(/\s+/g, ' ').slice(0, 64)}”` : '';
           return review(`Open the hosted Bandsintown viewer and check the current screen. The runner stalled${control}. Check Upcoming Events for this show before retrying.`);
         }
