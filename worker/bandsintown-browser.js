@@ -162,6 +162,7 @@ function createHostedOperator(env = process.env, dependencies = {}) {
       tabs.find(tab => dashboardUrl(tab.url())) || await context.newPage();
     page.setDefaultTimeout(7000);
     let blockedRedirect = false;
+    let stage = 'opening Upcoming Events';
     const navigation = route => {
       const req = route.request();
       if (req.isNavigationRequest() && req.frame() === page.mainFrame() && !dashboardUrl(req.url())) {
@@ -192,6 +193,7 @@ function createHostedOperator(env = process.env, dependencies = {}) {
           if (new URL(page.url()).pathname !== UPCOMING_PATH || !isArtistPage(page.url()) || !await check()) {
             throw new Error('Browser job is no longer current');
           }
+          stage = 'opening Add Event';
           await addEvent.click();
           history.push({ action: 'click', name: 'Add Event', result: 'Opened the form from the empty Upcoming Events list.' });
         }
@@ -203,6 +205,7 @@ function createHostedOperator(env = process.env, dependencies = {}) {
         const links = await page.locator('a[href]').evaluateAll(anchors => anchors.map(anchor => anchor.href));
         const observed = Array.from(new Set([page.url(), ...links].map(eventId).filter(Boolean)));
         const { origin, pathname } = new URL(page.url());
+        stage = 'reading the next browser action';
         const step = await nextStep({ job: data, snapshot, url: origin + pathname, listingIds: observed, history: history.slice(-8) }, signal);
         if (step.action === 'review') return review(String(step.issue || 'Verify the matching listing in Bandsintown, then retry.').slice(0, 250));
         const attempt = JSON.stringify([pathname, snapshot, step.action, step.role, step.name, step.occurrence, step.value, step.bandsintown_id]);
@@ -227,6 +230,8 @@ function createHostedOperator(env = process.env, dependencies = {}) {
           }
           return { status: 'verified', bandsintown_id: step.bandsintown_id };
         }
+        const control = step.name.trim().replace(/\s+/g, ' ').slice(0, 64);
+        stage = `${step.action} on “${control}”`;
         const result = await browserAction(page, step, check);
         if (result === REVIEW_SIGN_IN) return review(result);
         history.push({ action: step.action, name: step.name, result });
@@ -234,7 +239,10 @@ function createHostedOperator(env = process.env, dependencies = {}) {
       return review('Open the hosted Bandsintown viewer and check the current screen. The runner reached its action limit. Check Nick Rains → Upcoming Events for this show before retrying.');
     } catch (error) {
       if (blockedRedirect) return review(REVIEW_SIGN_IN);
-      throw error;
+      const detail = error.name === 'TimeoutError' ? 'timed out' :
+        (error.message.match(/^Hosted browser model returned \d{3}$/)?.[0] || error.message.split('\n')[0].slice(0, 140));
+      console.warn('Bandsintown browser stopped:', stage, detail);
+      return review(`Bandsintown stopped during ${stage}. Check the current screen in the hosted viewer and confirm whether this show appears in Upcoming Events before retrying.`);
     } finally {
       await page.unroute('**/*', navigation).catch(() => {});
     }
