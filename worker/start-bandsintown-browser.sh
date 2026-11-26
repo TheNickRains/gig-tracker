@@ -11,7 +11,7 @@ profile="$volume/chromium"
 install -d -m 700 -o pwuser -g pwuser "$profile"
 export DISPLAY=:99
 xvfb-runner() {
-  gosu pwuser env -i PATH=/usr/bin:/bin HOME=/home/pwuser LANG=C.UTF-8 DISPLAY="$DISPLAY" "$@"
+  exec gosu pwuser env -i PATH=/usr/bin:/bin HOME=/home/pwuser LANG=C.UTF-8 DISPLAY="$DISPLAY" "$@"
 }
 children=()
 stop() {
@@ -37,7 +37,14 @@ xvfb-runner openbox &
 children+=("$!")
 
 chrome="$(node -p "require('playwright-core').chromium.executablePath()")"
-xvfb-runner "$chrome" --no-first-run --no-default-browser-check --no-sandbox --disable-dev-shm-usage   --no-proxy-server --password-store=basic --user-data-dir="$profile" --restore-last-session   --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --start-maximized   https://artists.bandsintown.com/login &
+start_page=()
+if [[ ! -f "$profile/Default/Preferences" ]]; then
+  start_page+=(https://artists.bandsintown.com/en-US/account/login)
+fi
+xvfb-runner "$chrome" --no-first-run --no-default-browser-check --no-sandbox --disable-dev-shm-usage \
+  --no-proxy-server --password-store=basic --user-data-dir="$profile" --restore-last-session \
+  --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --start-maximized \
+  "${start_page[@]}" &
 children+=("$!")
 
 # Login UI is reachable only from the container loopback, via Railway SSH.

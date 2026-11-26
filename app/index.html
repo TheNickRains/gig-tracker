@@ -4319,7 +4319,7 @@ async function loadPublishingInbox(){
       result.mode === 'preview' ? 'Preview only' : result.mode === 'pilot' ? 'One-show trial' : 'Automatic publishing';
     document.getElementById('publishing-next').textContent = result.mode === 'preview'
       ? 'Use Copy trial ID on one show, then sign in to the hosted Bandsintown browser.'
-      : result.runnerConnected ? 'Bandsintown browser connected.' : 'Check that the Railway browser service is running and signed in to Bandsintown.';
+      : result.runnerConnected ? 'Railway runner connected.' : 'Check that the Railway browser service is running and signed in to Bandsintown.';
   }
 }
 async function copyPublishingTrial(button){

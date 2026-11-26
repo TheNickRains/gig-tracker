@@ -27,10 +27,11 @@ The publisher subscribes directly to the Google Calendar identified by `SHOW_SYN
 The Calendar webhook and queue live in `gig-worker`. Run the Bandsintown browser as a second persistent service in the same Railway project. The Mac is only used to open an authenticated SSH tunnel during sign-in.
 
 1. Create a Railway service named `bandsintown-runner` from the same repository and branch. Set its root directory to `/worker` and set `RAILWAY_DOCKERFILE_PATH=Dockerfile.bandsintown`. Attach a volume at `/data`. Keep the service private. Chromium and the sign-in viewer listen on the container loopback.
-2. Set `SHOW_SYNC_BROWSER_SETUP=true` on the browser service and deploy it. Copy its **Service Instance ID** from Railway. Add your SSH key to Railway if needed, then open the tunnel below using that ID. Open [the private browser viewer](http://127.0.0.1:6080/vnc.html?autoconnect=true) and sign in to Bandsintown for Artists as an editor for Nick Rains (artist ID `3251702`). Close the viewer and tunnel after sign-in. The browser profile stays in the Railway volume. [Railway SSH port forwarding](https://docs.railway.com/cli/ssh)
+2. Set `SHOW_SYNC_BROWSER_SETUP=true` on the browser service and deploy it. Copy its **Service Instance ID** from Railway. Add your SSH key to Railway if needed, then open the tunnel below in your Mac’s Terminal using that ID. Keep the SSH shell open while you use [the private browser viewer](http://127.0.0.1:6081/vnc.html?autoconnect=true). Sign in to Bandsintown for Artists as an editor for Nick Rains (artist ID `3251702`) and select **Keep me logged in** if available. Leave the Nick Rains artist dashboard tab open inside Chromium. Close the viewer and SSH tunnel after sign-in. The browser profile stays in the Railway volume. [Railway SSH port forwarding](https://docs.railway.com/cli/ssh)
 
    ```bash
-   ssh -N -L 127.0.0.1:6080:127.0.0.1:6080 <service-instance-id>@ssh.railway.com
+   ssh -t -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 \
+     -L 127.0.0.1:6081:127.0.0.1:6080 <service-instance-id>@ssh.railway.com
    ```
 
 3. Set the following on `bandsintown-runner`, then redeploy. Share the runner token with `gig-worker`. Use a Railway variable reference for the existing Gemini key. [Railway variable references](https://docs.railway.com/variables)
@@ -43,7 +44,7 @@ The Calendar webhook and queue live in `gig-worker`. Run the Bandsintown browser
    | `GEMINI_API_KEY` | Reference the worker’s existing key with `${{gig-worker.GEMINI_API_KEY}}` |
 
 4. In **Show publishing**, use **Copy trial ID** for one show. In a single Railway deploy for `gig-worker`, set `SHOW_SYNC_PILOT_EVENT_ID` to that ID, set the runner token, and set `SHOW_SYNC_LIVE=true`. Verify the pilot listing and the update/delete workflow before removing the pilot ID. A trial on a cover show exercises Bandsintown. An original also exercises the separate live-site feed. Keep the active site on the production Gig worker feed or set `VITE_SHOW_FEED_URL` for a different host.
-5. If Bandsintown expires the session, turn on browser setup mode, reconnect the private tunnel, and sign in again. Return the runner to normal mode and use **Retry Bandsintown** after checking the affected listing.
+5. If a show asks you to sign in again, reconnect the private tunnel from step 2, sign in, and leave the artist dashboard tab open. Check the affected listing, then use **Retry Bandsintown**.
 
 If Bandsintown takes you to a particular dashboard URL after login, you can set `SHOW_SYNC_BANDSINTOWN_URL` to that URL on the browser service. Use the Bandsintown for Artists address without temporary sign-in or callback parameters.
 

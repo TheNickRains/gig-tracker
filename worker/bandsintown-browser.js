@@ -1,14 +1,20 @@
-const DASHBOARD_HOSTS = new Set(['artists.bandsintown.com', 'manager.bandsintown.com']);
-const ENTRY = 'https://artists.bandsintown.com/login';
+const DASHBOARD_HOSTS = new Set(['artists.bandsintown.com', 'www.artists.bandsintown.com', 'manager.bandsintown.com']);
+const ENTRY = 'https://artists.bandsintown.com/en-US/account/login';
 const ROLES = new Set(['button', 'link', 'textbox', 'combobox', 'spinbutton', 'checkbox', 'radio',
   'option', 'tab', 'menuitem', 'menuitemcheckbox', 'gridcell', 'switch']);
-const REVIEW_SIGN_IN = 'Open the hosted Bandsintown browser, sign in as Nick Rains, and retry this show.';
+const REVIEW_SIGN_IN = 'Open the private Railway browser viewer. Sign in as Nick Rains, leave the artist dashboard tab open, then click Retry Bandsintown.';
 
 function dashboardUrl(value) {
   try {
     const url = new URL(value);
     return url.protocol === 'https:' && DASHBOARD_HOSTS.has(url.hostname) && !url.username && !url.password;
   } catch { return false; }
+}
+
+function isDashboardPage(value) {
+  if (!dashboardUrl(value)) return false;
+  const { pathname } = new URL(value);
+  return !/\/(?:log-?in|log-?out|sign-?in|sign-?up|auth|support)(?:\/|$)/i.test(pathname);
 }
 
 function eventId(value) {
@@ -57,7 +63,7 @@ async function browserAction(page, step, check) {
   if (!Number.isInteger(index) || index < 0 || index >= count) return 'Choose an unambiguous visible control.';
   const locator = matches.nth(index);
   if (!await locator.isVisible()) return 'Choose a visible control.';
-  if (!dashboardUrl(page.url()) || !await check()) throw new Error('Browser job is no longer current');
+  if (!isDashboardPage(page.url()) || !await check()) throw new Error('Browser job is no longer current');
   switch (step.action) {
     case 'click': await locator.click(); break;
     case 'fill':
@@ -122,7 +128,12 @@ function createHostedOperator(env = process.env, dependencies = {}) {
     if (!browser?.isConnected()) browser = await connect();
     const context = browser.contexts()[0];
     if (!context) return review('Restart the hosted browser runner, then retry this show.');
-    const page = await context.newPage();
+    // A login can live in tab-scoped storage. Keep the operator's dashboard
+    // page intact across jobs and prefer it to any leftover sign-in tab.
+    const tabs = context.pages().slice().reverse();
+    const dashboard = tabs.find(tab => isDashboardPage(tab.url()));
+    const signIn = tabs.find(tab => dashboardUrl(tab.url()));
+    const page = dashboard || signIn || await context.newPage();
     page.setDefaultTimeout(7000);
     let blockedRedirect = false;
     const navigation = route => {
@@ -136,11 +147,14 @@ function createHostedOperator(env = process.env, dependencies = {}) {
     const signal = AbortSignal.timeout(7 * 60000);
     try {
       await page.route('**/*', navigation);
-      await page.goto(entry, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      if (!dashboard && !signIn) await page.goto(entry, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      if (!isDashboardPage(page.url())) {
+        await page.waitForURL(url => isDashboardPage(url.href), { timeout: 4000 }).catch(() => {});
+      }
       const history = [];
       const data = { operation: job.operation, listing: job.listing, bandsintown_id: job.bandsintown_id };
       for (let i = 0; i < 36; i++) {
-        if (!dashboardUrl(page.url()) || await page.locator('input[type=password]').first().isVisible()) return review(REVIEW_SIGN_IN);
+        if (!isDashboardPage(page.url()) || await page.locator('input[type=password]').first().isVisible()) return review(REVIEW_SIGN_IN);
         const snapshot = (await page.locator('body').ariaSnapshot()).slice(0, 18000);
         const links = await page.locator('a[href]').evaluateAll(anchors => anchors.map(anchor => anchor.href));
         const observed = Array.from(new Set([page.url(), ...links].map(eventId).filter(Boolean)));
@@ -170,7 +184,7 @@ function createHostedOperator(env = process.env, dependencies = {}) {
       if (blockedRedirect) return review(REVIEW_SIGN_IN);
       throw error;
     } finally {
-      await page.close().catch(() => {});
+      await page.unroute('**/*', navigation).catch(() => {});
     }
   };
 }

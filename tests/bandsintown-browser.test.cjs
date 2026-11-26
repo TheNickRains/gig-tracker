@@ -4,6 +4,7 @@ const { browserAction, createHostedOperator, dashboardUrl, eventId } = require('
 
 test('the hosted browser stays on the artist dashboard and only trusts Bandsintown event IDs', () => {
   assert.equal(dashboardUrl('https://artists.bandsintown.com/'), true);
+  assert.equal(dashboardUrl('https://www.artists.bandsintown.com/'), true);
   assert.equal(dashboardUrl('https://artists.bandsintown.com.evil.test/'), false);
   assert.equal(dashboardUrl('https://accounts.google.com/'), false);
   assert.equal(eventId('https://www.bandsintown.com/e/1234-nick-rains'), '1234');
@@ -24,19 +25,26 @@ test('dashboard writes require a current revision and never fill a login field',
   await browserAction(page, publish, async () => true);
   assert.equal(clicked, 1);
   const login = await browserAction(page, { action: 'fill', role: 'textbox', name: 'Password', value: 'anything' }, async () => true);
-  assert.match(login, /sign in as Nick Rains/);
+  assert.match(login, /sign in as Nick Rains/i);
 });
 
-test('the hosted operator uses its Chromium context and verifies the saved event ID', async () => {
-  let closed = false;
+test('the hosted operator reuses the dashboard tab and verifies the saved event ID', async () => {
+  let routeHandler;
   let clicks = 0;
-  let url = 'about:blank';
   let modelCalls = 0;
   const page = {
-    url: () => url,
+    url: () => 'https://www.artists.bandsintown.com/artists/3251702/events',
     setDefaultTimeout() {},
-    route: async () => {},
-    goto: async target => { url = target; },
+    route: async (pattern, handler) => {
+      assert.equal(pattern, '**/*');
+      routeHandler = handler;
+    },
+    unroute: async (pattern, handler) => {
+      assert.equal(pattern, '**/*');
+      assert.equal(handler, routeHandler);
+      routeHandler = undefined;
+    },
+    goto: async () => assert.fail('Keep the dashboard tab at its current URL'),
     locator: selector => {
       if (selector.includes('password')) return { first: () => ({ isVisible: async () => false }) };
       if (selector === 'body') return { ariaSnapshot: async () => '- heading "Nick Rains"\n- button "Save"' };
@@ -46,10 +54,14 @@ test('the hosted operator uses its Chromium context and verifies the saved event
       isVisible: async () => true,
       click: async () => { clicks++; },
     }) }),
-    close: async () => { closed = true; },
+    close: async () => assert.fail('Keep the dashboard tab open'),
   };
+  const signInTab = { url: () => 'https://artists.bandsintown.com/en-US/account/login' };
   const operate = createHostedOperator({ GEMINI_API_KEY: 'test' }, {
-    connect: async () => ({ contexts: () => [{ newPage: async () => page }] }),
+    connect: async () => ({ contexts: () => [{
+      pages: () => [page, signInTab],
+      newPage: async () => assert.fail('Reuse the dashboard tab'),
+    }] }),
     fetch: async (target, req) => {
       assert.match(target, /generativelanguage\.googleapis\.com/);
       assert.equal(req.headers['x-goog-api-key'], 'test');
@@ -64,5 +76,36 @@ test('the hosted operator uses its Chromium context and verifies the saved event
   assert.deepEqual(await operate({ operation: 'upsert', listing: { title: 'Test show' } }, async () => true),
     { status: 'verified', bandsintown_id: '1234' });
   assert.equal(clicks, 1);
-  assert.equal(closed, true);
+  assert.equal(routeHandler, undefined);
+});
+
+test('a signed-out browser leaves a sign-in tab open for the owner', async () => {
+  const tabs = [];
+  let url = 'about:blank';
+  const page = {
+    url: () => url,
+    setDefaultTimeout() {},
+    route: async () => {},
+    unroute: async () => {},
+    goto: async target => { url = target; },
+    waitForURL: async matches => {
+      assert.equal(matches(new URL(url)), false);
+      throw new Error('Still signed out');
+    },
+    close: async () => assert.fail('Keep the sign-in tab open'),
+  };
+  const operate = createHostedOperator({ GEMINI_API_KEY: 'test' }, {
+    connect: async () => ({
+      isConnected: () => true,
+      contexts: () => [{ pages: () => tabs, newPage: async () => { tabs.push(page); return page; } }],
+    }),
+    fetch: async () => assert.fail('The model should only receive the dashboard'),
+  });
+  const job = { operation: 'upsert', listing: { title: 'Test show' } };
+  const result = await operate(job, async () => true);
+  assert.equal(result.status, 'review');
+  assert.match(result.issue, /private Railway browser viewer.*Retry Bandsintown/);
+  assert.equal(url, 'https://artists.bandsintown.com/en-US/account/login');
+  assert.deepEqual(await operate(job, async () => true), result);
+  assert.deepEqual(tabs, [page]);
 });
