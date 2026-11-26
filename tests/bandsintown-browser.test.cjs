@@ -41,6 +41,14 @@ test('the hosted operator starts at Upcoming Events and verifies the saved event
   const page = {
     url: () => url,
     setDefaultTimeout() {},
+    getByRole: (role, options) => options.name instanceof RegExp ? {
+      or() { return this; },
+      first() { return this; },
+      waitFor: async () => {},
+    } : { count: async () => 1, nth: () => ({
+      isVisible: async () => true,
+      click: async () => { clicks++; },
+    }) },
     route: async (pattern, handler) => {
       assert.equal(pattern, '**/*');
       routeHandler = handler;
@@ -56,10 +64,6 @@ test('the hosted operator starts at Upcoming Events and verifies the saved event
       if (selector === 'body') return { ariaSnapshot: async () => '- heading "Nick Rains"\n- button "Save"' };
       return { evaluateAll: async () => clicks ? ['https://www.bandsintown.com/e/1234'] : [] };
     },
-    getByRole: () => ({ count: async () => 1, nth: () => ({
-      isVisible: async () => true,
-      click: async () => { clicks++; },
-    }) }),
     close: async () => assert.fail('Keep the dashboard tab open'),
   };
   const signInTab = { url: () => 'https://artists.bandsintown.com/en-US/account/login' };
@@ -89,6 +93,52 @@ test('the hosted operator starts at Upcoming Events and verifies the saved event
   assert.match(stalled.issue, /runner stalled at “Drafts”/);
   assert.equal(modelCalls, 6);
   assert.equal(clicks, 1);
+});
+
+test('empty Upcoming Events opens Add Event and an incomplete model reply cannot click a control', async () => {
+  const upcoming = 'https://artists.bandsintown.com/artists/3251702/events/upcoming';
+  let url = upcoming;
+  let openings = 0;
+  const addEvent = {
+    or() { return this; },
+    first() { return this; },
+    waitFor: async () => {},
+    isVisible: async () => true,
+    click: async () => {
+      openings++;
+      url = 'https://artists.bandsintown.com/artists/3251702/events/new';
+    },
+  };
+  const page = {
+    url: () => url,
+    setDefaultTimeout() {},
+    route: async () => {},
+    unroute: async () => {},
+    locator: selector => {
+      if (selector.includes('password')) return { first: () => ({ isVisible: async () => false }) };
+      if (selector === 'body') return { ariaSnapshot: async () => openings ? '- textbox "Venue"' : '- heading "You have no upcoming events"' };
+      return { evaluateAll: async () => [] };
+    },
+    getByRole: (role, { name }) => {
+      assert.match('Add Event', name);
+      return addEvent;
+    },
+  };
+  const operate = createHostedOperator({ GEMINI_API_KEY: 'test' }, {
+    connect: async () => ({ contexts: () => [{ pages: () => [page] }] }),
+    fetch: async (_target, req) => {
+      const request = JSON.parse(req.body);
+      const data = JSON.parse(request.contents[0].parts[0].text);
+      assert.equal(data.url, url);
+      assert.equal(request.generationConfig.thinkingConfig.thinkingBudget, 0);
+      assert.equal(openings, 1);
+      return Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '{"action":"click"}' }] } }] });
+    },
+  });
+  const result = await operate({ operation: 'upsert', listing: { title: 'Test show' } }, async () => true);
+  assert.equal(result.status, 'review');
+  assert.match(result.issue, /could not identify the next control/);
+  assert.equal(openings, 1);
 });
 
 test('a signed-out browser leaves a sign-in tab open for the owner', async () => {
