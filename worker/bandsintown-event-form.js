@@ -7,20 +7,22 @@ function words(text) {
     .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 
-function street(text) {
-  return words(text).replace(/\bstreet\b/g, 'st').replace(/\bavenue\b/g, 'ave')
-    .replace(/\broad\b/g, 'rd').replace(/\bboulevard\b/g, 'blvd').replace(/\bdrive\b/g, 'dr');
+function numberedStreet(text) {
+  // Calendar and venue suggestions can include the building name before the street.
+  const part = String(text || '').split(/[,\n]+/).find(value => /^\s*\d+[a-z]?(?:-\d+[a-z]?)?\s+\S/i.test(value));
+  return words(part).replace(/\bstreet\b/g, 'st').replace(/\bavenue\b/g, 'ave')
+    .replace(/\broad\b/g, 'rd').replace(/\bboulevard\b/g, 'blvd').replace(/\bdrive\b/g, 'dr').replace(/\blane\b/g, 'ln');
 }
 
 function venueMatchesListing(name, location, listing) {
   const city = words(listing.city);
   const venue = words(listing.venue);
-  const address = street(listing.address);
+  const address = numberedStreet(listing.address);
   const parts = location.split(/[,\n]+/).map(words).filter(Boolean);
   if (!city || !venue || !parts.some(part => part === city || part.startsWith(city + ' '))) return false;
-  const addressPart = location.split(/[,\n]+/).find(part => /^\s*\d+[A-Z-]*\s+\S/i.test(part));
-  const sameStreet = address && (' ' + street(location) + ' ').includes(' ' + address + ' ');
-  if (addressPart && address && !sameStreet) return false;
+  const optionStreet = numberedStreet(location);
+  const sameStreet = Boolean(address && address === optionStreet);
+  if (optionStreet && listing.address && !sameStreet) return false;
   const region = (location.match(/,\s*([A-Z]{2})(?=\s*[,\d]|\s*$)/) || [])[1];
   if (region && listing.region && region !== listing.region && region !== listing.country) return false;
   const place = words(name);
@@ -238,4 +240,4 @@ async function prepareEventForm(page, listing, isCurrent) {
   return state;
 }
 
-module.exports = { prepareEventForm, submitLocationDialog, venueMatchesListing };
+module.exports = { prepareEventForm, submitLocationDialog, venueMatchesListing, numberedStreet };

@@ -36,6 +36,20 @@ test('a typed search is distinct from a committed venue with matching details', 
   assert.equal((await prepareEventForm(page, listing, check)).venueMatches, true);
 });
 
+test('prefixed Calendar addresses match the numbered street while preserving venue identity', () => {
+  const geiger = { ...listing, venue: 'Geiger Key Marina', address: 'RV Park & Fish Camp by Parakeet Communities, 5 Geiger Rd' };
+  assert.equal(venueMatchesListing('Geiger Key Marina', '5 Geiger Road, Key West, FL', geiger), true);
+  assert.equal(venueMatchesListing('Geiger Key Marina', '15 Geiger Road, Key West, FL', geiger), false);
+  assert.equal(venueMatchesListing('Geiger Key Marina', '5 Geiger Road Extension, Key West, FL', geiger), false);
+  assert.equal(venueMatchesListing('Geiger Key', '5 Geiger Rd, Key West, FL', geiger), false);
+
+  const reach = { ...listing, venue: 'The Reach Key West', address: 'Curio Collection by Hilton, 1435 Simonton St' };
+  assert.equal(venueMatchesListing('The Reach', 'The Reach Key West, 1435 Simonton Street, Key West, FL', reach), true);
+  assert.equal(venueMatchesListing('The Reach', 'Key West, FL', reach), false);
+  assert.equal(venueMatchesListing('The Reach', '1435 Southard Street, Key West, FL', reach), false);
+  assert.equal(venueMatchesListing('The Reach Annex', '1435 Simonton Street, Key West, FL', reach), false);
+});
+
 test('read back the accepted event date and restrict changes to the current new-event job', async () => {
   let url = 'https://artists.bandsintown.com/artists/3251702/events/new';
   let value = '2026-11-24';

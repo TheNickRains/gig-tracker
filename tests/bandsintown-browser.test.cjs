@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { browserAction, createHostedOperator, dashboardUrl, eventId, publishedReceipt, setNewEventStartTime } = require('../worker/bandsintown-browser');
+const { browserAction, createHostedOperator, dashboardUrl, eventId, inspectSubmission, publishedReceipt, setNewEventStartTime } = require('../worker/bandsintown-browser');
 
 test('the publication receipt must match the submitted Calendar show', async () => {
   const listing = { venue: 'The Reserve Key West', date: '2026-11-27', time: '19:00', city: 'Key West', region: 'FL', address: '510 Southard St' };
@@ -10,6 +10,8 @@ test('the publication receipt must match the submitted Calendar show', async () 
   assert.equal(await publishedReceipt(page, { ...listing, date: '2026-11-28' }), null);
   assert.equal(await publishedReceipt(page, { ...listing, time: '17:00' }), null);
   assert.equal(await publishedReceipt(page, { ...listing, venue: 'Elsewhere' }), null);
+  assert.equal(await publishedReceipt(page, { ...listing, title: 'Changed title' }), null);
+  assert.equal(await publishedReceipt(page, { ...listing, description: 'Changed notes' }), null);
   receipt.status = 'DRAFT';
   assert.equal(await publishedReceipt(page, listing), null);
 });
@@ -77,67 +79,155 @@ test('new events fill only the show start time, verify it after blur, and preser
   assert.equal(await setNewEventStartTime(page, job, async () => true), false);
 });
 
-test('the hosted operator starts at Upcoming Events and verifies the saved event ID', async () => {
-  const upcoming = 'https://artists.bandsintown.com/artists/3251702/events/upcoming';
-  let url = 'https://artists.bandsintown.com/artists/3251702/events/past';
-  let routeHandler;
-  let clicks = 0;
-  let modelCalls = 0;
+const artist = 'https://artists.bandsintown.com/artists/3251702';
+const upcoming = artist + '/events/upcoming';
+const listing = { title: 'The Reserve', venue: 'The Reserve Key West', address: '510 Southard St',
+  city: 'Key West', region: 'FL', date: '2026-11-27', time: '19:00' };
+
+test('a save may continue in an explicit confirmation dialog only', async () => {
+  for (const snapshot of ['', '- dialog "Confirm publication"', '- dialog "Failed to publish, try again"']) {
+    const overlay = Boolean(snapshot);
+    let url = artist + '/events/new';
+    let confirms = 0;
+    const modal = { last() { return this; }, waitFor: async () => {}, isVisible: async () => overlay,
+      ariaSnapshot: async () => snapshot,
+      getByRole: () => ({ count: async () => 1, isVisible: async () => true, isEnabled: async () => true,
+        click: async () => { confirms++; url = upcoming + '?publish_success=1'; } }),
+    };
+    const page = { url: () => url, waitForURL: async () => {},
+      evaluate: async () => ({ ...listing, status: 'PUBLISHED', id: '1234' }),
+      getByRole: () => assert.fail('The event form cannot be submitted again'),
+      locator: selector => {
+        if (selector.startsWith('.bit-popup-title')) return { ...modal, isVisible: async () => false };
+        if (selector.startsWith('[role="dialog"]')) return modal;
+        if (selector === 'body') return { ariaSnapshot: async () => '- button "Publish Event"' };
+        return { evaluateAll: async () => [] };
+      },
+    };
+    const result = await inspectSubmission(page, listing, async () => true);
+    const confirmed = snapshot.includes('Confirm publication');
+    assert.deepEqual(result, confirmed ? { id: '1234' } : {});
+    assert.equal(confirms, confirmed ? 1 : 0);
+  }
+});
+
+function hostedFixture({ feeds = [], onSave, onModel, onLoad, receipt, inspect } = {}) {
+  let url = artist + '/events/past';
+  let removed = false;
+  const calls = { adds: 0, saves: 0, reads: 0, model: 0, loads: [], actions: [] };
+  const setUrl = next => { url = next; };
+  const setRemoved = () => { removed = true; url = upcoming; };
+  const visible = { count: async () => 1, isVisible: async () => true, isEnabled: async () => true };
+  const add = { ...visible, or() { return this; }, first() { return this; }, waitFor: async () => {},
+    click: async () => { calls.adds++; url = artist + '/events/new?version=single-page'; } };
+  const empty = { count: async () => 0, evaluateAll: async () => [], isVisible: async () => false };
+  const field = value => ({ ...visible, inputValue: async () => value, isEditable: async () => true, getAttribute: async () => null });
   const page = {
-    url: () => url,
-    setDefaultTimeout() {},
-    getByRole: (role, options) => options.name instanceof RegExp ? {
-      or() { return this; },
-      first() { return this; },
-      waitFor: async () => {},
-    } : { count: async () => 1, nth: () => ({
-      isVisible: async () => true,
-      click: async () => { clicks++; },
-    }) },
-    route: async (pattern, handler) => {
-      assert.equal(pattern, '**/*');
-      routeHandler = handler;
-    },
-    unroute: async (pattern, handler) => {
-      assert.equal(pattern, '**/*');
-      assert.equal(handler, routeHandler);
-      routeHandler = undefined;
-    },
-    goto: async target => { assert.equal(target, upcoming); url = target; },
+    url: () => url, setDefaultTimeout() {}, route: async () => {}, unroute: async () => {},
+    goto: async target => { url = target; calls.loads.push(target); onLoad?.(target, setUrl, setRemoved); },
+    waitForURL: async () => {},
+    evaluate: async () => /publish_success=1/.test(url) || (receipt && !removed) ? receipt : removed,
     locator: selector => {
-      if (selector.includes('password')) return { first: () => ({ isVisible: async () => false }) };
+      if (selector.includes('password')) return { first: () => empty };
+      if (selector.startsWith('form.event-form')) return { first: () => ({ waitFor: async () => {} }) };
       if (selector === 'body') return { ariaSnapshot: async () => '- heading "Nick Rains"\n- button "Save"' };
-      return { evaluateAll: async () => clicks ? ['https://www.bandsintown.com/e/1234'] : [] };
+      if (selector === 'a[href]') return { evaluateAll: async () => ['https://www.bandsintown.com/e/9999'] };
+      if (selector === 'input,select') return { evaluateAll: async () => [{ name: 'start_time', value: listing.time }] };
+      if (selector.startsWith('input#eventStartDateField')) return field(listing.date);
+      if (selector.startsWith('input#venueField')) return { ...field(listing.venue + ' - Key West, FL'),
+        locator: () => ({ ...visible, locator: () => visible }) };
+      if (selector.includes('input[name="start_time"]')) return field(listing.time);
+      if (selector.includes('input[name="title"]')) return field(listing.title);
+      if (selector.includes('flag_no_announce')) return { ...visible, isChecked: async () => false };
+      return empty;
     },
-    close: async () => assert.fail('Keep the dashboard tab open'),
+    getByRole: (_role, { name }) => name instanceof RegExp ? add : { count: async () => 1, nth: () => ({ ...visible,
+      click: async () => {
+        calls.actions.push(name);
+        if (name === 'Save') { calls.saves++; await onSave?.(setUrl); }
+        if (name === 'Delete') setRemoved();
+      },
+    }) },
   };
-  const signInTab = { url: () => 'https://artists.bandsintown.com/en-US/account/login' };
   const operate = createHostedOperator({ GEMINI_API_KEY: 'test' }, {
-    connect: async () => ({ isConnected: () => true, contexts: () => [{
-      pages: () => [page, signInTab],
-      newPage: async () => assert.fail('Reuse the dashboard tab'),
-    }] }),
-    fetch: async (target, req) => {
-      assert.match(target, /generativelanguage\.googleapis\.com/);
-      assert.equal(req.headers['x-goog-api-key'], 'test');
-      assert.equal(JSON.parse(JSON.parse(req.body).contents[0].parts[0].text).url, upcoming);
-      const step = [
-        { action: 'verified', bandsintown_id: '1234' },
-        { action: 'click', role: 'button', name: 'Save' },
-        { action: 'verified', bandsintown_id: '1234' },
-      ][modelCalls++] || { action: 'click', role: 'table', name: 'Drafts' };
+    connect: async () => ({ isConnected: () => true, contexts: () => [{ pages: () => [page] }] }),
+    lookupPublishedEvent: async () => {
+      const next = feeds[Math.min(calls.reads++, feeds.length - 1)];
+      assert.ok(next, 'Unexpected public listing lookup');
+      return next;
+    },
+    inspectSubmission: inspect || (async () => ({})), wait: async () => {},
+    fetch: async (_url, req) => {
+      calls.model++;
+      const step = onModel ? onModel(JSON.parse(JSON.parse(req.body).contents[0].parts[0].text)) :
+        { action: 'click', role: 'button', name: 'Save' };
       return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(step) }] } }] });
     },
   });
-  assert.deepEqual(await operate({ operation: 'upsert', listing: { title: 'Test show' } }, async () => true),
-    { status: 'verified', bandsintown_id: '1234' });
-  assert.equal(clicks, 1);
-  assert.equal(routeHandler, undefined);
-  const stalled = await operate({ operation: 'upsert', listing: { title: 'Test show' } }, async () => true);
-  assert.equal(stalled.status, 'review');
-  assert.match(stalled.issue, /runner stalled at “Drafts”/);
-  assert.equal(modelCalls, 6);
-  assert.equal(clicks, 1);
+  return { calls, run: (job = {}) => operate({ operation: 'upsert', listing, ...job }, async () => true) };
+}
+
+test('reuses a public exact match; conflicts, mismatched metadata, and unavailable reads never create events', async () => {
+  for (const status of ['matched', 'conflict', 'needs-update', 'unavailable']) {
+    const { calls, run } = hostedFixture({ feeds: [{ status, id: '1234', issue: 'Check this listing.' }] });
+    const result = await run();
+    assert.deepEqual(result, status === 'matched' ? { status: 'verified', bandsintown_id: '1234' } :
+      { status: 'review', issue: 'Check this listing.' });
+    assert.deepEqual(calls.loads, [upcoming]);
+    assert.equal(calls.adds + calls.saves + calls.model, 0);
+  }
+});
+
+test('after one Save, a lost acknowledgement or click timeout is reconciled without resubmitting', async () => {
+  for (const timeout of [false, true]) {
+    const { calls, run } = hostedFixture({ feeds: [{ status: 'missing' }, { status: 'missing' }, { status: 'matched', id: '1234' }],
+      onSave: () => { if (timeout) throw new Error('Click timed out'); } });
+    assert.deepEqual(await run(), { status: 'verified', bandsintown_id: '1234' });
+    assert.equal(calls.adds, 1);
+    assert.equal(calls.model, 1);
+    assert.equal(calls.saves, 1);
+    assert.equal(calls.reads, 3);
+  }
+});
+
+test('an ambiguous save and an unrelated event link cannot validate a missing show', async () => {
+  const attempted = hostedFixture({ feeds: [{ status: 'missing' }] });
+  assert.match((await attempted.run()).issue, /Save was attempted/);
+  assert.equal(attempted.calls.saves, 1);
+  assert.equal(attempted.calls.model, 1);
+  assert.equal(attempted.calls.reads, 4);
+  const unrelated = hostedFixture({ feeds: [{ status: 'missing' }], onModel: () => ({ action: 'verified', bandsintown_id: '9999' }) });
+  assert.equal((await unrelated.run()).status, 'review');
+  assert.equal(unrelated.calls.saves, 0);
+});
+
+test('a stored ID is edited on its exact form and a changed schedule is confirmed without publish_success', async () => {
+  const { calls, run } = hostedFixture({ onSave: setUrl => setUrl(upcoming), receipt: { ...listing, status: 'PUBLISHED', id: '1234' } });
+  assert.deepEqual(await run({ bandsintown_id: '1234' }), { status: 'verified', bandsintown_id: '1234' });
+  assert.deepEqual(calls.loads, [artist + '/events/1234?version=single-page']);
+  assert.equal(calls.adds, 0);
+  assert.equal(calls.saves, 1);
+  assert.equal(calls.reads, 0);
+});
+
+test('stored edits do not adopt other IDs or reuse public evidence when optional fields were cleared', async () => {
+  const { calls, run } = hostedFixture({ onSave: setUrl => setUrl(upcoming), receipt: { ...listing, status: 'PUBLISHED', id: '7777' } });
+  assert.equal((await run({ bandsintown_id: '1234' })).status, 'review');
+  assert.equal(calls.adds, 0);
+  assert.equal(calls.saves, 1);
+  assert.equal(calls.reads, 0);
+});
+
+test('stored removals require an exact dashboard confirmation; a redirect alone proves nothing', async () => {
+  const deleted = hostedFixture({ onModel: () => ({ action: 'click', role: 'button', name: 'Delete' }) });
+  assert.deepEqual(await deleted.run({ operation: 'remove', bandsintown_id: '1234' }), { status: 'verified' });
+  assert.deepEqual(deleted.calls.actions, ['Delete']);
+  const redirected = hostedFixture({ onLoad: (_target, setUrl) => setUrl(upcoming) });
+  assert.equal((await redirected.run({ operation: 'remove', bandsintown_id: '1234' })).status, 'review');
+  assert.deepEqual(redirected.calls.actions, []);
+  const wrong = hostedFixture({ onLoad: (_target, setUrl) => setUrl(artist + '/events/2222') });
+  assert.equal((await wrong.run({ operation: 'remove', bandsintown_id: '1234' })).status, 'review');
+  assert.deepEqual(wrong.calls.actions, []);
 });
 
 test('empty Upcoming Events opens Add Event and an incomplete model reply cannot click a control', async () => {
@@ -166,6 +256,7 @@ test('empty Upcoming Events opens Add Event and an incomplete model reply cannot
       if (selector === '.bit-dropdown-options > ul') return { evaluateAll: async () => true };
       return { evaluateAll: async () => [] };
     },
+    waitForURL: async () => {},
     getByRole: (role, { name }) => {
       assert.match('Add Event', name);
       return addEvent;
@@ -173,6 +264,7 @@ test('empty Upcoming Events opens Add Event and an incomplete model reply cannot
   };
   const operate = createHostedOperator({ GEMINI_API_KEY: 'test' }, {
     connect: async () => ({ contexts: () => [{ pages: () => [page] }] }),
+    lookupPublishedEvent: async () => ({ status: 'missing' }),
     fetch: async (_target, req) => {
       const request = JSON.parse(req.body);
       const data = JSON.parse(request.contents[0].parts[0].text);
