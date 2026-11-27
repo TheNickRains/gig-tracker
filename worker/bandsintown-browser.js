@@ -1,5 +1,5 @@
 const { prepareEventForm, submitLocationDialog, venueMatchesListing } = require('./bandsintown-event-form');
-const { lookupPublishedEvent } = require('./bandsintown-published');
+const { lookupPublishedEvent, eventDescription, eventTitleMatches } = require('./bandsintown-published');
 const DASHBOARD_HOSTS = new Set(['artists.bandsintown.com', 'www.artists.bandsintown.com', 'manager.bandsintown.com']);
 const ARTIST_PATH = '/artists/3251702';
 const UPCOMING_PATH = ARTIST_PATH + '/events/upcoming';
@@ -46,6 +46,7 @@ const INSTRUCTIONS = [
   'Return exactly one JSON action at a time. For every click, fill, select, or press include the exact role and a nonempty accessible name from the snapshot. For example: {"action":"click","role":"button","name":"Add Event"}. Use role and name as empty strings for verified and review. If you cannot identify a control, return review and name the field that needs attention in the issue. Use occurrence (1-indexed) only if the right duplicate is clear. Use select for a native dropdown. Use click for a custom dropdown and its options. Press Enter, Space, Tab, Escape, and arrow keys only when needed.',
   'For new shows the runner has checked the public listing and opened the single-page Add Event form. For a stored ID you start on the exact event form. Apply all supplied Calendar fields there, including changes to dates and locations and clearing obsolete optional Calendar fields. Save the changes on that form. Send promoter-controlled listings for review.',
   'Use the venue-local date, show time, and time zone. Include doors, price, description, and ticket link where supplied. Never invent a venue, price, schedule, URL, or field. Set follower notifications off and report review if you cannot verify that SMS or email promotion will stay off.',
+  'Website Link under Free admission is optional. Leave it empty when the Calendar has no ticketUrl. The runner handles public notes, admission and doors. Its doors text is distinct from the show start time.',
   'The timeFields array contains the actual values of visible time inputs and selects. The new event form accepts the show start time as text, and the runner sets it from the Calendar. When start_time matches (19:00 means 7:00 PM), continue to the next required field. Leave the end, announcement, and presale times alone unless supplied for their respective purposes.',
   'For removal, delete only the exact stored listing ID on the expected artist account. If you cannot verify the ID or artist, report review.',
   'After a save or delete, inspect the result. Return verified only when the dashboard confirms it. Upserts also need the numeric saved event ID from the dashboard. If a click or save is uncertain, return review without retrying. If signed out, tell the owner to sign in through the hosted browser. Never fill or submit login fields.',
@@ -99,6 +100,13 @@ async function preparePublication(page, listing, current) {
     await title.fill(listing.title);
     await title.blur();
   }
+  if (listing.title && !eventTitleMatches('', listing.venue, listing)) {
+    const custom = page.locator('input#eventNameOption');
+    if (await custom.count() === 1 && !await custom.isChecked()) {
+      await current();
+      await page.locator('label[for="eventNameOption"]').click();
+    }
+  }
   const notify = page.locator('input#flag_no_announce-toggle, input[type="checkbox"][name="flag_no_announce"]');
   if (await notify.count() !== 1) return null;
   if (await notify.isChecked()) {
@@ -110,6 +118,58 @@ async function preparePublication(page, listing, current) {
   return !await notify.isChecked();
 }
 
+async function setPublicField(field, value, current) {
+  if (await field.count() !== 1) return false;
+  if (await field.inputValue() === value) return true;
+  if (!await field.isEditable()) return false;
+  await current();
+  await field.fill(value);
+  await field.blur();
+  return await field.inputValue() === value;
+}
+
+async function preparePublicDetails(page, listing, current, editing = false) {
+  if (!isArtistPage(page.url()) || new URL(page.url()).pathname.endsWith('/add-location')) return false;
+  const doorsField = page.locator('input[name="doors_time"]:visible, input[name="door_time"]:visible, input[name="doors_at"][type="time"]:visible');
+  const structuredDoors = listing.doors && await doorsField.count() === 1;
+  if (structuredDoors && !matchesClock(await doorsField.inputValue(), listing.doors)) {
+    if (!CLOCK_VALUE.test(listing.doors) || !await doorsField.isEditable()) return false;
+    await current();
+    await doorsField.fill(await doorsField.getAttribute('type') === 'time' ? listing.doors : timeLabel(listing.doors));
+    await doorsField.press('Escape');
+    await doorsField.blur();
+    if (!matchesClock(await doorsField.inputValue(), listing.doors)) return false;
+  }
+  const description = eventDescription(structuredDoors ? { ...listing, doors: null } : listing);
+  if (description || (editing && Object.hasOwn(listing, 'description'))) {
+    const field = page.locator('textarea[name="description"]:visible, input[name="description"]:visible');
+    if (!await field.count()) {
+      const section = page.getByRole('heading', { name: /^additional (?:event )?(?:information|info|details)\b/i });
+      if (await section.count() === 1 && await section.isVisible()) {
+        await current();
+        await section.click();
+      }
+    }
+    if (!await setPublicField(field, description, current)) return false;
+  }
+  const free = /^free$/i.test(listing.ticketPrice || '');
+  if (listing.ticketPrice) {
+    const id = free ? 'eventAdmissionFree' : 'eventAdmissionPaid';
+    const radio = page.locator('input#' + id);
+    if (await radio.count() !== 1) return false;
+    if (!await radio.isChecked()) {
+      await current();
+      await page.locator('label[for="' + id + '"]').click();
+      if (!await radio.isChecked()) return false;
+    }
+  }
+  if (free || listing.ticketUrl) {
+    const link = page.locator(free ? 'input[name="event_free_link"]:visible' : 'input[name="tickets_manager[0].link"]:visible');
+    if (!await setPublicField(link, listing.ticketUrl || '', current)) return false;
+  }
+  return true;
+}
+
 async function publishedReceipt(page, listing, expectedId) {
   const url = new URL(page.url());
   if (!isArtistPage(url.href) || url.pathname !== UPCOMING_PATH || (!expectedId && url.searchParams.get('publish_success') !== '1')) return null;
@@ -119,12 +179,20 @@ async function publishedReceipt(page, listing, expectedId) {
     if (!event) return null;
     return { id: String(event.id || receipt.event_id || ''), status: event.status, date: event.start_date,
       time: event.start_time, venue: event.venue_name, city: event.venue_city, region: event.venue_region,
-      address: event.venue_address, title: event.title, description: event.description };
+      address: event.venue_address, title: event.title, description: event.description,
+      doors: event.doors_time || event.door_time || event.doors_at,
+      free: event.flag_is_event_free ?? event.free,
+      links: [event.event_free_link, ...(event.tickets_manager || []).map(ticket => ticket?.link)].filter(Boolean) };
   });
   if (!saved || !/^\d{1,30}$/.test(saved.id) || (expectedId && saved.id !== expectedId) || !['PUBLISHED', 'AUTOPUBLISHED'].includes(saved.status)) return null;
   const location = [saved.address, saved.city, saved.region].filter(Boolean).join(', ');
-  if (listing.title && String(saved.title || '').trim() !== listing.title.trim()) return null;
-  if (Object.hasOwn(listing, 'description') && String(saved.description || '').trim() !== String(listing.description || '').trim()) return null;
+  if (!eventTitleMatches(saved.title, saved.venue, listing)) return null;
+  const description = String(saved.description || '').trim();
+  const expectedDescription = eventDescription(listing);
+  if ((expectedDescription || Object.hasOwn(listing, 'description')) && description !== expectedDescription &&
+      !(listing.doors && matchesClock(saved.doors, listing.doors) && description === eventDescription({ ...listing, doors: null }))) return null;
+  if (/^free$/i.test(listing.ticketPrice || '') && saved.free !== true) return null;
+  if (listing.ticketUrl && !saved.links?.includes(listing.ticketUrl)) return null;
   return saved.date === listing.date && matchesClock(saved.time, listing.time) && venueMatchesListing(saved.venue, location, listing) ? saved.id : null;
 }
 
@@ -390,14 +458,17 @@ function createHostedOperator(env = process.env, dependencies = {}) {
         if (job.operation === 'upsert' && !storedId && job.listing?.date && job.listing.venue && isNewEvent(page)) {
           stage = 'entering the event date and venue';
           const before = page.url();
-          form = await prepareEventForm(page, job.listing, check);
+          form = await prepareEventForm(page, job.listing, check, value => { stage = value; });
           if (page.url() !== before) continue;
           stage = 'setting the show start time';
           await setNewEventStartTime(page, job, check);
           stage = 'setting the event title and follower notifications';
-          form.notificationsOff = await preparePublication(page, job.listing, async () => {
+          const current = async () => {
             if (!isNewEvent(page) || !await check()) throw new Error('Browser job is no longer current');
-          });
+          };
+          form.notificationsOff = await preparePublication(page, job.listing, current);
+          stage = 'entering public notes, admission and doors';
+          form.detailsMatch = await preparePublicDetails(page, job.listing, current);
         }
         const snapshot = (await dashboardSnapshot(page)).slice(0, 18000);
         const links = await page.locator('a[href]').evaluateAll(anchors => anchors.map(anchor => anchor.href));
@@ -415,8 +486,7 @@ function createHostedOperator(env = process.env, dependencies = {}) {
           console.info('Bandsintown event form:', JSON.stringify({ ...form, path: pathname, startTime: startTime?.value }));
         }
         let step;
-        if (form?.dateMatches && form.venueMatches && form.timeMatches && form.notificationsOff &&
-            !['doors', 'description', 'ticketPrice', 'ticketUrl'].some(key => job.listing[key])) {
+        if (form?.dateMatches && form.venueMatches && form.timeMatches && form.notificationsOff && form.detailsMatch) {
           const save = page.locator('form .event-buttons button.save-btn:visible');
           const now = page.locator('input#publishNowEventRadio:checked');
           if (await now.count() === 1 && await save.count() === 1 && await save.isEnabled()) {
@@ -454,6 +524,11 @@ function createHostedOperator(env = process.env, dependencies = {}) {
         const submitForm = activating && step.role === 'button' && SAVE_EVENT.test(control);
         const onTarget = () => storedId ? onStoredEvent(page, storedId) : isNewEvent(page);
         if (!onTarget()) return review('Open the matching event form in the hosted Bandsintown dashboard before retrying.');
+        if (step.action === 'fill' && (/\b(?:website|url|link)\b/i.test(control) || /https?:\/\//i.test(step.value)) &&
+            step.value && step.value !== job.listing?.ticketUrl) {
+          history.push({ action: 'verify', name: control, result: 'Use only the supplied Calendar ticket URL. Leave optional Website Link empty when no URL was supplied.' });
+          continue;
+        }
         if (activating && (ADD_EVENT.test(control) || /save.*draft|publish.*announce/i.test(control) ||
             (step.role === 'button' && /^(?:save|publish|confirm publish)\b/i.test(control) && !submitForm) ||
             (job.operation !== 'remove' && /^(?:delete|remove|cancel)(?: (?:this )?(?:event|listing))?$/i.test(control)) ||
@@ -462,21 +537,23 @@ function createHostedOperator(env = process.env, dependencies = {}) {
           history.push({ action: 'verify', name: control, result: 'Select an option or click the named button. Enter in a text field can submit the entire event.' });
           continue;
         }
-        if (submitForm && !storedId && !(form?.dateMatches && form.timeMatches && form.venueMatches && form.notificationsOff)) {
-          history.push({ action: 'verify', name: control, result: 'Confirm the Calendar date, time, selected venue and disabled follower notifications on the event form before saving.' });
+        if (submitForm && !storedId && !(form?.dateMatches && form.timeMatches && form.venueMatches && form.notificationsOff && form.detailsMatch)) {
+          history.push({ action: 'verify', name: control, result: 'Confirm the Calendar date, time, selected venue, public details and disabled follower notifications before saving.' });
           continue;
         }
         const current = async () => onTarget() && await check();
         if (submitForm) {
           if (storedId) {
-            const notificationsOff = await preparePublication(page, job.listing, async () => {
+            const checkEdit = async () => {
               if (!await current()) throw new Error('Browser job is no longer current');
-            });
+            };
+            const notificationsOff = await preparePublication(page, job.listing, checkEdit);
             // The single-page form omits this toggle for previously announced
             // events. The separate re-announcement dialog is never approved.
             if (notificationsOff === false || (notificationsOff === null && /notify (?:my )?(?:followers|trackers)|announce (?:the |this )?event/i.test(snapshot))) {
               return review('Check that follower notifications are disabled on the existing event before saving.');
             }
+            if (!await preparePublicDetails(page, job.listing, checkEdit, true)) return review('Check the public description, admission and ticket link on the stored Bandsintown event.');
           }
           let outcome;
           try {
@@ -511,4 +588,4 @@ function createHostedOperator(env = process.env, dependencies = {}) {
   };
 }
 
-module.exports = { browserAction, createHostedOperator, dashboardUrl, eventId, inspectSubmission, publishedReceipt, setNewEventStartTime };
+module.exports = { browserAction, createHostedOperator, dashboardUrl, eventId, inspectSubmission, preparePublicDetails, publishedReceipt, setNewEventStartTime };

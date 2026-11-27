@@ -1,4 +1,5 @@
 const { numberedStreet, venueMatchesListing } = require('./bandsintown-event-form');
+const { randomUUID } = require('node:crypto');
 
 const ARTIST_ID = '3251702';
 const ENDPOINT = 'https://rest.bandsintown.com/V3.1/artists/id_' + ARTIST_ID + '/events/';
@@ -41,19 +42,49 @@ function hasExpectedPlace(event, listing) {
   return Boolean(event.title && name === words(event.title) && name === words(listing.title));
 }
 
+function eventTitleMatches(value, venue, listing) {
+  const title = words(listing.title);
+  if (!title) return true;
+  const publicTitle = words(value);
+  if (publicTitle) return title === publicTitle;
+  const display = words(venue);
+  const city = words(listing.city);
+  // In venue display mode the title field is blank. A Calendar venue shorthand
+  // such as "Geiger Key" still identifies the scheduled "Geiger Key Marina".
+  if (display === title || display === title + ' ' + city || title === display + ' ' + city) return true;
+  return display === words(listing.venue) && display === title + ' marina';
+}
+
+function doorTimeLabel(value) {
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)) return '';
+  const [hour, minute] = value.split(':');
+  return (Number(hour) % 12 || 12) + ':' + minute + (Number(hour) < 12 ? ' AM' : ' PM');
+}
+
+function eventDescription(listing) {
+  const notes = String(listing.description || '').trim();
+  const doors = doorTimeLabel(listing.doors);
+  const price = String(listing.ticketPrice || '').trim();
+  const details = [];
+  if (doors) details.push('Doors at ' + doors + '.');
+  if (price && words(price) !== 'free') details.push('Admission: ' + price + (/[.!?]$/.test(price) ? '' : '.'));
+  return [notes, details.join('\n')].filter(Boolean).join('\n\n');
+}
+
 function missingDetails(event, listing) {
   const different = [];
-  const title = words(listing.title);
-  const publicTitle = words(event.title);
-  const display = publicTitle || words(event.venue.name);
-  const city = words(listing.city);
-  // When the venue is displayed as the name, Bandsintown can append the city.
-  const venueTitle = !publicTitle && (display === title + ' ' + city || title === display + ' ' + city);
-  if (title && display !== title && !venueTitle) different.push('event name');
-  if (listing.description && String(event.description || '').trim() !== listing.description.trim()) different.push('description');
+  if (!eventTitleMatches(event.title, event.venue.name, listing)) different.push('event name');
+  const description = String(event.description || '').trim();
+  const includesDetails = description === eventDescription(listing);
+  if (listing.description && description !== listing.description.trim() && !includesDetails) different.push('description');
   if (listing.ticketUrl && !event.offers?.some(offer => offer?.url === listing.ticketUrl)) different.push('ticket link');
-  if (listing.ticketPrice && !(words(listing.ticketPrice) === 'free' && event.free === true)) different.push('ticket price');
-  if (listing.doors && localStart({ datetime: event.doors_at }, listing.timeZone)?.slice(11) !== listing.doors) different.push('doors time');
+  if (listing.ticketPrice) {
+    const free = words(listing.ticketPrice) === 'free';
+    const paid = event.free !== true && (includesDetails || String(event.ticket_price || '').trim() === listing.ticketPrice.trim());
+    if (free ? event.free !== true : !paid) different.push('ticket price');
+  }
+  if (listing.doors && !(includesDetails && doorTimeLabel(listing.doors)) &&
+      localStart({ datetime: event.doors_at }, listing.timeZone)?.slice(11) !== listing.doors) different.push('doors time');
   return different;
 }
 
@@ -103,7 +134,11 @@ async function lookupPublishedEvent(listing, { fetch: request = fetch, signal, a
   if (!/^\d{4}-\d{2}-\d{2}$/.test(listing?.date)) return unavailable();
   const url = new URL(ENDPOINT);
   url.searchParams.set('app_id', appId);
-  url.searchParams.set('date', listing.date + ',' + listing.date);
+  // Same-day date-range queries can omit even published shows. Filter the
+  // complete artist feed locally. Each bounded retry needs fresh CDN results.
+  const today = new Date().toISOString().slice(0, 10);
+  url.searchParams.set('date', listing.date < today ? 'all' : 'upcoming');
+  url.searchParams.set('_sync', randomUUID());
   const timeout = AbortSignal.timeout(8000);
   try {
     const response = await request(url, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
@@ -115,4 +150,4 @@ async function lookupPublishedEvent(listing, { fetch: request = fetch, signal, a
   }
 }
 
-module.exports = { lookupPublishedEvent, matchPublishedEvents };
+module.exports = { lookupPublishedEvent, matchPublishedEvents, eventTitleMatches, eventDescription };

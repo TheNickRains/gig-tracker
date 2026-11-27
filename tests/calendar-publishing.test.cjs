@@ -99,6 +99,17 @@ test('an advertised time with a zone overrides the booking block', async () => {
   assert.doesNotMatch(JSON.stringify(show), /45-90mins/);
 });
 
+test('uses the venue zone for an advertised local time when the booking calendar uses another zone', async () => {
+  const show = await projectEvent({
+    ...event, start: { dateTime: '2026-12-02T20:00:00-06:00', timeZone: 'America/Chicago' },
+    description: 'Show time: 10pm\nDoors: 8pm',
+  }, { ...options, resolveVenue: async () => ({ timeZone: 'America/New_York' }) });
+  assert.equal(show.listing.timeZone, 'America/New_York');
+  assert.equal(show.listing.showAt, '2026-12-03T03:00:00.000Z');
+  assert.equal(show.listing.time, '22:00');
+  assert.equal(show.listing.doors, '20:00');
+});
+
 test('venue-zone resolution distinguishes a DST fold and rejects an invalid wall time', async () => {
   const start = { dateTime: '2026-11-01T00:00:00-04:00', timeZone: 'America/New_York' };
   const before = { ...options, now: Date.parse('2026-01-01T00:00:00Z') };

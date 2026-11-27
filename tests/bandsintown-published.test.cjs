@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { lookupPublishedEvent, matchPublishedEvents } = require('../worker/bandsintown-published');
+const { lookupPublishedEvent, matchPublishedEvents, eventDescription } = require('../worker/bandsintown-published');
 
 const listing = {
   title: 'The Reserve', venue: 'The Reserve Key West', address: '510 Southard St', city: 'Key West',
@@ -63,19 +63,55 @@ test('a blank public event title verifies a venue display name only when it repr
   assert.equal(mustEdit.id, event.id);
   const otherVenue = { ...reachEvent, venue: { ...reachEvent.venue, name: 'Hotel Bar', street_address: '1435 Simonton Street' } };
   assert.equal(matchPublishedEvents([otherVenue], reach).status, 'conflict');
+
+  const geiger = { ...listing, title: 'Geiger Key', venue: 'Geiger Key Marina', address: 'RV Park & Fish Camp by Parakeet Communities, 5 Geiger Rd',
+    date: '2026-12-01', time: '17:00' };
+  const geigerEvent = { ...event, id: '109210772', title: '', starts_at: '2026-12-01T17:00:00',
+    venue: { ...event.venue, name: 'Geiger Key Marina', street_address: '5 Geiger Rd' } };
+  assert.deepEqual(matchPublishedEvents([geigerEvent], geiger), { status: 'matched', id: '109210772' });
+  assert.equal(matchPublishedEvents([{ ...geigerEvent, title: 'Jazz Festival' }], geiger).status, 'needs-update');
+  assert.equal(matchPublishedEvents([geigerEvent], { ...geiger, title: 'Geiger Key Sunset' }).status, 'needs-update');
+  assert.equal(matchPublishedEvents([geigerEvent], { ...geiger, address: '8 Geiger Rd' }).status, 'conflict');
 });
 
-test('reads only the artist’s date-range endpoint and distinguishes dependency failure from an empty list', async () => {
-  const result = await lookupPublishedEvent(listing, { fetch: async (url, options) => {
+test('public notes preserve the advertised doors and admission on a form without dedicated fields', () => {
+  const concert = { ...listing, description: 'Acoustic show', doors: '20:00', ticketPrice: '$15' };
+  const description = 'Acoustic show\n\nDoors at 8:00 PM.\nAdmission: $15.';
+  assert.equal(eventDescription(concert), description);
+  assert.deepEqual(matchPublishedEvents([{ ...event, description }], concert), found);
+  assert.equal(matchPublishedEvents([{ ...event, description, free: true }], concert).status, 'needs-update');
+  assert.deepEqual(matchPublishedEvents([{ ...event, description: concert.description, doors_at: '2026-11-27T20:00:00', ticket_price: '$15' }], concert), found);
+  assert.equal(matchPublishedEvents([{ ...event, description: 'Admission: $15.' }], concert).status, 'needs-update');
+  assert.equal(eventDescription({ doors: '00:15', ticketPrice: 'FREE' }), 'Doors at 12:15 AM.');
+  assert.equal(eventDescription({ doors: '12:00' }), 'Doors at 12:00 PM.');
+  assert.equal(eventDescription({ ticketPrice: 'Pay what you can.' }), 'Admission: Pay what you can.');
+});
+
+test('reads the complete artist feed with a fresh cache key on each observation', async () => {
+  const future = { ...listing, date: '2099-12-01' };
+  const upcomingEvent = { ...event, datetime: future.date + 'T19:00:00' };
+  const keys = new Set();
+  const read = () => lookupPublishedEvent(future, { fetch: async (url, options) => {
     assert.equal(url.origin, 'https://rest.bandsintown.com');
     assert.match(url.pathname, /\/artists\/id_3251702\/events\/$/);
-    assert.equal(url.searchParams.get('date'), '2026-11-27,2026-11-27');
+    assert.equal(url.searchParams.get('date'), 'upcoming');
     assert.equal(url.searchParams.get('app_id'), 'js_nickrainsmusic.com');
+    assert.ok(url.searchParams.get('_sync'));
+    keys.add(url.searchParams.get('_sync'));
     assert.equal(options.cache, 'no-store');
     assert.ok(options.signal instanceof AbortSignal);
-    return Response.json([event]);
+    return Response.json([event, upcomingEvent]);
   } });
-  assert.deepEqual(result, found);
+  assert.deepEqual(await read(), found);
+  assert.deepEqual(await read(), found);
+  assert.equal(keys.size, 2);
+  assert.deepEqual(await lookupPublishedEvent({ ...listing, date: '2001-12-01' }, { fetch: async url => {
+    assert.equal(url.searchParams.get('date'), 'all');
+    return Response.json([]);
+  } }), { status: 'missing' });
+});
+
+test('an unavailable feed is distinct from an empty list', async () => {
   for (const response of [Response.json({ error: 'Unauthorized' }), new Response(null, { status: 429 }), new Response('<html>')]) {
     assert.equal((await lookupPublishedEvent(listing, { fetch: async () => response })).status, 'unavailable');
   }

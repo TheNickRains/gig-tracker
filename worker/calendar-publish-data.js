@@ -152,7 +152,12 @@ async function projectEvent(event, options) {
     issues.push('In the Calendar description, replace ' + quotedNote('Show type', notes['show type']) +
       ' with “Show type: Original”, “Show type: Cover”, or “Show type: Busking”.');
   }
-  if (options.resolveVenue && (!venue.address || !venue.city || !venue.country || !venue.venue)) {
+  const doorNote = notes.doors || notes['door time'];
+  const showNote = notes['show time'];
+  const doors = clockRange(doorNote);
+  const advertised = clockRange(showNote);
+  const needsVenueZone = (advertised || doors) && !(notes.timezone || notes['time zone'] || advertised?.zone || doors?.zone);
+  if (options.resolveVenue && (needsVenueZone || !venue.address || !venue.city || !venue.country || !venue.venue)) {
     const match = await options.resolveVenue(event.location || [notes.venue, notes.city, notes.region].filter(Boolean).join(', '));
     if (match) venue = { ...match, ...Object.fromEntries(Object.entries(venue).filter(([, value]) => value)) };
   }
@@ -165,10 +170,6 @@ async function projectEvent(event, options) {
       '. Use the venue’s full location, including its name and address.');
   }
 
-  const doorNote = notes.doors || notes['door time'];
-  const showNote = notes['show time'];
-  const doors = clockRange(doorNote);
-  const advertised = clockRange(showNote);
   const timeZone = notes.timezone || notes['time zone'] || venue.timeZone ||
     CLOCK_ZONES[advertised?.zone] || CLOCK_ZONES[doors?.zone] || event.start.timeZone || options.timeZone;
   const calendarStart = Date.parse(event.start.dateTime);

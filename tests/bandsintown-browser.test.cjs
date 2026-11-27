@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { browserAction, createHostedOperator, dashboardUrl, eventId, inspectSubmission, publishedReceipt, setNewEventStartTime } = require('../worker/bandsintown-browser');
+const { browserAction, createHostedOperator, dashboardUrl, eventId, inspectSubmission, preparePublicDetails, publishedReceipt, setNewEventStartTime } = require('../worker/bandsintown-browser');
 
 test('the publication receipt must match the submitted Calendar show', async () => {
   const listing = { venue: 'The Reserve Key West', date: '2026-11-27', time: '19:00', city: 'Key West', region: 'FL', address: '510 Southard St' };
@@ -112,7 +112,7 @@ test('a save may continue in an explicit confirmation dialog only', async () => 
   }
 });
 
-function hostedFixture({ feeds = [], onSave, onModel, onLoad, receipt, inspect } = {}) {
+function hostedFixture({ feeds = [], onSave, onModel, onLoad, receipt, inspect, calendarShow = listing, detailControls } = {}) {
   let url = artist + '/events/past';
   let removed = false;
   const calls = { adds: 0, saves: 0, reads: 0, model: 0, loads: [], actions: [] };
@@ -132,16 +132,20 @@ function hostedFixture({ feeds = [], onSave, onModel, onLoad, receipt, inspect }
     waitForURL: async () => {},
     evaluate: async () => /publish_success=1/.test(url) || (receipt && !removed) ? receipt : removed,
     locator: selector => {
+      if (detailControls) {
+        const control = detailControls(selector);
+        if (control) return control;
+      }
       if (selector.includes('password')) return { first: () => empty };
       if (selector.startsWith('form.event-form')) return { first: () => ({ waitFor: async () => {} }) };
       if (selector === 'body') return { ariaSnapshot: async () => '- heading "Nick Rains"\n- button "Save"' };
       if (selector === 'a[href]') return { evaluateAll: async () => ['https://www.bandsintown.com/e/9999'] };
-      if (selector === 'input,select') return { evaluateAll: async () => [{ name: 'start_time', value: listing.time }] };
-      if (selector.startsWith('input#eventStartDateField')) return field(listing.date);
-      if (selector.startsWith('input#venueField')) return { ...field(listing.venue + ' - Key West, FL'),
+      if (selector === 'input,select') return { evaluateAll: async () => [{ name: 'start_time', value: calendarShow.time }] };
+      if (selector.startsWith('input#eventStartDateField')) return field(calendarShow.date);
+      if (selector.startsWith('input#venueField')) return { ...field(calendarShow.venue + ' - ' + calendarShow.city + ', ' + calendarShow.region),
         locator: () => ({ ...visible, locator: () => visible }) };
-      if (selector.includes('input[name="start_time"]')) return field(listing.time);
-      if (selector.includes('input[name="title"]')) return field(listing.title);
+      if (selector.includes('input[name="start_time"]')) return field(calendarShow.time);
+      if (selector.includes('input[name="title"]')) return field(calendarShow.title);
       if (selector.includes('flag_no_announce')) return { ...visible, isChecked: async () => false };
       return empty;
     },
@@ -168,8 +172,58 @@ function hostedFixture({ feeds = [], onSave, onModel, onLoad, receipt, inspect }
       return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(step) }] } }] });
     },
   });
-  return { calls, run: (job = {}) => operate({ operation: 'upsert', listing, ...job }, async () => true) };
+  return { calls, run: (job = {}) => operate({ operation: 'upsert', listing: calendarShow, ...job }, async () => true) };
 }
+
+const miamiShow = { title: 'Kill Your Idol', venue: 'Kill Your Idol', address: '222 Española Wy', city: 'Miami Beach', region: 'FL',
+  date: '2026-12-02', time: '22:00', doors: '20:00', ticketPrice: 'Free', ticketUrl: '', description: 'Show is during art basel in miami' };
+
+test('free admission and doors publish with the supplied notes, no website URL and follower notifications off', async () => {
+  let description = '';
+  let free = false;
+  let notify = true;
+  const expected = miamiShow.description + '\n\nDoors at 8:00 PM.';
+  const receipt = { ...miamiShow, title: '', id: '1234', status: 'PUBLISHED' };
+  const existing = { count: async () => 1 };
+  const fixture = hostedFixture({
+    calendarShow: miamiShow, feeds: [{ status: 'missing' }], receipt,
+    onModel: () => assert.fail('The provided details can be set directly'),
+    onSave: setUrl => {
+      assert.equal(description, expected);
+      assert.equal(free, true);
+      assert.equal(notify, false);
+      Object.assign(receipt, { free, description });
+      setUrl(upcoming + '?publish_success=1');
+    },
+    detailControls: selector => {
+      if (selector.startsWith('textarea[name="description"]')) return { ...existing, isEditable: async () => true,
+        inputValue: async () => description, fill: async value => { description = value; }, blur: async () => {} };
+      if (selector === 'input#eventAdmissionFree') return { ...existing, isChecked: async () => free };
+      if (selector === 'label[for="eventAdmissionFree"]') return { click: async () => { free = true; } };
+      if (selector === 'input[name="event_free_link"]:visible') return { ...existing, inputValue: async () => '',
+        fill: async () => assert.fail('A free show with no URL must leave Website Link empty') };
+      if (selector.startsWith('input#flag_no_announce-toggle')) return { ...existing, isChecked: async () => notify };
+      if (selector === 'label[for="flag_no_announce-toggle"]') return { isVisible: async () => true, click: async () => { notify = false; } };
+      if (selector.includes('.save-btn:visible')) return { ...existing, isEnabled: async () => true, innerText: async () => 'Save' };
+      if (selector.includes('#publishNowEventRadio:checked')) return existing;
+    },
+  });
+  assert.deepEqual(await fixture.run(), { status: 'verified', bandsintown_id: '1234' });
+  assert.equal(fixture.calls.saves, 1);
+  assert.equal(fixture.calls.model, 0);
+  assert.equal(fixture.calls.reads, 1);
+});
+
+test('a dedicated doors time field takes precedence over adding doors to public notes', async () => {
+  let doors = '', desc = '';
+  const input = (read, write) => ({ count: async () => 1, inputValue: async () => read(), isEditable: async () => true,
+    getAttribute: async () => 'time', fill: async val => write(val), press: async () => {}, blur: async () => {} });
+  const page = { url: () => newForm, locator: selector => selector.startsWith('input[name="doors_time"]') ?
+    input(() => doors, value => { doors = value; }) : input(() => desc, value => { desc = value; }) };
+  assert.equal(await preparePublicDetails(page, { ...miamiShow, ticketPrice: '' }, async () => {}), true);
+  assert.equal(doors, '20:00');
+  assert.equal(desc, miamiShow.description);
+});
 
 test('reuses a public exact match; conflicts, mismatched metadata, and unavailable reads never create events', async () => {
   for (const status of ['matched', 'conflict', 'needs-update', 'unavailable']) {

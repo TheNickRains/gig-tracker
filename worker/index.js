@@ -1067,7 +1067,7 @@ async function resolveShowVenue(location) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json', 'X-Goog-Api-Key': PLACES_KEY,
-      'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.addressComponents,places.location',
+      'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.addressComponents,places.location,places.timeZone',
     },
     body: JSON.stringify({ textQuery: location, maxResultCount: 3 }),
     signal: AbortSignal.timeout(12000),
@@ -1081,8 +1081,8 @@ async function resolveShowVenue(location) {
   if (candidates.length !== 1) return null;
   const place = candidates[0];
   const part = (kind, short) => place.addressComponents?.find(item => item.types.includes(kind))?.[short ? 'shortText' : 'longText'] || '';
-  let timeZone;
-  if (place.location) {
+  let timeZone = place.timeZone?.id;
+  if (!timeZone && place.location) {
     const query = new URLSearchParams({
       location: place.location.latitude + ',' + place.location.longitude,
       timestamp: String(Math.floor(Date.now() / 1000)), key: PLACES_KEY,

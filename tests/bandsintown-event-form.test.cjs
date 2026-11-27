@@ -128,3 +128,60 @@ test('the post-Save location warning submits once with the verified city, region
   assert.equal(await region.inputValue(), 'FL');
   assert.equal(await country.inputValue(), 'United States');
 });
+
+test('a read-only date field traverses the December–January boundary and commits the exact day', async () => {
+  const empty = { count: async () => 0 };
+  let value = '';
+  let currentMonth = 0;
+  let checked = 0;
+  const months = ['Dec 2026', 'Jan 2027', 'Feb 2027'];
+  const heading = {
+    waitFor: async () => {}, innerText: async () => months[currentMonth],
+    locator: selector => { assert.match(selector, /following-sibling/); return { click: async () => { currentMonth++; } }; },
+    filter: ({ hasText }) => ({ waitFor: async () => assert.equal(hasText, months[currentMonth]) }),
+  };
+  const picker = {
+    isVisible: async () => true, count: async () => 1,
+    locator: selector => { assert.equal(selector, 'button.month'); return heading; },
+    getByRole: (role, { name, exact }) => {
+      assert.deepEqual([role, name, exact], ['button', '9', true]);
+      return { count: async () => 1, isEnabled: async () => true,
+        click: async () => { assert.equal(currentMonth, 2); value = '2027-02-09'; } };
+    },
+  };
+  const field = { count: async () => 1, isVisible: async () => true, isEnabled: async () => true,
+    getAttribute: async () => null, isEditable: async () => false, inputValue: async () => value,
+    locator: () => ({ locator: () => picker }) };
+  const page = { url: () => 'https://artists.bandsintown.com/artists/3251702/events/new',
+    locator: selector => selector.startsWith('input#eventStartDateField') ? field : empty };
+  const actual = await prepareEventForm(page, { ...listing, date: '2027-02-09' }, async () => { checked++; return true; });
+  assert.equal(actual.dateMatches, true);
+  assert.ok(checked >= 3);
+});
+
+test('venue search refines by city and selects the exact live suggestion on mousedown', async () => {
+  const empty = { count: async () => 0 };
+  let value = '', committed = false, searchOpen = false;
+  const searches = [], stages = [];
+  const target = { ...listing, venue: 'La Te Da', address: '1125 Duval St' };
+  const label = 'La Te Da, Duval Street, Key West, FL, USA';
+  const matches = () => value.includes('Key West') ? [label] : ['La Te Da, Washington, DC'];
+  const row = { isVisible: async () => true, isEnabled: async () => true, innerText: async () => matches()[0],
+    dispatchEvent: async type => { assert.equal(type, 'mousedown'); value = label; committed = true; searchOpen = false; } };
+  const rows = { evaluateAll: async () => matches().map(label => ({ label, name: '', address: '' })),
+    nth: index => { assert.equal(index, 0); return row; } };
+  const custom = { isVisible: async () => searchOpen, waitFor: async ({ state }) => assert.equal(searchOpen, state === 'visible') };
+  const clear = { isVisible: async () => committed, waitFor: async () => assert.ok(committed) };
+  const group = { count: async () => 1, locator: selector => ({ 'aside button': custom, 'ul > li > button': rows,
+    'button[aria-label="Clear value"]': clear })[selector] };
+  const field = { count: async () => 1, isVisible: async () => true, isEnabled: async () => true,
+    inputValue: async () => value, locator: () => group, fill: async next => {
+      value = next; searchOpen = Boolean(next); if (next) searches.push(next);
+    } };
+  const page = { url: () => 'https://artists.bandsintown.com/artists/3251702/events/new', getByRole: () => empty,
+    locator: selector => selector.startsWith('input#venueField') ? field : empty };
+  const actual = await prepareEventForm(page, target, async () => true, message => stages.push(message));
+  assert.deepEqual(searches, ['La Te Da', 'La Te Da, Key West']);
+  assert.equal(actual.venueMatches, true);
+  assert.ok(stages.includes('selecting the matching venue suggestion'));
+});
