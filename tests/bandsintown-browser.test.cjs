@@ -81,6 +81,7 @@ test('new events fill only the show start time, verify it after blur, and preser
 
 const artist = 'https://artists.bandsintown.com/artists/3251702';
 const upcoming = artist + '/events/upcoming';
+const newForm = artist + '/events/new?version=single-page';
 const listing = { title: 'The Reserve', venue: 'The Reserve Key West', address: '510 Southard St',
   city: 'Key West', region: 'FL', date: '2026-11-27', time: '19:00' };
 
@@ -118,13 +119,16 @@ function hostedFixture({ feeds = [], onSave, onModel, onLoad, receipt, inspect }
   const setUrl = next => { url = next; };
   const setRemoved = () => { removed = true; url = upcoming; };
   const visible = { count: async () => 1, isVisible: async () => true, isEnabled: async () => true };
-  const add = { ...visible, or() { return this; }, first() { return this; }, waitFor: async () => {},
-    click: async () => { calls.adds++; url = artist + '/events/new?version=single-page'; } };
   const empty = { count: async () => 0, evaluateAll: async () => [], isVisible: async () => false };
   const field = value => ({ ...visible, inputValue: async () => value, isEditable: async () => true, getAttribute: async () => null });
   const page = {
     url: () => url, setDefaultTimeout() {}, route: async () => {}, unroute: async () => {},
-    goto: async target => { url = target; calls.loads.push(target); onLoad?.(target, setUrl, setRemoved); },
+    goto: async target => {
+      url = target;
+      calls.loads.push(target);
+      if (target === newForm) calls.adds++;
+      onLoad?.(target, setUrl, setRemoved);
+    },
     waitForURL: async () => {},
     evaluate: async () => /publish_success=1/.test(url) || (receipt && !removed) ? receipt : removed,
     locator: selector => {
@@ -141,13 +145,13 @@ function hostedFixture({ feeds = [], onSave, onModel, onLoad, receipt, inspect }
       if (selector.includes('flag_no_announce')) return { ...visible, isChecked: async () => false };
       return empty;
     },
-    getByRole: (_role, { name }) => name instanceof RegExp ? add : { count: async () => 1, nth: () => ({ ...visible,
+    getByRole: (_role, { name }) => ({ count: async () => 1, nth: () => ({ ...visible,
       click: async () => {
         calls.actions.push(name);
         if (name === 'Save') { calls.saves++; await onSave?.(setUrl); }
         if (name === 'Delete') setRemoved();
       },
-    }) },
+    }) }),
   };
   const operate = createHostedOperator({ GEMINI_API_KEY: 'test' }, {
     connect: async () => ({ isConnected: () => true, contexts: () => [{ pages: () => [page] }] }),
@@ -230,37 +234,25 @@ test('stored removals require an exact dashboard confirmation; a redirect alone 
   assert.deepEqual(wrong.calls.actions, []);
 });
 
-test('empty Upcoming Events opens Add Event and an incomplete model reply cannot click a control', async () => {
-  const upcoming = 'https://artists.bandsintown.com/artists/3251702/events/upcoming';
+test('a missing show opens its exact single-page form despite an obstructed Add Event button', async () => {
   let url = upcoming;
   let openings = 0;
-  const addEvent = {
-    or() { return this; },
-    first() { return this; },
-    waitFor: async () => {},
-    isVisible: async () => true,
-    click: async () => {
-      openings++;
-      url = 'https://artists.bandsintown.com/artists/3251702/events/new';
-    },
-  };
   const page = {
     url: () => url,
     setDefaultTimeout() {},
     route: async () => {},
     unroute: async () => {},
+    goto: async target => { assert.equal(target, newForm); openings++; url = target; },
     locator: selector => {
       if (selector.includes('password')) return { first: () => ({ isVisible: async () => false }) };
+      if (selector.startsWith('form.event-form')) return { first: () => ({ waitFor: async () => assert.equal(url, newForm) }) };
       if (selector === 'body') return { ariaSnapshot: async () => openings ?
         '- textbox "Venue"\n  - option "7:00 PM":\n    - button "7:00 PM"\n- button "Continue"' : '- heading "You have no upcoming events"' };
       if (selector === '.bit-dropdown-options > ul') return { evaluateAll: async () => true };
       return { evaluateAll: async () => [] };
     },
     waitForURL: async () => {},
-    getByRole: (role, { name }) => {
-      assert.match('Add Event', name);
-      return addEvent;
-    },
+    getByRole: () => assert.fail('The covered dashboard Add Event control must never be required'),
   };
   const operate = createHostedOperator({ GEMINI_API_KEY: 'test' }, {
     connect: async () => ({ contexts: () => [{ pages: () => [page] }] }),
@@ -268,7 +260,7 @@ test('empty Upcoming Events opens Add Event and an incomplete model reply cannot
     fetch: async (_target, req) => {
       const request = JSON.parse(req.body);
       const data = JSON.parse(request.contents[0].parts[0].text);
-      assert.equal(data.url, url);
+      assert.equal(data.url, artist + '/events/new');
       assert.equal(request.generationConfig.thinkingConfig.thinkingBudget, 0);
       assert.equal(openings, 1);
       assert.equal(data.snapshot, '- textbox "Venue"\n- button "Continue"');
