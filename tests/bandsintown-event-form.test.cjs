@@ -13,6 +13,8 @@ test('an autocomplete result must match the venue and its location independently
   assert.equal(venueMatchesListing('The Reserve', 'Key West, FL', listing), false);
   assert.equal(venueMatchesListing('The Reserve Key West', '510 Southard Street, Miami, FL', listing), false);
   assert.equal(venueMatchesListing('The Reserve Key West', '500 Southard Street, Key West, FL', listing), false);
+  assert.equal(venueMatchesListing('The Reserve Key West', 'Whitehead Street, Key West, FL', listing), false);
+  assert.equal(venueMatchesListing('The Reserve Key West', '510 Southard Street, Key West Beach, FL', listing), false);
   assert.equal(venueMatchesListing('The Reserve Key West', 'Key West, IA', listing), false);
   assert.equal(venueMatchesListing('The Reserve Annex', '510 Southard Street, Key West, FL', listing), false);
   const miami = { venue: 'Kill Your Idol', address: '222 Española Wy', city: 'Miami Beach', region: 'FL' };
@@ -167,12 +169,12 @@ test('venue search refines by city and selects the exact live suggestion on mous
   let value = '', committed = false, searchOpen = false;
   const searches = [], stages = [];
   const target = { ...listing, venue: 'La Te Da', address: '1125 Duval St' };
-  const label = 'La Te Da, Duval Street, Key West, FL, USA';
-  const matches = () => value.includes('Key West') ? [label] : ['La Te Da, Washington, DC'];
-  const row = { isVisible: async () => true, isEnabled: async () => true, innerText: async () => matches()[0],
+  const label = 'La Te Da, 1125 Duval Street, Key West, FL, USA';
+  const matches = () => value.includes('Key West') ? ['La Te Da - Key West, FL', label] : ['La Te Da, Washington, DC'];
+  const row = { isVisible: async () => true, isEnabled: async () => true, innerText: async () => matches()[1],
     dispatchEvent: async type => { assert.equal(type, 'mousedown'); value = label; committed = true; searchOpen = false; } };
   const rows = { evaluateAll: async () => matches().map(label => ({ label, name: '', address: '' })),
-    nth: index => { assert.equal(index, 0); return row; } };
+    nth: index => { assert.equal(index, 1); return row; } };
   const custom = { isVisible: async () => searchOpen, waitFor: async ({ state }) => assert.equal(searchOpen, state === 'visible') };
   const clear = { isVisible: async () => committed, waitFor: async () => assert.ok(committed) };
   const group = { count: async () => 1, locator: selector => ({ 'aside button': custom, 'ul > li > button': rows,

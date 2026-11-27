@@ -1,4 +1,4 @@
-const { prepareEventForm, submitLocationDialog, venueMatchesListing } = require('./bandsintown-event-form');
+const { prepareEventForm, submitLocationDialog, venueMatchesListing, venueIsMapped, venueStreet } = require('./bandsintown-event-form');
 const { lookupPublishedEvent, eventDescription, eventTitleMatches, calendarVenueName, UNCERTAIN_SAVE_ISSUE } = require('./bandsintown-published');
 const DASHBOARD_HOSTS = new Set(['artists.bandsintown.com', 'www.artists.bandsintown.com', 'manager.bandsintown.com']);
 const ARTIST_PATH = '/artists/3251702';
@@ -79,13 +79,14 @@ function matchesClock(value, clock) {
     text.replace(/^0(?=\d:)/, '').replace(/\s*([AP]M)$/i, ' $1').toUpperCase() === timeLabel(clock);
 }
 
-async function setNewEventStartTime(page, job, check) {
+async function setEventStartTime(page, job, check) {
   const clock = job.listing?.time;
-  if (job.operation !== 'upsert' || job.bandsintown_id || !job.listing?.date || !CLOCK_VALUE.test(clock) || !isNewEvent(page)) return false;
+  const onTarget = () => job.bandsintown_id ? onStoredEvent(page, String(job.bandsintown_id)) : isNewEvent(page);
+  if (job.operation !== 'upsert' || !job.listing?.date || !CLOCK_VALUE.test(clock) || !onTarget()) return false;
   const field = page.locator('input[name="start_time"]:visible');
   if (!await field.isVisible() || !await field.isEditable()) return false;
   if (matchesClock(await field.inputValue(), clock)) return false;
-  if (!isNewEvent(page) || !await check()) throw new Error('Browser job is no longer current');
+  if (!onTarget() || !await check()) throw new Error('Browser job is no longer current');
   await field.fill(await field.getAttribute('type') === 'time' ? clock : timeLabel(clock));
   await field.press('Escape');
   await field.blur();
@@ -150,7 +151,15 @@ async function setPublicField(field, value, current, report) {
 async function preparePublicDetails(page, listing, current, editing = false, details = {}) {
   if (!isArtistPage(page.url()) || new URL(page.url()).pathname.endsWith('/add-location')) return false;
   const doorsField = page.locator('input[name="doors_time"]:visible, input[name="door_time"]:visible, input[name="doors_at"][type="time"]:visible');
-  const structuredDoors = listing.doors && await doorsField.count() === 1;
+  const hasDoorsField = await doorsField.count() === 1;
+  const structuredDoors = listing.doors && hasDoorsField;
+  if (editing && hasDoorsField && Object.hasOwn(listing, 'doors') && !listing.doors && (await doorsField.inputValue()).trim()) {
+    if (!await doorsField.isEditable()) return false;
+    await current();
+    await doorsField.fill('');
+    await doorsField.blur();
+    if ((await doorsField.inputValue()).trim()) return false;
+  }
   if (structuredDoors && !matchesClock(await doorsField.inputValue(), listing.doors)) {
     details.doorsMatch = false;
     if (!CLOCK_VALUE.test(listing.doors) || !await doorsField.isEditable()) return false;
@@ -193,7 +202,7 @@ async function preparePublicDetails(page, listing, current, editing = false, det
       report.matches = await radio.isChecked();
     }
   }
-  if (free || listing.ticketUrl) {
+  if (free || listing.ticketUrl || (editing && Object.hasOwn(listing, 'ticketUrl'))) {
     const report = details.ticketLink = {};
     const link = await publicControl(page,
       free ? 'input[name="event_free_link"]:visible' : 'input[name="tickets_manager[0].link"]:visible',
@@ -207,7 +216,7 @@ async function preparePublicDetails(page, listing, current, editing = false, det
   return [details.description, details.admission, details.ticketLink].every(field => !field || field.matches);
 }
 
-async function publishedReceipt(page, listing, expectedId) {
+async function publishedReceipt(page, listing, expectedId, confirmMappedVenue) {
   const url = new URL(page.url());
   if (!isArtistPage(url.href) || url.pathname !== UPCOMING_PATH || (!expectedId && url.searchParams.get('publish_success') !== '1')) return null;
   const saved = await page.evaluate(() => {
@@ -217,11 +226,16 @@ async function publishedReceipt(page, listing, expectedId) {
     return { id: String(event.id || receipt.event_id || ''), status: event.status, date: event.start_date,
       time: event.start_time, venue: event.venue_name, city: event.venue_city, region: event.venue_region,
       address: event.venue_address, title: event.title, description: event.description,
+      venueId: event.venue_id, placeId: event.google_place_id || event.place_id,
+      latitude: event.venue_latitude, longitude: event.venue_longitude,
       doors: event.doors_time || event.door_time || event.doors_at,
       free: event.flag_is_event_free ?? event.free,
       links: [event.event_free_link, ...Object.values(event.tickets_manager || {}).map(ticket => ticket?.link)].filter(Boolean) };
   });
   if (!saved || !/^\d{1,30}$/.test(saved.id) || (expectedId && saved.id !== expectedId) || !['PUBLISHED', 'AUTOPUBLISHED'].includes(saved.status)) return null;
+  if (!venueStreet(saved.address) || (listing.address && venueStreet(saved.address) !== venueStreet(listing.address)) ||
+      !saved.city || saved.city.trim().localeCompare(listing.city, 'en', { sensitivity: 'base' }) !== 0 ||
+      (listing.region && saved.region?.toUpperCase() !== listing.region.toUpperCase())) return null;
   const location = [saved.address, saved.city, saved.region].filter(Boolean).join(', ');
   if (!eventTitleMatches(saved.title, saved.venue, listing)) return null;
   const description = String(saved.description || '').trim();
@@ -230,8 +244,12 @@ async function publishedReceipt(page, listing, expectedId) {
       !(listing.doors && matchesClock(saved.doors, listing.doors) && description === eventDescription({ ...listing, doors: null }))) return null;
   if (/^free$/i.test(listing.ticketPrice || '') && saved.free !== true) return null;
   if (listing.ticketUrl && !saved.links?.includes(listing.ticketUrl)) return null;
-  return saved.date === listing.date && matchesClock(saved.time, listing.time) &&
-    venueMatchesListing(calendarVenueName(saved.venue, listing), location, listing) ? saved.id : null;
+  if (saved.date !== listing.date || !matchesClock(saved.time, listing.time) ||
+      !venueMatchesListing(calendarVenueName(saved.venue, listing), location, listing)) return null;
+  // The public API exposes venue coordinates even when the dashboard receipt
+  // omits them. Corroborate only the event ID and revision the receipt verified.
+  if (venueIsMapped(saved) || (expectedId && await confirmMappedVenue?.(saved.id))) return saved.id;
+  return null;
 }
 
 function errorDetail(error) {
@@ -311,7 +329,7 @@ async function inspectSubmission(page, listing, check, form, expectedId, { mayCo
   if (!mayConfirm || blocked) return { issue };
   if (form && screen.venueForm) {
     stage('completing the venue confirmation dialog');
-    if (await submitLocationDialog(page, listing, check, form)) {
+    if (await submitLocationDialog(page, listing, check, form, expectedId)) {
       await page.waitForURL(url => url.pathname === UPCOMING_PATH, { timeout: 10000 }).catch(() => {});
       if (new URL(page.url()).pathname === UPCOMING_PATH) return readReceipt();
       const remaining = await saveScreen(page);
@@ -496,7 +514,10 @@ function createHostedOperator(env = process.env, dependencies = {}) {
       for (const delay of [0, 2500, 6500]) {
         if (signal.aborted) break;
         if (delay) await wait(delay);
-        const id = await publishedReceipt(page, job.listing, storedId).catch(() => null);
+        const id = await publishedReceipt(page, job.listing, storedId, async receiptId => {
+          const result = await readListing();
+          return result.status === 'matched' && result.id === receiptId;
+        }).catch(() => null);
         if (id) return verified(id);
         if (!storedId) {
           const result = await readListing();
@@ -552,21 +573,22 @@ function createHostedOperator(env = process.env, dependencies = {}) {
           return review('Bandsintown could not confirm the stored event on the Nick Rains dashboard. Check its listing before retrying.');
         }
         let form;
-        if (job.operation === 'upsert' && !storedId && job.listing?.date && job.listing.venue && isNewEvent(page)) {
+        const onTarget = () => storedId ? onStoredEvent(page, storedId) : isNewEvent(page);
+        if (job.operation === 'upsert' && job.listing?.date && job.listing.venue && onTarget()) {
           stage = 'entering the event date and venue';
           const before = page.url();
-          form = await prepareEventForm(page, job.listing, check, value => { stage = value; });
+          form = await prepareEventForm(page, job.listing, check, value => { stage = value; }, storedId);
           if (page.url() !== before) continue;
           stage = 'setting the show start time';
-          await setNewEventStartTime(page, job, check);
+          await setEventStartTime(page, job, check);
           stage = 'setting the event title and follower notifications';
           const current = async () => {
-            if (!isNewEvent(page) || !await check()) throw new Error('Browser job is no longer current');
+            if (!onTarget() || !await check()) throw new Error('Browser job is no longer current');
           };
           form.notificationsOff = await preparePublication(page, job.listing, current);
           stage = 'entering public notes, admission and doors';
           form.publicDetails = {};
-          form.detailsMatch = await preparePublicDetails(page, job.listing, current, false, form.publicDetails);
+          form.detailsMatch = await preparePublicDetails(page, job.listing, current, Boolean(storedId), form.publicDetails);
         }
         const snapshot = (await dashboardSnapshot(page)).slice(0, 18000);
         const links = await page.locator('a[href]').evaluateAll(anchors => anchors.map(anchor => anchor.href));
@@ -579,6 +601,11 @@ function createHostedOperator(env = process.env, dependencies = {}) {
         }));
         stage = 'reading the next browser action';
         if (form) {
+          // Previously announced events omit the new-event notification switch.
+          // The separate confirmation that re-announces the show is never used.
+          if (storedId && form.notificationsOff === null) {
+            form.notificationsOff = !/notify (?:my )?(?:followers|trackers)|announce (?:the |this )?event/i.test(snapshot);
+          }
           const startTime = timeFields.find(field => field.name === 'start_time');
           form.timeMatches = matchesClock(startTime?.value, job.listing.time);
           console.info('Bandsintown event form:', JSON.stringify({ ...form, path: pathname, startTime: startTime?.value }));
@@ -587,7 +614,7 @@ function createHostedOperator(env = process.env, dependencies = {}) {
         if (form?.dateMatches && form.venueMatches && form.timeMatches && form.notificationsOff && form.detailsMatch) {
           const save = page.locator('form .event-buttons button.save-btn:visible');
           const now = page.locator('input#publishNowEventRadio:checked');
-          if (await now.count() === 1 && await save.count() === 1 && await save.isEnabled()) {
+          if ((storedId || await now.count() === 1) && await save.count() === 1 && await save.isEnabled()) {
             const name = (await save.innerText()).trim();
             if (/^(save|publish)( event)?$/i.test(name)) {
               saveButton = save;
@@ -623,7 +650,6 @@ function createHostedOperator(env = process.env, dependencies = {}) {
         stage = `${step.action} on “${control}”`;
         const activating = step.action === 'click' || (step.action === 'press' && ['Enter', 'Space'].includes(step.value));
         const submitForm = activating && step.role === 'button' && SAVE_EVENT.test(control);
-        const onTarget = () => storedId ? onStoredEvent(page, storedId) : isNewEvent(page);
         if (!onTarget()) return review('Open the matching event form in the hosted Bandsintown dashboard before retrying.');
         if (step.action === 'fill' && (/\b(?:website|url|link)\b/i.test(control) || /https?:\/\//i.test(step.value)) &&
             step.value && step.value !== job.listing?.ticketUrl) {
@@ -638,24 +664,12 @@ function createHostedOperator(env = process.env, dependencies = {}) {
           history.push({ action: 'verify', name: control, result: 'Select an option or click the named button. Enter in a text field can submit the entire event.' });
           continue;
         }
-        if (submitForm && !storedId && !(form?.dateMatches && form.timeMatches && form.venueMatches && form.notificationsOff && form.detailsMatch)) {
+        if (submitForm && !(form?.dateMatches && form.timeMatches && form.venueMatches && form.notificationsOff && form.detailsMatch)) {
           history.push({ action: 'verify', name: control, result: 'Confirm the Calendar date, time, selected venue, public details and disabled follower notifications before saving.' });
           continue;
         }
         const current = async () => onTarget() && await check();
         if (submitForm) {
-          if (storedId) {
-            const checkEdit = async () => {
-              if (!await current()) throw new Error('Browser job is no longer current');
-            };
-            const notificationsOff = await preparePublication(page, job.listing, checkEdit);
-            // The single-page form omits this toggle for previously announced
-            // events. The separate re-announcement dialog is never approved.
-            if (notificationsOff === false || (notificationsOff === null && /notify (?:my )?(?:followers|trackers)|announce (?:the |this )?event/i.test(snapshot))) {
-              return review('Check that follower notifications are disabled on the existing event before saving.');
-            }
-            if (!await preparePublicDetails(page, job.listing, checkEdit, true)) return review('Check the public description, admission and ticket link on the stored Bandsintown event.');
-          }
           stage = 'checking the current revision before Save';
           if (!await current()) throw new Error('Browser job is no longer current');
           let clicked = false;
@@ -709,4 +723,4 @@ function createHostedOperator(env = process.env, dependencies = {}) {
   };
 }
 
-module.exports = { browserAction, createHostedOperator, dashboardUrl, eventId, inspectSubmission, preparePublicDetails, publishedReceipt, setNewEventStartTime };
+module.exports = { browserAction, createHostedOperator, dashboardUrl, eventId, inspectSubmission, preparePublicDetails, publishedReceipt, setNewEventStartTime: setEventStartTime };

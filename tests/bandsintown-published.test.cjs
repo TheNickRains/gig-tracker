@@ -8,7 +8,8 @@ const listing = {
 };
 const event = {
   id: '101', artist_id: '3251702', artist: { id: '3251702' }, datetime: '2026-11-27T19:00:00',
-  venue: { name: 'The Reserve, Key West', street_address: '510 Southard Street', city: 'Key West', region: 'FL', country: 'United States' },
+  venue: { name: 'The Reserve, Key West', street_address: '510 Southard Street', city: 'Key West', region: 'FL', country: 'United States',
+    latitude: '24.5550331', longitude: '-81.8013854' },
 };
 const found = { status: 'matched', id: '101' };
 
@@ -21,6 +22,21 @@ test('matches one public event by artist, precise venue-local start, name, city 
   assert.equal(matchPublishedEvents([{ ...event, venue: { ...event.venue, street_address: '1510 Southard St' } }], listing).status, 'conflict');
   assert.equal(matchPublishedEvents([{ ...event, venue: { ...event.venue, street_address: '' } }], listing).status, 'conflict');
   assert.equal(matchPublishedEvents([{ ...event, venue: { ...event.venue, city: '' } }], listing).status, 'conflict');
+});
+
+test('a public listing needs a provider venue or a valid map point and an authoritative venue name', () => {
+  const venue = { ...event.venue, latitude: '', longitude: null };
+  for (const location of [venue, { ...venue, latitude: '0', longitude: '0' }, { ...venue, latitude: '91', longitude: '3' }]) {
+    const result = matchPublishedEvents([{ ...event, venue: location }], listing);
+    assert.equal(result.id, event.id);
+    assert.equal(result.status, 'needs-update');
+    assert.match(result.issue, /mapped venue/);
+  }
+  assert.deepEqual(matchPublishedEvents([{ ...event, venue: { ...venue, id: '3456' } }], listing), found);
+  const named = { ...listing, title: 'Holiday Brunch' };
+  const masked = { ...event, title: named.title, venue: { ...event.venue, name: named.title } };
+  assert.equal(matchPublishedEvents([masked], named).status, 'conflict');
+  assert.deepEqual(matchPublishedEvents([masked], named, event.id), found);
 });
 
 test('distinct IDs, an unavailable artist feed and cancelled listings cannot confirm publication', () => {

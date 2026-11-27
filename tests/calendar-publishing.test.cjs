@@ -41,6 +41,21 @@ test('notes-only edits change the fingerprint and busking removes a paid ticket 
   assert.equal(edited.listing.showAt, '2090-12-03T01:30:00.000Z');
 });
 
+test('cover shows always use free admission and can keep a venue RSVP link', async () => {
+  const rsvp = 'https://example.com/rsvp';
+  const typed = await projectEvent({ ...event, description: 'Show type: Cover\nTicket price: $15\nTicket URL: ' + rsvp }, options);
+  assert.equal(typed.issue, null);
+  assert.equal(typed.listing.type, 'cover');
+  assert.equal(typed.listing.ticketPrice, 'Free');
+  assert.equal(typed.listing.ticketUrl, rsvp);
+  const prefixed = await projectEvent({ ...event, summary: 'Cover: Kill Your Idol', description: '' }, options);
+  assert.equal(prefixed.listing.ticketPrice, 'Free');
+  assert.equal(prefixed.listing.ticketUrl, '');
+  const original = await projectEvent({ ...event, description: 'Show type: Original\nTicket price: $15\nTicket URL: ' + rsvp }, options);
+  assert.equal(original.listing.ticketPrice, '$15');
+  assert.notEqual(original.fingerprint, typed.fingerprint);
+});
+
 test('holds, all-day bookings and Calendar deletions withdraw an existing public show', async () => {
   for (const state of [
     { summary: 'Gig: HOLD: Venue' }, { visibility: 'private' }, { status: 'tentative' },

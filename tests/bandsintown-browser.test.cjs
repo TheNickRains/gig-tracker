@@ -5,7 +5,7 @@ const { browserAction, createHostedOperator, dashboardUrl, eventId, inspectSubmi
 
 test('the publication receipt must match the submitted Calendar show', async () => {
   const listing = { venue: 'The Reserve Key West', date: '2026-11-27', time: '19:00', city: 'Key West', region: 'FL', address: '510 Southard St' };
-  const receipt = { ...listing, id: '12345', status: 'PUBLISHED', time: '19:00:00' };
+  const receipt = { ...listing, id: '12345', venueId: '111', status: 'PUBLISHED', time: '19:00:00' };
   const page = { url: () => 'https://artists.bandsintown.com/artists/3251702/events/upcoming?publish_success=1', evaluate: async () => receipt };
   assert.equal(await publishedReceipt(page, listing), '12345');
   assert.equal(await publishedReceipt(page, { ...listing, date: '2026-11-28' }), null);
@@ -13,6 +13,13 @@ test('the publication receipt must match the submitted Calendar show', async () 
   assert.equal(await publishedReceipt(page, { ...listing, venue: 'Elsewhere' }), null);
   assert.equal(await publishedReceipt(page, { ...listing, title: 'Changed title' }), null);
   assert.equal(await publishedReceipt(page, { ...listing, description: 'Changed notes' }), null);
+  receipt.venueId = null;
+  assert.equal(await publishedReceipt(page, listing), null);
+  Object.assign(receipt, { latitude: '24.5550331', longitude: '-81.8013854' });
+  assert.equal(await publishedReceipt(page, listing), receipt.id);
+  receipt.address = '';
+  assert.equal(await publishedReceipt(page, listing), null);
+  receipt.address = listing.address;
   receipt.status = 'DRAFT';
   assert.equal(await publishedReceipt(page, listing), null);
 });
@@ -20,7 +27,8 @@ test('the publication receipt must match the submitted Calendar show', async () 
 test('the real dashboard history receipt accepts dictionary and empty ticket collections immediately after Save', async () => {
   const ticketUrl = 'https://example.com/show';
   const event = { id: 12345, status: 'PUBLISHED', start_date: '2026-11-29', start_time: '20:00:00', venue_name: 'La Te Da',
-    venue_address: '1125 Duval St', venue_city: 'Key West', venue_region: 'FL', title: '', description: '', free: true,
+    venue_address: '1125 Duval St', venue_city: 'Key West', venue_region: 'FL', venue_latitude: 24.5494458, venue_longitude: -81.7977856,
+    title: '', description: '', free: true,
     tickets_manager: { FREE: { type: 'FREE', link: ticketUrl } } };
   const listing = { venue: event.venue_name, title: event.venue_name, date: event.start_date, time: '20:00',
     city: event.venue_city, address: event.venue_address };
@@ -112,7 +120,7 @@ test('a save may continue in an explicit confirmation dialog only', async () => 
         click: async () => { confirms++; url = upcoming + '?publish_success=1'; } }),
     };
     const page = { url: () => url, waitForURL: async () => {},
-      evaluate: async () => url.includes('upcoming') ? { ...listing, status: 'PUBLISHED', id: '1234' } :
+      evaluate: async () => url.includes('upcoming') ? { ...listing, status: 'PUBLISHED', id: '1234', venueId: '111' } :
         { path: '/artists/3251702/events/new', roleDialog: overlay, modal: overlay, title: snapshot,
           buttons: overlay ? ['Confirm publishing'] : [], venueForm: false, saveButtons: 1, errors: [],
           warnings: snapshot.includes('try again') ? [snapshot] : [] },
@@ -209,7 +217,7 @@ test('free admission and doors publish with the supplied notes, no website URL a
   let free = false;
   let notify = true;
   const expected = miamiShow.description + '\n\nDoors at 8:00 PM.';
-  const receipt = { ...miamiShow, title: '', id: '1234', status: 'PUBLISHED' };
+  const receipt = { ...miamiShow, title: '', id: '1234', venueId: '111', status: 'PUBLISHED' };
   const existing = { count: async () => 1, getAttribute: async () => null };
   const fixture = hostedFixture({
     calendarShow: miamiShow, feeds: [{ status: 'missing' }], receipt,
@@ -239,6 +247,15 @@ test('free admission and doors publish with the supplied notes, no website URL a
   assert.equal(fixture.calls.model, 0);
   assert.equal(fixture.calls.reads, 1);
   assert.deepEqual(fixture.calls.actions, ['scoped Save']);
+  free = false;
+  notify = true;
+  description = '';
+  assert.deepEqual(await fixture.run({ bandsintown_id: '1234' }), { status: 'verified', bandsintown_id: '1234' });
+  assert.deepEqual(fixture.calls.actions, ['scoped Save', 'scoped Save']);
+  assert.equal(fixture.calls.loads.at(-1), artist + '/events/1234?version=single-page');
+  assert.equal(fixture.calls.adds, 1);
+  assert.equal(fixture.calls.model, 0);
+  assert.equal(fixture.calls.reads, 1);
 });
 
 test('a dedicated doors time field takes precedence over adding doors to public notes', async () => {
@@ -327,7 +344,7 @@ test('an ambiguous save and an unrelated event link cannot validate a missing sh
 });
 
 test('a stored ID is edited on its exact form and a changed schedule is confirmed without publish_success', async () => {
-  const { calls, run } = hostedFixture({ onSave: setUrl => setUrl(upcoming), receipt: { ...listing, status: 'PUBLISHED', id: '1234' } });
+  const { calls, run } = hostedFixture({ onSave: setUrl => setUrl(upcoming), receipt: { ...listing, status: 'PUBLISHED', venueId: '111', id: '1234' } });
   assert.deepEqual(await run({ bandsintown_id: '1234' }), { status: 'verified', bandsintown_id: '1234' });
   assert.deepEqual(calls.loads, [artist + '/events/1234?version=single-page']);
   assert.equal(calls.adds, 0);
@@ -341,6 +358,14 @@ test('stored edits do not adopt other IDs or reuse public evidence when optional
   assert.equal(calls.adds, 0);
   assert.equal(calls.saves, 1);
   assert.equal(calls.reads, 0);
+});
+
+test('a stored receipt can corroborate an omitted venue ID against the same mapped public event', async () => {
+  const receipt = { ...listing, status: 'PUBLISHED', id: '1234' };
+  const run = result => hostedFixture({ onSave: setUrl => setUrl(upcoming), receipt, feeds: [result] }).run({ bandsintown_id: '1234' });
+  assert.deepEqual(await run({ status: 'matched', id: '1234' }), { status: 'verified', bandsintown_id: '1234' });
+  assert.equal((await run({ status: 'matched', id: '9999' })).status, 'review');
+  assert.equal((await run({ status: 'needs-update', id: '1234' })).status, 'review');
 });
 
 test('stored removals require an exact dashboard confirmation; a redirect alone proves nothing', async () => {
