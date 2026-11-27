@@ -185,3 +185,32 @@ test('venue search refines by city and selects the exact live suggestion on mous
   assert.equal(actual.venueMatches, true);
   assert.ok(stages.includes('selecting the matching venue suggestion'));
 });
+
+test('a custom location uses the street from a resort address and commits the state option', async () => {
+  const venue = { ...listing, venue: 'The Reach Key West', address: 'Curio Collection by Hilton, 1435 Simonton St' };
+  const visible = { count: async () => 1, isVisible: async () => true, isEnabled: async () => true };
+  const fields = {}, stages = [];
+  const input = name => ({ ...visible, inputValue: async () => fields[name] || '', isEditable: async () => true,
+    fill: async value => { fields[name] = value; }, blur: async () => {} });
+  let regionChosen = false;
+  const button = { ...visible, waitFor: async () => {}, first() { return this; },
+    dispatchEvent: async type => { assert.equal(type, 'mousedown'); regionChosen = true; } };
+  const options = { evaluateAll: async () => [{ value: 'FL', label: 'Florida', selected: regionChosen }],
+    getByRole: (role, { name }) => { assert.equal(name, 'Florida'); return button; } };
+  const region = { ...input('region'), waitFor: async () => {}, evaluate: async () => false, locator: () => ({ locator: () => options }) };
+  const country = { ...visible, inputValue: async () => 'US', evaluate: async () => true,
+    locator: () => ({ evaluateAll: async () => [{ value: 'US', label: 'United States' }] }) };
+  let completed = false;
+  const form = { ...visible, locator: selector => {
+    if (selector === '#venueFormCountryField') return country;
+    if (selector === '#venueFormRegionField') return region;
+    return input(selector.match(/name="([^"]+)"/)[1]);
+  }, getByRole: () => ({ ...visible, click: async () => { completed = true; } }) };
+  const page = { url: () => 'https://artists.bandsintown.com/artists/3251702/events/new/add-location',
+    waitForURL: async () => {}, locator: () => ({ locator: () => form }) };
+  await prepareEventForm(page, venue, async () => true, message => stages.push(message));
+  assert.equal(completed, true);
+  assert.equal(regionChosen, true);
+  assert.deepEqual(fields, { region: 'Florida', name: 'The Reach Key West', address: '1435 Simonton St', city: 'Key West', postal_code: '33040' });
+  assert.ok(stages.includes('selecting the venue state or region'));
+});

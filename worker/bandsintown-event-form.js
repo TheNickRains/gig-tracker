@@ -7,9 +7,11 @@ function words(text) {
     .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 
+const STREET_NUMBER = /^\s*\d+[a-z]?(?:-\d+[a-z]?)?\s+\S/i;
+
 function numberedStreet(text) {
   // Calendar and venue suggestions can include the building name before the street.
-  const part = String(text || '').split(/[,\n]+/).find(value => /^\s*\d+[a-z]?(?:-\d+[a-z]?)?\s+\S/i.test(value));
+  const part = String(text || '').split(/[,\n]+/).find(value => STREET_NUMBER.test(value));
   return words(part).replace(/\bstreet\b/g, 'st').replace(/\bavenue\b/g, 'ave')
     .replace(/\broad\b/g, 'rd').replace(/\bboulevard\b/g, 'blvd').replace(/\bdrive\b/g, 'dr').replace(/\blane\b/g, 'ln');
 }
@@ -57,11 +59,11 @@ async function setDate(page, listing, state, guard, stage) {
     state.dateMatches = formats.has(state.date) && await field.getAttribute('aria-invalid', TIMEOUT) !== 'true';
   };
   await read();
-  if (state.dateMatches || !await field.isEnabled()) return;
+  if (state.dateMatches || !await field.isEnabled(TIMEOUT)) return;
   await guard();
   stage('entering the start date');
   const native = await field.getAttribute('type', TIMEOUT) === 'date';
-  if (native || await field.isEditable()) {
+  if (native || await field.isEditable(TIMEOUT)) {
     const slashFormat = /[dm]+\s*\/\s*[dm]+/i.test(placeholder) || /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(state.date);
     await field.fill(native || !slashFormat ? listing.date : slashDate, TIMEOUT);
     await field.blur(TIMEOUT);
@@ -97,7 +99,7 @@ async function setDate(page, listing, state, guard, stage) {
   }
   stage('selecting the day on the start date picker');
   const day = picker.getByRole('button', { name: String(desired.getUTCDate()), exact: true });
-  if (await day.count() !== 1 || !await day.isEnabled()) return;
+  if (await day.count() !== 1 || !await day.isEnabled(TIMEOUT)) return;
   await guard();
   await day.click(TIMEOUT);
   await read();
@@ -116,7 +118,7 @@ async function choosePlace(page, listing, state, guard, stage) {
     state.venueMatches = await clear.isVisible() && venueMatchesListing(name, location, listing);
   };
   await read();
-  if (await clear.isVisible() || !await field.isEnabled() || !listing.venue || !listing.city) return;
+  if (await clear.isVisible() || !await field.isEnabled(TIMEOUT) || !listing.venue || !listing.city) return;
   const custom = group.locator('aside button');
   const rows = group.locator('ul > li > button');
   let matches = [];
@@ -153,7 +155,7 @@ async function choosePlace(page, listing, state, guard, stage) {
     // This panel can clip all but a sliver of a row below its fixed footer.
     // Both managed and Google items commit on mousedown. Dispatch to the
     // verified current button, after checking it is still enabled and visible.
-    if (!await row.isVisible() || !await row.isEnabled() || await row.innerText(TIMEOUT) !== match.label) return;
+    if (!await row.isVisible() || !await row.isEnabled(TIMEOUT) || await row.innerText(TIMEOUT) !== match.label) return;
     await row.dispatchEvent('mousedown', { button: 0, buttons: 1 }, TIMEOUT);
     stage('confirming the selected venue on the form');
     await clear.waitFor({ state: 'visible', timeout: 6500 }).catch(() => {});
@@ -161,7 +163,7 @@ async function choosePlace(page, listing, state, guard, stage) {
   } else if (matches.length === 0 && listing.address && listing.region && listing.country && listing.postcode) {
     stage('opening the custom location form');
     await guard();
-    if (!await custom.isVisible() || !await custom.isEnabled()) return;
+    if (!await custom.isVisible() || !await custom.isEnabled(TIMEOUT)) return;
     await custom.dispatchEvent('mousedown', { button: 0, buttons: 1 }, TIMEOUT);
     state.guidance = 'Fill the custom location in the event form with the supplied Calendar address.';
   } else {
@@ -170,7 +172,7 @@ async function choosePlace(page, listing, state, guard, stage) {
 }
 
 async function chooseLocationPart(field, values, guard) {
-  if (await field.count() !== 1 || !await field.isVisible() || !await field.isEnabled()) return false;
+  if (await field.count() !== 1 || !await field.isVisible() || !await field.isEnabled(TIMEOUT)) return false;
   const allowed = values.map(words);
   if (await field.evaluate(node => node.tagName === 'SELECT')) {
     const options = await field.locator('option').evaluateAll(nodes => nodes.map(node => ({ value: node.value, label: node.text })));
@@ -211,7 +213,7 @@ async function chooseLocationPart(field, values, guard) {
   await field.fill(match.label, TIMEOUT);
   const button = choices.getByRole('button', { name: match.label, exact: true });
   await button.first().waitFor({ state: 'visible', ...TIMEOUT });
-  if (await button.count() !== 1 || !await button.isEnabled()) return false;
+  if (await button.count() !== 1 || !await button.isEnabled(TIMEOUT)) return false;
   await guard();
   await button.dispatchEvent('mousedown', { button: 0, buttons: 1 }, TIMEOUT);
   return words(await field.inputValue(TIMEOUT)) === words(match.label) &&
@@ -229,13 +231,16 @@ async function submitVenueFields(form, listing, guard, incomplete, stage = () =>
     await regionField.waitFor({ state: 'visible', ...TIMEOUT }).catch(() => {});
     if (!await chooseLocationPart(regionField, [listing.region], guard)) return false;
   }
+  const addressParts = String(listing.address || '').split(/,\s*|\n/);
+  const streetIndex = addressParts.findIndex(part => STREET_NUMBER.test(part));
+  const address = streetIndex > 0 ? addressParts.slice(streetIndex).join(', ') : listing.address;
   const values = incomplete ? { venue_name: listing.venue, city: listing.city } :
-    { name: listing.venue, address: listing.address, city: listing.city, postal_code: listing.postcode };
-  if (incomplete && await form.locator('input[name="address"]:visible').count()) values.address = listing.address;
+    { name: listing.venue, address, city: listing.city, postal_code: listing.postcode };
+  if (incomplete && await form.locator('input[name="address"]:visible').count()) values.address = address;
   for (const [name, value] of Object.entries(values)) {
     stage('entering the venue ' + name.replace(/_/g, ' '));
     const field = form.locator('input[name="' + name + '"]');
-    if (!value || await field.count() !== 1 || !await field.isEditable()) return false;
+    if (!value || await field.count() !== 1 || !await field.isEditable(TIMEOUT)) return false;
     if (await field.inputValue(TIMEOUT) !== value) {
       await guard();
       await field.fill(value, TIMEOUT);
@@ -245,7 +250,7 @@ async function submitVenueFields(form, listing, guard, incomplete, stage = () =>
   }
   stage('submitting the completed venue location');
   const confirm = form.getByRole('button', { name: 'Submit', exact: true });
-  if (await confirm.count() !== 1 || !await confirm.isVisible() || !await confirm.isEnabled()) return false;
+  if (await confirm.count() !== 1 || !await confirm.isVisible() || !await confirm.isEnabled(TIMEOUT)) return false;
   await guard();
   await confirm.click(TIMEOUT);
   return true;
