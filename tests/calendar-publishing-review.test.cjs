@@ -15,7 +15,8 @@ function row(id, fields = {}) {
 }
 function publicEvent(id, schedule = listing) {
   return { id, artist_id: '3251702', title: schedule.title, datetime: schedule.date + 'T' + schedule.time + ':00',
-    venue: { name: schedule.venue, street_address: schedule.address, city: schedule.city, region: schedule.region, country: 'United States' } };
+    venue: { name: schedule.venue, street_address: schedule.address, city: schedule.city, region: schedule.region, country: 'United States',
+      latitude: '24.5494458', longitude: '-81.7977856' } };
 }
 
 function harness(t, rows, settings = {}) {

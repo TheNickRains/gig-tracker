@@ -1,4 +1,4 @@
-const { numberedStreet, venueMatchesListing } = require('./bandsintown-event-form');
+const { numberedStreet, venueStreet, venueMatchesListing, venueIsMapped, calendarVenueName } = require('./bandsintown-event-form');
 const { randomUUID } = require('node:crypto');
 
 const ARTIST_ID = '3251702';
@@ -34,29 +34,19 @@ function localStart(event, timeZone) {
   }
 }
 
-function calendarVenueName(name, listing) {
-  // Calendar splits "The Reach Key West, Curio Collection by Hilton" between
-  // the venue and address. Accept the full name only when both parts agree.
-  const parts = String(listing.address || '').split(/[,\n]+/);
-  const streetIndex = parts.findIndex(part => numberedStreet(part));
-  if (streetIndex > 0) {
-    const full = [listing.venue, ...parts.slice(0, streetIndex)].join(', ');
-    if (words(name) === words(full)) return listing.venue;
-  }
-  return name;
-}
-
-function hasExpectedPlace(event, listing) {
+function hasExpectedPlace(event, listing, knownId) {
   const venue = event.venue;
-  const address = numberedStreet(listing.address);
-  if (!address || address !== numberedStreet(venue.street_address) || words(venue.city) !== words(listing.city)) return false;
-  if (listing.region && venue.region && words(listing.region) !== words(venue.region)) return false;
-  if (listing.country && venue.country && country(listing.country) !== country(venue.country)) return false;
+  const address = venueStreet(listing.address);
+  if (!address || address !== venueStreet(venue.street_address) || words(venue.city) !== words(listing.city)) return false;
+  if (listing.region && words(listing.region) !== words(venue.region)) return false;
+  if (listing.country && country(listing.country) !== country(venue.country)) return false;
   const name = words(calendarVenueName(venue.name, listing));
   const normalized = { ...listing, venue: words(listing.venue), city: words(listing.city), address };
   if (venueMatchesListing(name, [address, normalized.city].join(', '), normalized)) return true;
   // In Event Name display mode the public API puts the custom title in both fields.
-  return Boolean(event.title && name === words(event.title) && name === words(listing.title));
+  // This can corroborate a stored event, but can't identify a new event at a
+  // shared address when the actual room name is hidden by its billing.
+  return Boolean(knownId && event.title && name === words(event.title) && name === words(listing.title));
 }
 
 function eventTitleMatches(value, venue, listing) {
@@ -90,6 +80,10 @@ function eventDescription(listing) {
 
 function missingDetails(event, listing) {
   const different = [];
+  const venue = event.venue;
+  if (!venueIsMapped({ venueId: venue.id, placeId: venue.place_id, latitude: venue.latitude, longitude: venue.longitude })) {
+    different.push('mapped venue');
+  }
   if (!eventTitleMatches(event.title, event.venue.name, listing)) different.push('event name');
   const description = String(event.description || '').trim();
   const includesDetails = description === eventDescription(listing);
@@ -134,7 +128,7 @@ function matchPublishedEvents(events, listing, expectedId) {
       if (id === expectedId) changedIdentity = true;
       continue;
     }
-    const samePlace = hasExpectedPlace(event, listing);
+    const samePlace = hasExpectedPlace(event, listing, id === expectedId);
     if (id === expectedId && !samePlace) {
       changedIdentity = true;
       continue;

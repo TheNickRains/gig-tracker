@@ -22,6 +22,8 @@ The publisher subscribes directly to the Google Calendar identified by `SHOW_SYN
    If using a dedicated grant, the existing `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` must match the OAuth client that issued its refresh token. If `PLACES_API_KEY` is set, enable Places Text Search and Time Zone for venue lookup.
 4. Review the initial queue before enabling writes. Confirm gigs by setting the event color to Sage or Basil. Gray, uncolored, and other events stay off the publishing queue and appear under **Held back**, where applicable. In Calendar notes use `Show type: Original`, `Show type: Cover`, or `Show type: Busking`. The `Original:`, `Cover:`, and `Busking:` title prefixes also work. Add public details on separate lines using `Doors:`, `Show time:`, `Ticket price:`, `Ticket URL:`, or `Public notes:`. Put the named venue and address in Location. Use `Publish: No`, `HOLD`, or `PRIVATE` to take the show out of publication.
 
+Cover and busking shows publish with free admission. A cover booking can include a venue RSVP link in `Ticket URL:`. Original shows use their own admission details.
+
 ## Hosted Bandsintown browser
 
 The Calendar webhook and queue live in `gig-worker`. Run the Bandsintown browser as a second persistent service in the same Railway project. The Mac is only used to open an authenticated SSH tunnel during sign-in.

@@ -1,4 +1,5 @@
 const { createHash } = require('node:crypto');
+const { addressFromLocation } = require('./calendar-venue');
 
 const CONFIRMED_COLORS = new Set(['2', '10']); // Google Calendar Sage and Basil.
 const HOUR = 3600000;
@@ -84,23 +85,6 @@ function showInstants(date, clock, timeZone) {
   });
 }
 
-function addressFromLocation(location, notes) {
-  const parts = (location || '').split(',').map(s => s.trim()).filter(Boolean);
-  const venue = /^\d/.test(parts[0] || '') ? '' : parts.shift() || '';
-  const last = parts.at(-1) || '';
-  const country = notes.country || (/^(US|USA|United States)$/i.test(last) ? 'US' : /^(CA|Canada)$/i.test(last) ? 'CA' : '');
-  if (country && /^(US|USA|United States|CA|Canada)$/i.test(last)) parts.pop();
-  const region = (parts.at(-1) || '').match(/^([A-Z]{2})(?:\s+([\w -]+))?$/);
-  if (region) parts.pop();
-  const parsedCity = parts.length >= 2 ? parts.pop() : '';
-  const city = notes.city || parsedCity;
-  return {
-    venue: notes.venue || venue, address: parts.join(', '), city,
-    region: notes.region || region?.[1] || '', postcode: region?.[2] || '',
-    country: country || (/^\d{5}(-\d{4})?$/.test(region?.[2] || '') ? 'US' : ''),
-  };
-}
-
 function quotedNote(field, value) {
   return '“' + field + ': ' + value.slice(0, 96) + (value.length > 96 ? '…' : '') + '”';
 }
@@ -157,8 +141,9 @@ async function projectEvent(event, options) {
   const doors = clockRange(doorNote);
   const advertised = clockRange(showNote);
   const needsVenueZone = (advertised || doors) && !(notes.timezone || notes['time zone'] || advertised?.zone || doors?.zone);
-  if (options.resolveVenue && (needsVenueZone || !venue.address || !venue.city || !venue.country || !venue.venue)) {
-    const match = await options.resolveVenue(event.location || [notes.venue, notes.city, notes.region].filter(Boolean).join(', '));
+  if (options.resolveVenue && (needsVenueZone || !venue.address || !venue.city || !venue.country || !venue.venue ||
+      (!venue.region && /^(US|CA)$/i.test(venue.country)))) {
+    const match = await options.resolveVenue(venue, title);
     if (match) venue = { ...match, ...Object.fromEntries(Object.entries(venue).filter(([, value]) => value)) };
   }
   const missing = [
@@ -218,10 +203,11 @@ async function projectEvent(event, options) {
   }
   const issue = issues.length ? issues.join('\n') : null;
   const ticketUrl = publicUrl(notes['ticket url']);
+  const freeAdmission = type === 'cover' || type === 'busking';
   const listing = {
     title: title || venue.venue, type, ...venue, timeZone: timeZone || null, date: times?.date,
     time: times?.time, showAt: new Date(showAt).toISOString(),
-    doors: doors?.time || null, ticketPrice: type === 'busking' ? 'Free' : notes['ticket price'] || '',
+    doors: doors?.time || null, ticketPrice: freeAdmission ? 'Free' : notes['ticket price'] || '',
     ticketUrl: type === 'busking' ? '' : ticketUrl, description: notes['public notes'] || '', validationIssue: !!issue,
   };
   return desired(event, 'upsert', listing, issue);

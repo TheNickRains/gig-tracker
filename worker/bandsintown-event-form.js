@@ -1,4 +1,4 @@
-const FORM_PATH = /^\/artists\/3251702\/events?\/new(?:\/add-location)?\/?$/;
+const FORM_PATH = /^\/artists\/3251702\/events?\/(new|\d{1,30})(?:\/(?:edit|add-location))?\/?$/;
 const VENUE_GROUP = 'xpath=ancestor::div[div[ul and aside]][1]';
 const TIMEOUT = { timeout: 3500 };
 
@@ -9,31 +9,62 @@ function words(text) {
 
 const STREET_NUMBER = /^\s*\d+[a-z]?(?:-\d+[a-z]?)?\s+\S/i;
 
-function numberedStreet(text) {
-  // Calendar and venue suggestions can include the building name before the street.
-  const part = String(text || '').split(/[,\n]+/).find(value => STREET_NUMBER.test(value));
-  return words(part).replace(/\bstreet\b/g, 'st').replace(/\bavenue\b/g, 'ave')
+function streetWords(value) {
+  return words(value).replace(/\bstreet\b/g, 'st').replace(/\bavenue\b/g, 'ave')
     .replace(/\broad\b/g, 'rd').replace(/\bboulevard\b/g, 'blvd').replace(/\bdrive\b/g, 'dr')
     .replace(/\blane\b/g, 'ln').replace(/\bwy$/, 'way');
 }
 
-function venueMatchesListing(name, location, listing) {
+function numberedStreet(text) {
+  // Calendar and venue suggestions can include the building name before the street.
+  return streetWords(String(text || '').split(/[,\n]+/).find(value => STREET_NUMBER.test(value)));
+}
+
+function venueStreet(address) {
+  return numberedStreet(address) || streetWords(String(address || '').split(/[,\n]/)[0]);
+}
+
+function venueIsMapped({ venueId, placeId, latitude, longitude }) {
+  if (/^[1-9]\d*$/.test(venueId) || (typeof placeId === 'string' && placeId.trim())) return true;
+  const coordinate = (value, max) => (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) &&
+    Number.isFinite(Number(value)) && Math.abs(Number(value)) <= max;
+  return coordinate(latitude, 90) && coordinate(longitude, 180) && (Number(latitude) !== 0 || Number(longitude) !== 0);
+}
+
+function calendarVenueName(name, listing) {
+  // The Calendar location can split a longer venue name before the street.
+  const parts = String(listing.address || '').split(/[,\n]+/);
+  const streetIndex = parts.findIndex(part => numberedStreet(part));
+  if (streetIndex > 0 && words(name) === words([listing.venue, ...parts.slice(0, streetIndex)].join(', '))) return listing.venue;
+  return name;
+}
+
+function venueMatchesListing(name, location, listing, selected = false) {
   const city = words(listing.city);
   const venue = words(listing.venue);
   const address = numberedStreet(listing.address);
   const parts = location.split(/[,\n]+/).map(words).filter(Boolean);
-  if (!city || !venue || !parts.some(part => part === city || part.startsWith(city + ' '))) return false;
+  const cityAndRegion = city + ' ' + words(listing.region);
+  if (!city || !venue || !parts.some(part => part === city || part === cityAndRegion || part.startsWith(cityAndRegion + ' '))) return false;
   const optionStreet = numberedStreet(location);
   const sameStreet = Boolean(address && address === optionStreet);
   if (optionStreet && listing.address && !sameStreet) return false;
+  // Some Google suggestions omit the house number, e.g. "La Te Da, Duval Street, Key West".
+  if (!optionStreet && address) {
+    const street = parts.map(streetWords).find(part => /\b(?:st|ave|rd|blvd|dr|ln|way)$/.test(part) && part !== city);
+    if (street && street !== address.replace(/^\S+\s+/, '')) return false;
+  }
   const region = (location.match(/,\s*([A-Z]{2})(?=\s*[,\d]|\s*$)/) || [])[1];
   if (region && listing.region && region !== listing.region && region !== listing.country) return false;
-  const place = words(name);
-  return place === venue || Boolean(sameStreet && (place + ' ' + city === venue || venue + ' ' + city === place));
+  const place = words(calendarVenueName(name, listing));
+  // After committing a suggestion, the picker shortens it to "Name - City, State".
+  // A dashboard receipt or public listing still has to confirm the actual street.
+  return place === venue || Boolean((sameStreet || (selected && !optionStreet)) &&
+    (place + ' ' + city === venue || venue + ' ' + city === place));
 }
 
 function splitVenue(value) {
-  const [name, ...rest] = value.split(/\s+[-–—]\s+|,\s*/);
+  const [name, ...rest] = /\s+[-–—]\s+/.test(value) ? value.split(/\s+[-–—]\s+/) : value.split(/,\s*/);
   return [name, rest.join(', ')];
 }
 
@@ -116,16 +147,24 @@ async function choosePlace(page, listing, state, guard, stage) {
   const read = async () => {
     state.venue = (await field.inputValue(TIMEOUT)).trim().slice(0, 240);
     const [name, location] = splitVenue(state.venue);
-    state.venueMatches = await clear.isVisible() && venueMatchesListing(name, location, listing);
+    state.venueMatches = await clear.isVisible() && venueMatchesListing(name, location, listing, true);
   };
   await read();
-  if (await clear.isVisible() || !await field.isEnabled(TIMEOUT) || !listing.venue || !listing.city) return;
+  if (state.venueMatches || !listing.venue || !listing.city) return;
+  if (await clear.isVisible()) {
+    await guard();
+    await clear.click(TIMEOUT);
+  }
+  if (!await field.isEnabled(TIMEOUT)) return;
   const custom = group.locator('aside button');
   const rows = group.locator('ul > li > button');
   let matches = [];
   // The short name can return places in other cities. Try the booking city
   // before using Bandsintown's custom-location form.
-  for (const term of [listing.venue, listing.venue + ', ' + listing.city]) {
+  const searchTerms = [listing.venue, listing.venue + ', ' + listing.city];
+  if (listing.address) searchTerms.push([listing.venue, listing.address, listing.city].join(', '));
+  let ambiguous = false;
+  for (const term of searchTerms) {
     stage('searching venue suggestions');
     await guard();
     if (await field.inputValue(TIMEOUT) !== term || !await custom.isVisible()) {
@@ -144,9 +183,12 @@ async function choosePlace(page, listing, state, guard, stage) {
     })));
     matches = options.flatMap((option, index) => {
       const [name, address] = option.name ? [option.name, option.address] : splitVenue(option.label);
-      return venueMatchesListing(name, address, listing) ? [{ label: option.label, index }] : [];
+      return venueMatchesListing(name, address, listing) ? [{ label: option.label, index, street: numberedStreet(address) }] : [];
     });
+    const withStreet = matches.filter(match => match.street && match.street === numberedStreet(listing.address));
+    if (withStreet.length) matches = withStreet;
     if (matches.length === 1) break;
+    if (matches.length > 1) ambiguous = true;
   }
   if (matches.length === 1) {
     stage('selecting the matching venue suggestion');
@@ -161,7 +203,7 @@ async function choosePlace(page, listing, state, guard, stage) {
     stage('confirming the selected venue on the form');
     await clear.waitFor({ state: 'visible', timeout: 6500 }).catch(() => {});
     await read();
-  } else if (matches.length === 0 && listing.address && listing.region && listing.country && listing.postcode) {
+  } else if (!ambiguous && matches.length === 0 && listing.address && listing.region && listing.country && listing.postcode) {
     stage('opening the custom location form');
     await guard();
     if (!await custom.isVisible() || !await custom.isEnabled(TIMEOUT)) return;
@@ -268,14 +310,15 @@ async function fillCustomLocation(page, listing, state, guard, stage) {
   state.guidance = 'Read back the selected custom location on the event form.';
 }
 
-function onEventForm(page) {
+function onEventForm(page, expectedId) {
   const url = new URL(page.url());
-  return url.protocol === 'https:' && ['artists.bandsintown.com', 'www.artists.bandsintown.com', 'manager.bandsintown.com'].includes(url.hostname) && FORM_PATH.test(url.pathname);
+  return url.protocol === 'https:' && ['artists.bandsintown.com', 'www.artists.bandsintown.com', 'manager.bandsintown.com'].includes(url.hostname) &&
+    FORM_PATH.exec(url.pathname)?.[1] === (expectedId || 'new');
 }
 
-async function submitLocationDialog(page, listing, isCurrent, verified) {
+async function submitLocationDialog(page, listing, isCurrent, verified, expectedId) {
   if (!(verified?.dateMatches && verified.timeMatches && verified.venueMatches && verified.notificationsOff) ||
-      !onEventForm(page) || new URL(page.url()).pathname.endsWith('/add-location')) return false;
+      !onEventForm(page, expectedId) || new URL(page.url()).pathname.endsWith('/add-location')) return false;
   // The capitalized ID belongs to the post-Save incomplete venue warning. Its
   // Submit validates the location and resumes the original publication.
   const field = page.locator('input#venueFormNameField[name="venue_name"]:visible, input#venueFormnameField[name="name"]:visible');
@@ -283,16 +326,16 @@ async function submitLocationDialog(page, listing, isCurrent, verified) {
   const form = field.locator('xpath=ancestor::form[1]');
   if (await form.count() !== 1 || !await form.isVisible() || await form.locator('#venueField, input[name="start_time"]').count()) return false;
   const guard = async () => {
-    if (!onEventForm(page) || !await field.isVisible() || !await isCurrent()) throw new Error('Browser job is no longer current');
+    if (!onEventForm(page, expectedId) || !await field.isVisible() || !await isCurrent()) throw new Error('Browser job is no longer current');
   };
   return submitVenueFields(form, listing, guard, await field.getAttribute('name') === 'venue_name');
 }
 
-async function prepareEventForm(page, listing, isCurrent, stage = () => {}) {
+async function prepareEventForm(page, listing, isCurrent, stage = () => {}, expectedId) {
   const state = { dateMatches: false, venueMatches: false };
-  if (!onEventForm(page) || !listing) return state;
+  if (!onEventForm(page, expectedId) || !listing) return state;
   const guard = async () => {
-    if (!onEventForm(page) || !await isCurrent()) throw new Error('Browser job is no longer current');
+    if (!onEventForm(page, expectedId) || !await isCurrent()) throw new Error('Browser job is no longer current');
   };
   if (new URL(page.url()).pathname.endsWith('/add-location')) {
     await fillCustomLocation(page, listing, state, guard, stage);
@@ -303,4 +346,4 @@ async function prepareEventForm(page, listing, isCurrent, stage = () => {}) {
   return state;
 }
 
-module.exports = { prepareEventForm, submitLocationDialog, venueMatchesListing, numberedStreet };
+module.exports = { prepareEventForm, submitLocationDialog, venueMatchesListing, venueIsMapped, calendarVenueName, venueStreet, numberedStreet };
