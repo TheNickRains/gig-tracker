@@ -13,7 +13,8 @@ function numberedStreet(text) {
   // Calendar and venue suggestions can include the building name before the street.
   const part = String(text || '').split(/[,\n]+/).find(value => STREET_NUMBER.test(value));
   return words(part).replace(/\bstreet\b/g, 'st').replace(/\bavenue\b/g, 'ave')
-    .replace(/\broad\b/g, 'rd').replace(/\bboulevard\b/g, 'blvd').replace(/\bdrive\b/g, 'dr').replace(/\blane\b/g, 'ln');
+    .replace(/\broad\b/g, 'rd').replace(/\bboulevard\b/g, 'blvd').replace(/\bdrive\b/g, 'dr')
+    .replace(/\blane\b/g, 'ln').replace(/\bwy$/, 'way');
 }
 
 function venueMatchesListing(name, location, listing) {

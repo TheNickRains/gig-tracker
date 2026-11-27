@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
+const { runInNewContext } = require('node:vm');
 const { browserAction, createHostedOperator, dashboardUrl, eventId, inspectSubmission, preparePublicDetails, publishedReceipt, setNewEventStartTime } = require('../worker/bandsintown-browser');
 
 test('the publication receipt must match the submitted Calendar show', async () => {
@@ -14,6 +15,21 @@ test('the publication receipt must match the submitted Calendar show', async () 
   assert.equal(await publishedReceipt(page, { ...listing, description: 'Changed notes' }), null);
   receipt.status = 'DRAFT';
   assert.equal(await publishedReceipt(page, listing), null);
+});
+
+test('the real dashboard history receipt accepts dictionary and empty ticket collections immediately after Save', async () => {
+  const ticketUrl = 'https://example.com/show';
+  const event = { id: 12345, status: 'PUBLISHED', start_date: '2026-11-29', start_time: '20:00:00', venue_name: 'La Te Da',
+    venue_address: '1125 Duval St', venue_city: 'Key West', venue_region: 'FL', title: '', description: '', free: true,
+    tickets_manager: { FREE: { type: 'FREE', link: ticketUrl } } };
+  const listing = { venue: event.venue_name, title: event.venue_name, date: event.start_date, time: '20:00',
+    city: event.venue_city, address: event.venue_address };
+  const page = { url: () => 'https://artists.bandsintown.com/artists/3251702/events/upcoming?publish_success=1',
+    evaluate: async fn => runInNewContext('(' + fn.toString() + ')()', { history: { state: { state: { event } } } }) };
+  assert.equal(await publishedReceipt(page, { ...listing, ticketUrl, ticketPrice: 'Free' }), '12345');
+  event.tickets_manager = {};
+  assert.equal(await publishedReceipt(page, listing), '12345');
+  assert.equal(await publishedReceipt(page, { ...listing, ticketUrl }), null);
 });
 
 test('the hosted browser stays on the artist dashboard and only trusts Bandsintown event IDs', () => {
@@ -96,18 +112,23 @@ test('a save may continue in an explicit confirmation dialog only', async () => 
         click: async () => { confirms++; url = upcoming + '?publish_success=1'; } }),
     };
     const page = { url: () => url, waitForURL: async () => {},
-      evaluate: async () => ({ ...listing, status: 'PUBLISHED', id: '1234' }),
+      evaluate: async () => url.includes('upcoming') ? { ...listing, status: 'PUBLISHED', id: '1234' } :
+        { path: '/artists/3251702/events/new', roleDialog: overlay, modal: overlay, title: snapshot,
+          buttons: overlay ? ['Confirm publishing'] : [], venueForm: false, saveButtons: 1, errors: [],
+          warnings: snapshot.includes('try again') ? [snapshot] : [] },
       getByRole: () => assert.fail('The event form cannot be submitted again'),
       locator: selector => {
         if (selector.startsWith('.bit-popup-title')) return { ...modal, isVisible: async () => false };
         if (selector.startsWith('[role="dialog"]')) return modal;
+        if (selector.startsWith('#venueFormNameField')) return { first: () => ({ waitFor: async () => {} }) };
         if (selector === 'body') return { ariaSnapshot: async () => '- button "Publish Event"' };
         return { evaluateAll: async () => [] };
       },
     };
     const result = await inspectSubmission(page, listing, async () => true);
     const confirmed = snapshot.includes('Confirm publication');
-    assert.deepEqual(result, confirmed ? { id: '1234' } : {});
+    if (confirmed) assert.deepEqual(result, { id: '1234' });
+    else assert.equal(result.id, undefined);
     assert.equal(confirms, confirmed ? 1 : 0);
   }
 });
@@ -134,6 +155,11 @@ function hostedFixture({ feeds = [], onSave, onModel, onLoad, receipt, inspect, 
     locator: selector => {
       if (detailControls) {
         const control = detailControls(selector);
+        if (control && selector.includes('.save-btn:visible')) return { ...control, click: async () => {
+          calls.actions.push('scoped Save');
+          calls.saves++;
+          await onSave?.(setUrl);
+        } };
         if (control) return control;
       }
       if (selector.includes('password')) return { first: () => empty };
@@ -149,7 +175,7 @@ function hostedFixture({ feeds = [], onSave, onModel, onLoad, receipt, inspect, 
       if (selector.includes('flag_no_announce')) return { ...visible, isChecked: async () => false };
       return empty;
     },
-    getByRole: (_role, { name }) => ({ count: async () => 1, nth: () => ({ ...visible,
+    getByRole: (_role, { name }) => name instanceof RegExp ? empty : ({ count: async () => 1, nth: () => ({ ...visible,
       click: async () => {
         calls.actions.push(name);
         if (name === 'Save') { calls.saves++; await onSave?.(setUrl); }
@@ -184,7 +210,7 @@ test('free admission and doors publish with the supplied notes, no website URL a
   let notify = true;
   const expected = miamiShow.description + '\n\nDoors at 8:00 PM.';
   const receipt = { ...miamiShow, title: '', id: '1234', status: 'PUBLISHED' };
-  const existing = { count: async () => 1 };
+  const existing = { count: async () => 1, getAttribute: async () => null };
   const fixture = hostedFixture({
     calendarShow: miamiShow, feeds: [{ status: 'missing' }], receipt,
     onModel: () => assert.fail('The provided details can be set directly'),
@@ -199,7 +225,7 @@ test('free admission and doors publish with the supplied notes, no website URL a
       if (selector.startsWith('textarea[name="description"]')) return { ...existing, isEditable: async () => true,
         inputValue: async () => description, fill: async value => { description = value; }, blur: async () => {} };
       if (selector === 'input#eventAdmissionFree') return { ...existing, isChecked: async () => free };
-      if (selector === 'label[for="eventAdmissionFree"]') return { click: async () => { free = true; } };
+      if (selector === 'label[for="eventAdmissionFree"]:not(.radio-label):visible') return { ...existing, click: async () => { free = true; } };
       if (selector === 'input[name="event_free_link"]:visible') return { ...existing, inputValue: async () => '',
         fill: async () => assert.fail('A free show with no URL must leave Website Link empty') };
       if (selector.startsWith('input#flag_no_announce-toggle')) return { ...existing, isChecked: async () => notify };
@@ -212,17 +238,51 @@ test('free admission and doors publish with the supplied notes, no website URL a
   assert.equal(fixture.calls.saves, 1);
   assert.equal(fixture.calls.model, 0);
   assert.equal(fixture.calls.reads, 1);
+  assert.deepEqual(fixture.calls.actions, ['scoped Save']);
 });
 
 test('a dedicated doors time field takes precedence over adding doors to public notes', async () => {
   let doors = '', desc = '';
   const input = (read, write) => ({ count: async () => 1, inputValue: async () => read(), isEditable: async () => true,
     getAttribute: async () => 'time', fill: async val => write(val), press: async () => {}, blur: async () => {} });
-  const page = { url: () => newForm, locator: selector => selector.startsWith('input[name="doors_time"]') ?
+  const page = { url: () => newForm, getByRole: () => ({ count: async () => 0 }), locator: selector => selector.startsWith('input[name="doors_time"]') ?
     input(() => doors, value => { doors = value; }) : input(() => desc, value => { desc = value; }) };
   assert.equal(await preparePublicDetails(page, { ...miamiShow, ticketPrice: '' }, async () => {}), true);
   assert.equal(doors, '20:00');
   assert.equal(desc, miamiShow.description);
+});
+
+test('the Miami form can expose only a labeled description and omit its optional free website', async () => {
+  const none = { count: async () => 0 };
+  let expanded = false, value = '', free = false;
+  const editor = { count: async () => 1, getAttribute: async () => 'true', innerText: async () => value,
+    isEditable: async () => true, fill: async text => { value = text; }, blur: async () => {} };
+  const page = { url: () => newForm,
+    locator: selector => {
+      if (selector === 'label[for="eventAdmissionFree"]:not(.radio-label):visible') return {
+        count: async () => 1, click: async () => { free = true; },
+      };
+      return none;
+    },
+    getByRole: (role, { name }) => {
+      if (role === 'heading' && name.test('Additional Information')) return {
+        count: async () => 1, isVisible: async () => true, click: async () => { expanded = true; },
+      };
+      if (expanded && role === 'textbox' && name.test('Description')) return editor;
+      if (role === 'radio' && name.test('Free')) return { count: async () => 1, isChecked: async () => free };
+      return none;
+    },
+  };
+  const details = {};
+  assert.equal(await preparePublicDetails(page, miamiShow, async () => {}, false, details), true);
+  assert.equal(value, 'Show is during art basel in miami\n\nDoors at 8:00 PM.');
+  assert.equal(details.description.selected, 'label');
+  assert.equal(details.description.matches, true);
+  assert.equal(details.admission.matches, true);
+  assert.deepEqual(details.ticketLink, { named: 0, labeled: 0, matches: true });
+  const missingRequired = {};
+  assert.equal(await preparePublicDetails(page, { ...miamiShow, ticketUrl: 'https://example.com/entry' }, async () => {}, false, missingRequired), false);
+  assert.equal(missingRequired.ticketLink.matches, false);
 });
 
 test('reuses a public exact match; conflicts, mismatched metadata, and unavailable reads never create events', async () => {
@@ -238,13 +298,20 @@ test('reuses a public exact match; conflicts, mismatched metadata, and unavailab
 
 test('after one Save, a lost acknowledgement or click timeout is reconciled without resubmitting', async () => {
   for (const timeout of [false, true]) {
+    let inspected = false;
     const { calls, run } = hostedFixture({ feeds: [{ status: 'missing' }, { status: 'missing' }, { status: 'matched', id: '1234' }],
+      inspect: async (_page, _listing, _check, _form, _id, { mayConfirm }) => {
+        inspected = true;
+        assert.equal(mayConfirm, !timeout);
+        return {};
+      },
       onSave: () => { if (timeout) throw new Error('Click timed out'); } });
     assert.deepEqual(await run(), { status: 'verified', bandsintown_id: '1234' });
     assert.equal(calls.adds, 1);
     assert.equal(calls.model, 1);
     assert.equal(calls.saves, 1);
     assert.equal(calls.reads, 3);
+    assert.equal(inspected, true);
   }
 });
 

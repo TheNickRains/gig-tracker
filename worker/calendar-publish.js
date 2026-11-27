@@ -1,6 +1,7 @@
 const { randomUUID, timingSafeEqual } = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
 const { desired, projectEvent, recurrenceEnd } = require('./calendar-publish-data');
+const { fetchPublishedEvents, matchPublishedEvents, UNCERTAIN_SAVE_ISSUE } = require('./bandsintown-published');
 
 const DAY = 86400000;
 const filtered = (key, value) => key + '=eq.' + encodeURIComponent(value);
@@ -34,6 +35,14 @@ function createCalendarPublisher(deps, env = process.env) {
   let leaseWake;
   let heartbeat;
   let closed = false;
+  let reviewTimer;
+  let reviewDue = Infinity;
+  let checkingReviews = false;
+  const reviewAbort = new AbortController();
+  // An existing ID can refer to a prior version whose cleared optional fields
+  // aren't observable in the feed. Edits still require the browser receipt.
+  const uncertainPath = showsPath + '&operation=eq.upsert&status=eq.review&bandsintown_id=is.null&' +
+    filtered('issue', UNCERTAIN_SAVE_ISSUE) + (pilot ? '&' + filtered('event_id', pilot) : '');
 
   async function state() {
     const [current] = await deps.get(statePath + '&limit=1');
@@ -47,6 +56,58 @@ function createCalendarPublisher(deps, env = process.env) {
       if (socket.readyState === WebSocket.OPEN && socket.bufferedAmount < 4096) socket.send('pending');
     }
   };
+
+  function scheduleReviewCheck(delay) {
+    if (!live || closed || Date.now() + delay >= reviewDue) return;
+    clearTimeout(reviewTimer);
+    reviewDue = Date.now() + delay;
+    reviewTimer = setTimeout(() => {
+      reviewDue = Infinity;
+      void checkUncertainSaves();
+    }, delay);
+    reviewTimer.unref();
+  }
+
+  async function checkUncertainSaves() {
+    if (closed) return;
+    if (checkingReviews) { scheduleReviewCheck(60000); return; }
+    checkingReviews = true;
+    try {
+      await state();
+      const candidates = await deps.get(uncertainPath + '&select=event_id,revision,listing,updated_at,operation,status,issue,bandsintown_id&order=event_id.asc');
+      const rows = candidates.filter(row => row.operation === 'upsert' && row.status === 'review' &&
+        row.issue === UNCERTAIN_SAVE_ISSUE && !row.bandsintown_id && (!pilot || row.event_id === pilot));
+      if (closed || !rows.length) return;
+      const events = await fetchPublishedEvents({ fetch: deps.fetch, signal: reviewAbort.signal,
+        appId: env.SHOW_SYNC_BANDSINTOWN_APP_ID, dates: rows.map(row => row.listing?.date) });
+      if (closed) return;
+      const matches = rows.map(row => ({ row, result: matchPublishedEvents(events, row.listing) }));
+      const counts = new Map();
+      for (const { result } of matches) {
+        if (result.status === 'matched') counts.set(result.id, (counts.get(result.id) || 0) + 1);
+      }
+      let unresolved = false;
+      for (const { row, result } of matches) {
+        if (closed) return;
+        if (result.status !== 'matched' || counts.get(result.id) !== 1) {
+          unresolved = true;
+          continue;
+        }
+        await deps.patch(uncertainPath + '&' + filtered('event_id', row.event_id) + '&' + filtered('revision', row.revision), {
+          status: 'published', bandsintown_id: result.id, issue: null, updated_at: new Date().toISOString(),
+        });
+      }
+      if (unresolved) {
+        const recent = rows.some(row => Date.parse(row.updated_at) > Date.now() - 60 * 60000);
+        scheduleReviewCheck(recent ? 60000 : 15 * 60000);
+      }
+    } catch (error) {
+      if (!closed) console.error('Checking unconfirmed Bandsintown saves:', error.message);
+      scheduleReviewCheck(60000);
+    } finally {
+      checkingReviews = false;
+    }
+  }
 
   async function calendarAccessToken() {
     if (env.SHOW_SYNC_GOOGLE_REFRESH_TOKEN) return deps.refresh(env.SHOW_SYNC_GOOGLE_REFRESH_TOKEN);
@@ -221,10 +282,12 @@ function createCalendarPublisher(deps, env = process.env) {
         const latest = await state();
         wakeAgain ||= latest.received > latest.processed;
         retry = 1000;
+        if (closed) return;
         timer = setTimeout(() => void process(true), Math.max(1000, expiration - Date.now() - DAY));
         if (wakeAgain) clearTimeout(timer);
       } while (wakeAgain);
     } catch (error) {
+      if (closed) return;
       rescan ||= scanAll;
       console.error('Show publishing sync:', error.message);
       timer = setTimeout(() => void process(), retry);
@@ -297,6 +360,9 @@ function createCalendarPublisher(deps, env = process.env) {
       bandsintown_id: status === 'removed' ? null : listingId || job.bandsintown_id,
       updated_at: new Date().toISOString(),
     });
+    if (status === 'review' && result.issue === UNCERTAIN_SAVE_ISSUE && job.operation === 'upsert' && !job.bandsintown_id) {
+      scheduleReviewCheck(30000);
+    }
     if (status === 'review') await deps.notify(artist, 'Bandsintown needs your review', 'Open the Calendar publishing inbox.', '/app#calendar').catch(() => {});
     wake();
     return response(req, res, 204);
@@ -413,8 +479,10 @@ function createCalendarPublisher(deps, env = process.env) {
     if (closed) return;
     try {
       await deps.createState({ artist_id: artist, calendar_id: calendarId });
+      scheduleReviewCheck(0);
       await process(true);
     } catch (error) {
+      if (closed) return;
       console.error('Calendar publishing startup:', error.message);
       timer = setTimeout(() => void start(), 30000);
     }
@@ -422,6 +490,8 @@ function createCalendarPublisher(deps, env = process.env) {
 
   function close() {
     closed = true;
+    clearTimeout(reviewTimer);
+    reviewAbort.abort();
     clearTimeout(timer);
     clearTimeout(leaseWake);
     clearInterval(heartbeat);

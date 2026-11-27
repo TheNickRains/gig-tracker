@@ -15,6 +15,9 @@ test('an autocomplete result must match the venue and its location independently
   assert.equal(venueMatchesListing('The Reserve Key West', '500 Southard Street, Key West, FL', listing), false);
   assert.equal(venueMatchesListing('The Reserve Key West', 'Key West, IA', listing), false);
   assert.equal(venueMatchesListing('The Reserve Annex', '510 Southard Street, Key West, FL', listing), false);
+  const miami = { venue: 'Kill Your Idol', address: '222 Española Wy', city: 'Miami Beach', region: 'FL' };
+  assert.equal(venueMatchesListing(miami.venue, '222 Espanola Way, Miami Beach, FL', miami), true);
+  assert.equal(venueMatchesListing(miami.venue, '224 Espanola Way, Miami Beach, FL', miami), false);
 });
 
 test('a typed search is distinct from a committed venue with matching details', async () => {

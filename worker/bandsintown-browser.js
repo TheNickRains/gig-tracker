@@ -1,5 +1,5 @@
 const { prepareEventForm, submitLocationDialog, venueMatchesListing } = require('./bandsintown-event-form');
-const { lookupPublishedEvent, eventDescription, eventTitleMatches } = require('./bandsintown-published');
+const { lookupPublishedEvent, eventDescription, eventTitleMatches, calendarVenueName, UNCERTAIN_SAVE_ISSUE } = require('./bandsintown-published');
 const DASHBOARD_HOSTS = new Set(['artists.bandsintown.com', 'www.artists.bandsintown.com', 'manager.bandsintown.com']);
 const ARTIST_PATH = '/artists/3251702';
 const UPCOMING_PATH = ARTIST_PATH + '/events/upcoming';
@@ -118,56 +118,93 @@ async function preparePublication(page, listing, current) {
   return !await notify.isChecked();
 }
 
-async function setPublicField(field, value, current) {
-  if (await field.count() !== 1) return false;
-  if (await field.inputValue() === value) return true;
-  if (!await field.isEditable()) return false;
+async function publicControl(page, selector, role, name, report) {
+  const field = page.locator(selector);
+  report.named = await field.count();
+  const labeled = page.getByRole(role, { name });
+  report.labeled = await labeled.count();
+  if (report.labeled === 1) { report.selected = 'label'; return labeled; }
+  if (report.named === 1) { report.selected = 'form'; return field; }
+  return null;
+}
+
+async function setPublicField(field, value, current, report) {
+  if (!field) return false;
+  const richText = ['', 'true', 'plaintext-only'].includes(await field.getAttribute('contenteditable'));
+  report.editor = richText ? 'contenteditable' : 'value';
+  const read = async () => {
+    const raw = richText ? await field.innerText() : await field.inputValue();
+    const text = String(raw).replace(/\r\n?/g, '\n').trim();
+    report.length = text.length;
+    return text;
+  };
+  if (await read() === value.trim()) return true;
+  report.editable = await field.isEditable();
+  if (!report.editable) return false;
   await current();
   await field.fill(value);
   await field.blur();
-  return await field.inputValue() === value;
+  return await read() === value.trim();
 }
 
-async function preparePublicDetails(page, listing, current, editing = false) {
+async function preparePublicDetails(page, listing, current, editing = false, details = {}) {
   if (!isArtistPage(page.url()) || new URL(page.url()).pathname.endsWith('/add-location')) return false;
   const doorsField = page.locator('input[name="doors_time"]:visible, input[name="door_time"]:visible, input[name="doors_at"][type="time"]:visible');
   const structuredDoors = listing.doors && await doorsField.count() === 1;
   if (structuredDoors && !matchesClock(await doorsField.inputValue(), listing.doors)) {
+    details.doorsMatch = false;
     if (!CLOCK_VALUE.test(listing.doors) || !await doorsField.isEditable()) return false;
     await current();
     await doorsField.fill(await doorsField.getAttribute('type') === 'time' ? listing.doors : timeLabel(listing.doors));
     await doorsField.press('Escape');
     await doorsField.blur();
-    if (!matchesClock(await doorsField.inputValue(), listing.doors)) return false;
+    details.doorsMatch = matchesClock(await doorsField.inputValue(), listing.doors);
+    if (!details.doorsMatch) return false;
   }
   const description = eventDescription(structuredDoors ? { ...listing, doors: null } : listing);
   if (description || (editing && Object.hasOwn(listing, 'description'))) {
-    const field = page.locator('textarea[name="description"]:visible, input[name="description"]:visible');
-    if (!await field.count()) {
+    const report = details.description = {};
+    const descriptionField = () => publicControl(page,
+      'textarea[name="description"]:visible:not([aria-hidden="true"]), input[name="description"]:visible, .high-fields__desc textarea:visible:not([aria-hidden="true"]), .high-fields__desc [contenteditable="true"]:visible',
+      'textbox', /^(?:event )?description(?:\s*\*)?$/i, report);
+    let field = await descriptionField();
+    if (!field && report.named === 0 && report.labeled === 0) {
       const section = page.getByRole('heading', { name: /^additional (?:event )?(?:information|info|details)\b/i });
       if (await section.count() === 1 && await section.isVisible()) {
         await current();
         await section.click();
+        field = await descriptionField();
       }
     }
-    if (!await setPublicField(field, description, current)) return false;
+    report.matches = await setPublicField(field, description, current, report);
   }
   const free = /^free$/i.test(listing.ticketPrice || '');
   if (listing.ticketPrice) {
+    const report = details.admission = {};
     const id = free ? 'eventAdmissionFree' : 'eventAdmissionPaid';
-    const radio = page.locator('input#' + id);
-    if (await radio.count() !== 1) return false;
-    if (!await radio.isChecked()) {
+    const radio = await publicControl(page, 'input#' + id, 'radio', free ? /^free(?: (?:event|admission))?$/i : /^paid(?: (?:event|admission))?$/i, report);
+    report.matches = Boolean(radio && await radio.isChecked());
+    if (radio && !report.matches) {
       await current();
-      await page.locator('label[for="' + id + '"]').click();
-      if (!await radio.isChecked()) return false;
+      // Bandsintown renders an empty decorative label plus the text label for the same ID.
+      const label = page.locator('label[for="' + id + '"]:not(.radio-label):visible');
+      if (await label.count() === 1) await label.click();
+      else await radio.check();
+      report.matches = await radio.isChecked();
     }
   }
   if (free || listing.ticketUrl) {
-    const link = page.locator(free ? 'input[name="event_free_link"]:visible' : 'input[name="tickets_manager[0].link"]:visible');
-    if (!await setPublicField(link, listing.ticketUrl || '', current)) return false;
+    const report = details.ticketLink = {};
+    const link = await publicControl(page,
+      free ? 'input[name="event_free_link"]:visible' : 'input[name="tickets_manager[0].link"]:visible',
+      'textbox', free ? /^website link(?:\s*\(optional\))?$/i : /^ticket link(?:\s*\(optional\))?$/i, report);
+    const desired = listing.ticketUrl || '';
+    // The free admission website is optional. An absent control and no URL
+    // represent the same value; a visible control must still be read back.
+    const absent = !link && report.named === 0 && report.labeled === 0;
+    report.matches = absent ? !desired : await setPublicField(link, desired, current, report);
   }
-  return true;
+  return [details.description, details.admission, details.ticketLink].every(field => !field || field.matches);
 }
 
 async function publishedReceipt(page, listing, expectedId) {
@@ -182,7 +219,7 @@ async function publishedReceipt(page, listing, expectedId) {
       address: event.venue_address, title: event.title, description: event.description,
       doors: event.doors_time || event.door_time || event.doors_at,
       free: event.flag_is_event_free ?? event.free,
-      links: [event.event_free_link, ...(event.tickets_manager || []).map(ticket => ticket?.link)].filter(Boolean) };
+      links: [event.event_free_link, ...Object.values(event.tickets_manager || {}).map(ticket => ticket?.link)].filter(Boolean) };
   });
   if (!saved || !/^\d{1,30}$/.test(saved.id) || (expectedId && saved.id !== expectedId) || !['PUBLISHED', 'AUTOPUBLISHED'].includes(saved.status)) return null;
   const location = [saved.address, saved.city, saved.region].filter(Boolean).join(', ');
@@ -193,47 +230,107 @@ async function publishedReceipt(page, listing, expectedId) {
       !(listing.doors && matchesClock(saved.doors, listing.doors) && description === eventDescription({ ...listing, doors: null }))) return null;
   if (/^free$/i.test(listing.ticketPrice || '') && saved.free !== true) return null;
   if (listing.ticketUrl && !saved.links?.includes(listing.ticketUrl)) return null;
-  return saved.date === listing.date && matchesClock(saved.time, listing.time) && venueMatchesListing(saved.venue, location, listing) ? saved.id : null;
+  return saved.date === listing.date && matchesClock(saved.time, listing.time) &&
+    venueMatchesListing(calendarVenueName(saved.venue, listing), location, listing) ? saved.id : null;
 }
 
-async function inspectSubmission(page, listing, check, form, expectedId) {
+function errorDetail(error) {
+  return String(error?.message || error?.name || 'Unknown error').split('\n')[0]
+    .replace(/https?:\/\/\S+|[\w.+-]+@[\w.-]+\.[a-z]+|(?:Bearer|Basic)\s+\S+/gi, '[redacted]').slice(0, 220);
+}
+
+async function saveScreen(page) {
+  return page.evaluate(() => {
+    const visible = node => Boolean(node?.getClientRects().length) && getComputedStyle(node).visibility !== 'hidden';
+    const text = node => String(node?.innerText || node?.textContent || '').trim();
+    const safe = value => String(value || '').replace(/https?:\/\/\S+|[\w.+-]+@[\w.-]+\.[a-z]+/gi, '[redacted]').trim().slice(0, 180);
+    const nodes = (selector, root = document) => [...root.querySelectorAll(selector)].filter(visible);
+    const title = nodes('.bit-popup-title').at(-1);
+    const dialog = nodes('[role="dialog"], [aria-modal="true"]').at(-1);
+    const modal = dialog || title?.parentElement;
+    const warnings = text(modal || document.body).split('\n').filter(line =>
+      /already (?:exists|have an event)|duplicate event|conflict with|within 2 hours|another event|ready to publish and announce|could(?:n.t| not) (?:save|publish)|failed to (?:save|publish)|try again|retry/i.test(line));
+    const errors = nodes('.field-error, [role="alert"], [aria-invalid="true"]').map(node => ({
+      field: safe(node.name || node.previousElementSibling?.querySelector('input,select,textarea')?.name),
+      error: safe(text(node) || node.validationMessage),
+    })).filter(item => item.field || item.error).slice(0, 6);
+    return { path: location.pathname, modal: Boolean(modal), roleDialog: Boolean(dialog),
+      containsEventForm: Boolean(modal?.querySelector('form.event-form, input[name="start_time"], .event-buttons .save-btn')),
+      title: safe(text(title) || dialog?.getAttribute('aria-label') || text(dialog?.querySelector('h1,h2,h3'))),
+      buttons: modal ? nodes('button', modal).map(button => safe(text(button) || button.getAttribute('aria-label'))).slice(0, 8) : [],
+      venueForm: nodes('#venueFormNameField, #venueFormnameField').length === 1,
+      saveButtons: nodes('form .event-buttons button.save-btn').length,
+      warnings: warnings.map(safe).slice(0, 4), errors };
+  });
+}
+
+function saveIssue(screen) {
+  const messages = [screen.title, ...screen.warnings, ...screen.errors.map(item => item.error)].join(' ');
+  if (/already (?:exists|have an event)|duplicate event|conflict with|within 2 hours|another event.{0,60}(?:same|time)/i.test(messages)) {
+    return 'Bandsintown flagged a possible duplicate. Check the matching listing in Upcoming Events.';
+  }
+  if (/ready to publish and announce/i.test(messages)) return 'Bandsintown requested a follower announcement. Check this listing with notifications off.';
+  if (screen.errors.length) {
+    const { field, error } = screen.errors[0];
+    return ('Bandsintown flagged ' + (field || 'the event form') + (error ? ' — ' + error : '') + '. Check the listing before retrying.').slice(0, 245);
+  }
+  if (screen.venueForm) return 'Bandsintown is asking for venue details. Check the location shown in the hosted browser.';
+}
+
+async function inspectSubmission(page, listing, check, form, expectedId, { mayConfirm = true, stage = () => {} } = {}) {
   const popup = page.locator('.bit-popup-title:visible').last();
   const dialog = page.locator('[role="dialog"]:visible, [aria-modal="true"]:visible').last();
-  const changed = () => new URL(page.url()).pathname === UPCOMING_PATH;
+  stage('waiting for the Save result');
   await Promise.any([
     page.waitForURL(url => url.pathname === UPCOMING_PATH, { timeout: 7000 }),
     dialog.waitFor({ state: 'visible', timeout: 7000 }),
     popup.waitFor({ state: 'visible', timeout: 7000 }),
+    page.locator('#venueFormNameField:visible, #venueFormnameField:visible, .field-error:visible, [aria-invalid="true"]:visible').first()
+      .waitFor({ state: 'visible', timeout: 7000 }),
   ]).catch(() => {});
   if (!isArtistPage(page.url())) return { issue: REVIEW_SIGN_IN };
-  if (changed()) return { id: await publishedReceipt(page, listing, expectedId) };
-  const modal = await popup.isVisible() ? popup.locator('..') : dialog;
-  const overlay = await modal.isVisible();
-  const snapshot = overlay ? await modal.ariaSnapshot() : await dashboardSnapshot(page);
-  const signals = snapshot.split('\n').filter(line => overlay || /alert|dialog|error|required|confirm|publish|already exists|duplicate|invalid|please (?:select|enter)|without|could not|couldn.t|couldn’t/i.test(line))
-    .filter(line => !/(?:mailto:|https?:\/\/|@)/i.test(line)).map(line => line.trim().slice(0, 220)).slice(-36);
-  const errors = await page.locator('.field-error:visible, [role="alert"]:visible').evaluateAll(nodes => nodes.map(node => ({
-    field: node.previousElementSibling?.querySelector('input, select, textarea')?.name,
-    error: node.innerText.trim().slice(0, 180),
-  })).filter(item => item.error).slice(0, 8));
-  console.info('Bandsintown save response:', JSON.stringify({ path: new URL(page.url()).pathname, modal: overlay, messages: signals, errors }));
-  if (/already (?:exists|have an event)|duplicate event|conflict with|within 2 hours of another event|another event.{0,60}(?:same|time)/i.test(snapshot)) {
-    return { issue: 'Bandsintown flagged a possible duplicate. Check the matching listing in Upcoming Events.' };
+  stage('reading the Save result screen');
+  // A successful save can replace the document while we read it.
+  let screen;
+  try { screen = await saveScreen(page); }
+  catch (error) {
+    console.warn('Bandsintown Save screen changed:', errorDetail(error));
+    await page.waitForLoadState('domcontentloaded', { timeout: 3500 }).catch(() => {});
+    screen = await saveScreen(page);
   }
-  if (/ready to publish and announce/i.test(snapshot)) return { issue: 'Bandsintown requested a follower announcement. The Calendar listing still needs publication with notifications off.' };
-  if (form && await submitLocationDialog(page, listing, check, form)) {
-    await page.waitForURL(url => url.pathname === UPCOMING_PATH, { timeout: 10000 }).catch(() => {});
-    return { id: await publishedReceipt(page, listing, expectedId) };
+  console.info('Bandsintown save response:', JSON.stringify(screen));
+  const readReceipt = async () => {
+    stage('reading the published event receipt');
+    const id = await publishedReceipt(page, listing, expectedId);
+    console.info('Bandsintown dashboard receipt:', id ? 'verified ' + id : 'awaiting verified event details');
+    return { id };
+  };
+  if (new URL(page.url()).pathname === UPCOMING_PATH) return readReceipt();
+  const issue = saveIssue(screen);
+  const blocked = /duplicate|announcement/.test(issue || '') || screen.warnings.length > 0;
+  if (!mayConfirm || blocked) return { issue };
+  if (form && screen.venueForm) {
+    stage('completing the venue confirmation dialog');
+    if (await submitLocationDialog(page, listing, check, form)) {
+      await page.waitForURL(url => url.pathname === UPCOMING_PATH, { timeout: 10000 }).catch(() => {});
+      if (new URL(page.url()).pathname === UPCOMING_PATH) return readReceipt();
+      const remaining = await saveScreen(page);
+      console.info('Bandsintown venue confirmation result:', JSON.stringify(remaining));
+      return { issue: saveIssue(remaining) };
+    }
+    return { issue };
   }
-  if (!overlay || errors.length || /try again|retry|could(?:n.t| not) (?:save|publish)|failed to (?:save|publish)/i.test(snapshot)) return {};
+  if (!screen.modal || screen.containsEventForm || screen.errors.length) return { issue };
+  const modal = screen.roleDialog ? dialog : popup.locator('xpath=..');
   const button = modal.getByRole('button', { name: /^(?:publish|publish changes|confirm publish(?:ing)?|publish event|publish now)$/i });
   if (await button.count() === 1 && await button.isVisible() && await button.isEnabled()) {
     if (!(expectedId ? onStoredEvent(page, expectedId) : isNewEvent(page)) || !await check()) throw new Error('Browser job is no longer current');
+    stage('confirming publication in the dashboard dialog');
     await button.click();
     await page.waitForURL(url => url.pathname === UPCOMING_PATH, { timeout: 10000 }).catch(() => {});
-    return { id: await publishedReceipt(page, listing, expectedId) };
+    return readReceipt();
   }
-  return {};
+  return { issue };
 }
 
 function onStoredEvent(page, id) {
@@ -407,7 +504,7 @@ function createHostedOperator(env = process.env, dependencies = {}) {
           if (result.status === 'conflict') return review(result.issue);
         }
       }
-      return review(issue || 'The Save was attempted, but publication could not be confirmed. Check the listing in Upcoming Events before retrying.');
+      return review(issue || UNCERTAIN_SAVE_ISSUE);
     }
     try {
       await page.route('**/*', navigation);
@@ -468,7 +565,8 @@ function createHostedOperator(env = process.env, dependencies = {}) {
           };
           form.notificationsOff = await preparePublication(page, job.listing, current);
           stage = 'entering public notes, admission and doors';
-          form.detailsMatch = await preparePublicDetails(page, job.listing, current);
+          form.publicDetails = {};
+          form.detailsMatch = await preparePublicDetails(page, job.listing, current, false, form.publicDetails);
         }
         const snapshot = (await dashboardSnapshot(page)).slice(0, 18000);
         const links = await page.locator('a[href]').evaluateAll(anchors => anchors.map(anchor => anchor.href));
@@ -485,13 +583,16 @@ function createHostedOperator(env = process.env, dependencies = {}) {
           form.timeMatches = matchesClock(startTime?.value, job.listing.time);
           console.info('Bandsintown event form:', JSON.stringify({ ...form, path: pathname, startTime: startTime?.value }));
         }
-        let step;
+        let step, saveButton;
         if (form?.dateMatches && form.venueMatches && form.timeMatches && form.notificationsOff && form.detailsMatch) {
           const save = page.locator('form .event-buttons button.save-btn:visible');
           const now = page.locator('input#publishNowEventRadio:checked');
           if (await now.count() === 1 && await save.count() === 1 && await save.isEnabled()) {
             const name = (await save.innerText()).trim();
-            if (/^(save|publish)( event)?$/i.test(name)) step = { action: 'click', role: 'button', name };
+            if (/^(save|publish)( event)?$/i.test(name)) {
+              saveButton = save;
+              step = { action: 'click', role: 'button', name };
+            }
           }
         }
         step ||= await nextStep({ job: data, form, snapshot, url: origin + pathname, listingIds: observed, timeFields, history: history.slice(-8) }, signal);
@@ -555,18 +656,38 @@ function createHostedOperator(env = process.env, dependencies = {}) {
             }
             if (!await preparePublicDetails(page, job.listing, checkEdit, true)) return review('Check the public description, admission and ticket link on the stored Bandsintown event.');
           }
-          let outcome;
+          stage = 'checking the current revision before Save';
+          if (!await current()) throw new Error('Browser job is no longer current');
+          let clicked = false;
           try {
-            const result = await browserAction(page, step, current);
-            if (result !== 'Action applied. Inspect the current dashboard state.') {
-              history.push({ action: step.action, name: step.name, result });
-              continue;
+            stage = 'clicking the event form Save button';
+            if (saveButton) {
+              await saveButton.click();
+            } else {
+              const result = await browserAction(page, step, async () => onTarget());
+              if (result !== 'Action applied. Inspect the current dashboard state.') {
+                history.push({ action: step.action, name: step.name, result });
+                continue;
+              }
             }
-            stage = 'checking the Bandsintown save response';
-            outcome = await inspect(page, job.listing, check, form, storedId);
+            clicked = true;
           } catch (error) {
             if (error.message === 'Browser job is no longer current') throw error;
-            console.warn('Bandsintown Save acknowledgement unavailable:', error.name);
+            console.warn('Bandsintown Save click unresolved:', errorDetail(error));
+          }
+          let outcome;
+          try {
+            // An ambiguous click permits observation only. A returned click may
+            // continue through an explicit provider confirmation, never a second Save.
+            outcome = await inspect(page, job.listing, check, form, storedId, { mayConfirm: clicked, stage: value => { stage = value; } });
+          } catch (error) {
+            if (error.message === 'Browser job is no longer current') throw error;
+            console.warn('Bandsintown Save result unavailable:', stage, errorDetail(error));
+            const screen = await saveScreen(page).catch(() => null);
+            if (screen) {
+              console.info('Bandsintown final Save screen:', JSON.stringify(screen));
+              outcome = { issue: saveIssue(screen) };
+            }
           }
           if (outcome?.id) return verified(outcome.id);
           return await reconcileSave(outcome?.issue);
