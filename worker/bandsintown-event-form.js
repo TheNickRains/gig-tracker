@@ -34,45 +34,56 @@ function splitVenue(value) {
 
 async function setDate(page, listing, state, guard) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(listing.date || '')) return;
-  const group = page.locator('.high-fields__start_date');
-  const field = group.locator('input#eventStartDateField');
+  let field = page.locator('input#eventStartDateField:visible, input[name="start_date"]:visible');
+  if (await field.count() !== 1) {
+    field = page.getByRole('textbox', { name: /^start date\s*\*?$/i });
+  }
   if (await field.count() !== 1 || !await field.isVisible()) return;
   const desired = new Date(listing.date + 'T12:00:00Z');
   if (Number.isNaN(+desired) || desired.toISOString().slice(0, 10) !== listing.date) return;
   const [year, month, dayOfMonth] = listing.date.split('-');
-  const formats = new Set([listing.date, month + '/' + dayOfMonth + '/' + year, ...['short', 'long'].map(month => new Intl.DateTimeFormat('en-US', {
+  const placeholder = await field.getAttribute('placeholder') || '';
+  const dayFirst = /d+\s*\/\s*m+/i.test(placeholder);
+  const [first, second] = dayFirst ? [dayOfMonth, month] : [month, dayOfMonth];
+  const slashDate = [first, second, year].join('/');
+  const formats = new Set([listing.date, slashDate, [Number(first), Number(second), year].join('/'), ...['short', 'long'].map(month => new Intl.DateTimeFormat('en-US', {
     year: 'numeric', month, day: 'numeric', timeZone: 'UTC',
   }).format(desired))]);
   const read = async () => {
     state.date = (await field.inputValue()).trim();
-    state.dateMatches = formats.has(state.date);
+    state.dateMatches = formats.has(state.date) && await field.getAttribute('aria-invalid') !== 'true';
   };
   await read();
   if (state.dateMatches || !await field.isEnabled()) return;
   await guard();
-  if (await field.getAttribute('type') === 'date') {
-    await field.fill(listing.date, TIMEOUT);
+  const native = await field.getAttribute('type') === 'date';
+  if (native || await field.isEditable()) {
+    const slashFormat = /[dm]+\s*\/\s*[dm]+/i.test(placeholder) || /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(state.date);
+    await field.fill(native || !slashFormat ? listing.date : slashDate, TIMEOUT);
     await field.blur();
-  } else {
-    const picker = group.locator('.date-content');
-    if (!await picker.isVisible()) await group.getByRole('button', { name: 'Toggle picker', exact: true }).click(TIMEOUT);
-    const month = picker.locator('button.month');
-    await month.waitFor({ state: 'visible', ...TIMEOUT });
-    const expectedMonth = new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(desired);
-    if ((await month.innerText()).trim() !== expectedMonth) {
-      await guard();
-      await month.click(TIMEOUT);
-      const edit = picker.locator('input');
-      await edit.fill(listing.date, TIMEOUT);
-      await edit.press('Tab', TIMEOUT);
-      await month.waitFor({ state: 'visible', ...TIMEOUT });
-      if ((await month.innerText()).trim() !== expectedMonth) return;
-    }
-    const day = picker.getByRole('button', { name: String(desired.getUTCDate()), exact: true });
-    if (await day.count() !== 1 || !await day.isEnabled()) return;
-    await guard();
-    await day.click(TIMEOUT);
+    await read();
+    if (state.dateMatches || native) return;
   }
+  const group = field.locator('xpath=ancestor::div[.//*[contains(concat(" ", normalize-space(@class), " "), " date-content ")]][1]');
+  const picker = group.locator('.date-content');
+  if (await picker.count() !== 1) return;
+  if (!await picker.isVisible()) await group.getByRole('button', { name: 'Toggle picker', exact: true }).click(TIMEOUT);
+  const monthButton = picker.locator('button.month');
+  await monthButton.waitFor({ state: 'visible', ...TIMEOUT });
+  const expectedMonth = new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(desired);
+  if ((await monthButton.innerText()).trim() !== expectedMonth) {
+    await guard();
+    await monthButton.click(TIMEOUT);
+    const edit = picker.locator('input');
+    await edit.fill(listing.date, TIMEOUT);
+    await edit.press('Tab', TIMEOUT);
+    await monthButton.waitFor({ state: 'visible', ...TIMEOUT });
+    if ((await monthButton.innerText()).trim() !== expectedMonth) return;
+  }
+  const day = picker.getByRole('button', { name: String(desired.getUTCDate()), exact: true });
+  if (await day.count() !== 1 || !await day.isEnabled()) return;
+  await guard();
+  await day.click(TIMEOUT);
   await read();
 }
 

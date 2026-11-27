@@ -41,6 +41,7 @@ test('new events fill only the show start time, verify it after blur, and preser
   const input = {
     isVisible: async () => true,
     isEditable: async () => true,
+    getAttribute: async () => 'text',
     inputValue: async () => value,
     fill: async next => { value = next; actions.push(next); },
     press: async key => { actions.push(key); },
@@ -48,7 +49,7 @@ test('new events fill only the show start time, verify it after blur, and preser
   };
   const page = {
     url: () => url,
-    locator: selector => { assert.equal(selector, '.high-fields__start_time input[name="start_time"]'); return input; },
+    locator: selector => { assert.equal(selector, 'input[name="start_time"]:visible'); return input; },
   };
   await assert.rejects(() => setNewEventStartTime(page, job, async () => false), /no longer current/);
   assert.deepEqual(actions, []);

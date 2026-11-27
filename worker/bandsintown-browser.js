@@ -63,29 +63,34 @@ function review(issue) {
   return { status: 'review', issue };
 }
 
+function timeLabel(clock) {
+  const [hours, minutes] = clock.split(':');
+  return (Number(hours) % 12 || 12) + ':' + minutes + (Number(hours) < 12 ? ' AM' : ' PM');
+}
+
+function matchesClock(value, clock) {
+  if (!CLOCK_VALUE.test(clock) || typeof value !== 'string') return false;
+  const text = value.trim();
+  return text === clock || text === clock + ':00' ||
+    text.replace(/^0(?=\d:)/, '').replace(/\s*([AP]M)$/i, ' $1').toUpperCase() === timeLabel(clock);
+}
+
 async function setNewEventStartTime(page, job, check) {
   const clock = job.listing?.time;
   if (job.operation !== 'upsert' || job.bandsintown_id || !job.listing?.date || !CLOCK_VALUE.test(clock) || !isNewEvent(page)) return false;
-  const field = page.locator('.high-fields__start_time input[name="start_time"]');
+  const field = page.locator('input[name="start_time"]:visible');
   if (!await field.isVisible() || !await field.isEditable()) return false;
-  const [hours, minutes] = clock.split(':');
-  const label = (Number(hours) % 12 || 12) + ':' + minutes + (Number(hours) < 12 ? ' AM' : ' PM');
-  const matches = value => {
-    const text = value.trim();
-    if (text === clock || text === clock + ':00') return true;
-    return text.replace(/^0(?=\d:)/, '').replace(/\s*([AP]M)$/i, ' $1').toUpperCase() === label;
-  };
-  if (matches(await field.inputValue())) return false;
+  if (matchesClock(await field.inputValue(), clock)) return false;
   if (!isNewEvent(page) || !await check()) throw new Error('Browser job is no longer current');
-  await field.fill(label);
+  await field.fill(await field.getAttribute('type') === 'time' ? clock : timeLabel(clock));
   await field.press('Escape');
   await field.blur();
-  if (!matches(await field.inputValue())) throw new Error('Bandsintown did not retain the show start time');
+  if (!matchesClock(await field.inputValue(), clock)) throw new Error('Bandsintown did not retain the show start time');
   return true;
 }
 
 async function preparePublication(page, listing, current) {
-  const title = page.locator('.event_title input[name="title"]');
+  const title = page.locator('input[name="title"]:visible');
   if (listing.title && await title.isVisible() && await title.isEditable() && await title.inputValue() !== listing.title) {
     await current();
     await title.fill(listing.title);
@@ -308,8 +313,22 @@ function createHostedOperator(env = process.env, dependencies = {}) {
           return [{ label: String(label || '').slice(0, 60), name: control.name, type: control.type, value: control.value }];
         }));
         stage = 'reading the next browser action';
-        if (form) console.info('Bandsintown event form:', JSON.stringify({ ...form, path: pathname, startTime: timeFields.find(field => field.name === 'start_time')?.value }));
-        const step = await nextStep({ job: data, form, snapshot, url: origin + pathname, listingIds: observed, timeFields, history: history.slice(-8) }, signal);
+        if (form) {
+          const startTime = timeFields.find(field => field.name === 'start_time');
+          form.timeMatches = matchesClock(startTime?.value, job.listing.time);
+          console.info('Bandsintown event form:', JSON.stringify({ ...form, path: pathname, startTime: startTime?.value }));
+        }
+        let step;
+        if (form?.dateMatches && form.venueMatches && form.timeMatches && form.notificationsOff &&
+            !['doors', 'description', 'ticketPrice', 'ticketUrl'].some(key => job.listing[key])) {
+          const save = page.locator('form .event-buttons button.save-btn:visible');
+          const now = page.locator('input#publishNowEventRadio:checked');
+          if (await now.count() === 1 && await save.count() === 1 && await save.isEnabled()) {
+            const name = (await save.innerText()).trim();
+            if (/^(save|publish)( event)?$/i.test(name)) step = { action: 'click', role: 'button', name };
+          }
+        }
+        step ||= await nextStep({ job: data, form, snapshot, url: origin + pathname, listingIds: observed, timeFields, history: history.slice(-8) }, signal);
         console.info('Bandsintown action:', step.action, step.role || '', String(step.name || '').slice(0, 70));
         if (step.action === 'review') return review(String(step.issue || 'Verify the matching listing in Bandsintown, then retry.').slice(0, 250));
         const attempt = JSON.stringify([pathname, snapshot, step.action, step.role, step.name, step.occurrence, step.value, step.bandsintown_id]);
@@ -342,10 +361,11 @@ function createHostedOperator(env = process.env, dependencies = {}) {
           return { status: 'verified', bandsintown_id: step.bandsintown_id };
         }
         const control = step.name.trim().replace(/\s+/g, ' ').slice(0, 64);
+        if (submitted && ADD_EVENT.test(control)) return review('The form was submitted. Check the saved event in Upcoming Events before creating another listing.');
         stage = `${step.action} on “${control}”`;
         const submitForm = step.action === 'click' && /^(?:save|publish)(?: event)?$/i.test(control) && isNewEvent(page);
-        if (submitForm && !submitted && form && !(form.dateMatches && form.venueMatches && form.notificationsOff)) {
-          history.push({ action: 'verify', name: control, result: 'Confirm the Calendar date, selected venue and disabled follower notifications on the event form before saving.' });
+        if (submitForm && !submitted && form && !(form.dateMatches && form.timeMatches && form.venueMatches && form.notificationsOff)) {
+          history.push({ action: 'verify', name: control, result: 'Confirm the Calendar date, time, selected venue and disabled follower notifications on the event form before saving.' });
           continue;
         }
         const result = await browserAction(page, step, check);
