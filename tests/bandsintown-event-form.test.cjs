@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { prepareEventForm, venueMatchesListing } = require('../worker/bandsintown-event-form');
+const { prepareEventForm, submitLocationDialog, venueMatchesListing } = require('../worker/bandsintown-event-form');
 
 const listing = {
   venue: 'The Reserve Key West', address: '510 Southard St', city: 'Key West',
@@ -79,4 +79,38 @@ test('Start Date* is found outside the wrapper and verified after the form proce
   acceptsDate = false;
   value = '';
   assert.equal((await read()).dateMatches, false);
+});
+
+test('the post-Save location warning submits once with the verified city, region, country and venue', async () => {
+  const empty = { count: async () => 0 };
+  const visible = { count: async () => 1, isVisible: async () => true, isEnabled: async () => true };
+  const input = () => {
+    let value = '';
+    return { ...visible, isEditable: async () => true, inputValue: async () => value,
+      fill: async text => { value = text; }, blur: async () => {} };
+  };
+  const select = (code, label) => {
+    let value = '';
+    return { ...visible, waitFor: async () => {}, evaluate: async () => true, inputValue: async () => value,
+      locator: () => ({ evaluateAll: async () => [{ value: code, label }] }), selectOption: async selected => { value = selected; } };
+  };
+  const country = select('United States', '🇺🇸 United States'), region = select('FL', 'Florida'), name = input(), city = input();
+  let clicks = 0;
+  const form = { ...visible, locator: selector => ({
+    '#venueFormCountryField': country, '#venueFormRegionField': region,
+    'input[name="venue_name"]': name, 'input[name="city"]': city,
+  })[selector] || empty, getByRole: () => ({ ...visible, click: async () => { clicks++; } }) };
+  const page = { url: () => 'https://artists.bandsintown.com/artists/3251702/events/new',
+    locator: selector => { assert.match(selector, /#venueFormNameField/); return {
+      ...visible, getAttribute: async () => 'venue_name', locator: () => form }; } };
+  const proof = { dateMatches: true, timeMatches: true, venueMatches: true, notificationsOff: true };
+  assert.equal(await submitLocationDialog(page, listing, async () => true, { ...proof, dateMatches: false }), false);
+  await assert.rejects(() => submitLocationDialog(page, listing, async () => false, proof), /no longer current/);
+  assert.equal(clicks, 0);
+  assert.equal(await submitLocationDialog(page, listing, async () => true, proof), true);
+  assert.equal(clicks, 1);
+  assert.equal(await city.inputValue(), listing.city);
+  assert.equal(await name.inputValue(), listing.venue);
+  assert.equal(await region.inputValue(), 'FL');
+  assert.equal(await country.inputValue(), 'United States');
 });

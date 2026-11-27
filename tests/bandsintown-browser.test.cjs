@@ -1,6 +1,18 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { browserAction, createHostedOperator, dashboardUrl, eventId, setNewEventStartTime } = require('../worker/bandsintown-browser');
+const { browserAction, createHostedOperator, dashboardUrl, eventId, publishedReceipt, setNewEventStartTime } = require('../worker/bandsintown-browser');
+
+test('the publication receipt must match the submitted Calendar show', async () => {
+  const listing = { venue: 'The Reserve Key West', date: '2026-11-27', time: '19:00', city: 'Key West', region: 'FL', address: '510 Southard St' };
+  const receipt = { ...listing, id: '12345', status: 'PUBLISHED', time: '19:00:00' };
+  const page = { url: () => 'https://artists.bandsintown.com/artists/3251702/events/upcoming?publish_success=1', evaluate: async () => receipt };
+  assert.equal(await publishedReceipt(page, listing), '12345');
+  assert.equal(await publishedReceipt(page, { ...listing, date: '2026-11-28' }), null);
+  assert.equal(await publishedReceipt(page, { ...listing, time: '17:00' }), null);
+  assert.equal(await publishedReceipt(page, { ...listing, venue: 'Elsewhere' }), null);
+  receipt.status = 'DRAFT';
+  assert.equal(await publishedReceipt(page, listing), null);
+});
 
 test('the hosted browser stays on the artist dashboard and only trusts Bandsintown event IDs', () => {
   assert.equal(dashboardUrl('https://artists.bandsintown.com/'), true);

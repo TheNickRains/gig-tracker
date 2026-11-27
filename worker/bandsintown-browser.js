@@ -1,4 +1,4 @@
-const { prepareEventForm } = require('./bandsintown-event-form');
+const { prepareEventForm, submitLocationDialog, venueMatchesListing } = require('./bandsintown-event-form');
 const DASHBOARD_HOSTS = new Set(['artists.bandsintown.com', 'www.artists.bandsintown.com', 'manager.bandsintown.com']);
 const ARTIST_PATH = '/artists/3251702';
 const UPCOMING_PATH = ARTIST_PATH + '/events/upcoming';
@@ -105,6 +105,62 @@ async function preparePublication(page, listing, current) {
     else await notify.uncheck();
   }
   return !await notify.isChecked();
+}
+
+async function publishedReceipt(page, listing) {
+  const url = new URL(page.url());
+  if (!isArtistPage(url.href) || url.pathname !== UPCOMING_PATH || url.searchParams.get('publish_success') !== '1') return null;
+  const saved = await page.evaluate(() => {
+    const receipt = history.state?.state;
+    const event = receipt?.event;
+    if (!event) return null;
+    return { id: String(event.id || receipt.event_id || ''), status: event.status, date: event.start_date,
+      time: event.start_time, venue: event.venue_name, city: event.venue_city, region: event.venue_region,
+      address: event.venue_address };
+  });
+  if (!saved || !/^\d{1,30}$/.test(saved.id) || !['PUBLISHED', 'AUTOPUBLISHED'].includes(saved.status)) return null;
+  const location = [saved.address, saved.city, saved.region].filter(Boolean).join(', ');
+  return saved.date === listing.date && matchesClock(saved.time, listing.time) && venueMatchesListing(saved.venue, location, listing) ? saved.id : null;
+}
+
+async function inspectSubmission(page, listing, check, form) {
+  const confirmation = page.getByRole('button', { name: /^(?:publish changes|confirm publish(?:ing)?|publish event|publish now)$/i });
+  const popup = page.locator('.bit-popup-title:visible').last();
+  const dialog = page.locator('[role="dialog"]:visible, [aria-modal="true"]:visible').last();
+  const changed = () => new URL(page.url()).pathname === UPCOMING_PATH;
+  await Promise.any([
+    page.waitForURL(url => url.pathname === UPCOMING_PATH, { timeout: 7000 }),
+    dialog.waitFor({ state: 'visible', timeout: 7000 }),
+    popup.waitFor({ state: 'visible', timeout: 7000 }),
+  ]).catch(() => {});
+  if (!isArtistPage(page.url())) return { issue: REVIEW_SIGN_IN };
+  if (changed()) return { id: await publishedReceipt(page, listing) };
+  const modal = await popup.isVisible() ? popup.locator('..') : dialog;
+  const overlay = await modal.isVisible();
+  const snapshot = overlay ? await modal.ariaSnapshot() : await dashboardSnapshot(page);
+  const signals = snapshot.split('\n').filter(line => overlay || /alert|dialog|error|required|confirm|publish|already exists|duplicate|invalid|please (?:select|enter)|without|could not|couldn.t|couldn’t/i.test(line))
+    .filter(line => !/(?:mailto:|https?:\/\/|@)/i.test(line)).map(line => line.trim().slice(0, 220)).slice(-36);
+  const errors = await page.locator('.field-error:visible, [role="alert"]:visible').evaluateAll(nodes => nodes.map(node => ({
+    field: node.previousElementSibling?.querySelector('input, select, textarea')?.name,
+    error: node.innerText.trim().slice(0, 180),
+  })).filter(item => item.error).slice(0, 8));
+  console.info('Bandsintown save response:', JSON.stringify({ path: new URL(page.url()).pathname, modal: overlay, messages: signals, errors }));
+  if (/already (?:exists|have an event)|duplicate event|conflict with|within 2 hours of another event|another event.{0,60}(?:same|time)/i.test(snapshot)) {
+    return { issue: 'Bandsintown flagged a possible duplicate. Check the matching listing in Upcoming Events.' };
+  }
+  if (/ready to publish and announce/i.test(snapshot)) return { issue: 'Bandsintown requested a follower announcement. The Calendar listing still needs publication with notifications off.' };
+  if (form && await submitLocationDialog(page, listing, check, form)) {
+    await page.waitForURL(url => url.pathname === UPCOMING_PATH, { timeout: 10000 }).catch(() => {});
+    if (changed()) return { id: await publishedReceipt(page, listing) };
+  }
+  const button = overlay ? modal.getByRole('button', { name: /^(?:publish|publish changes|confirm publish(?:ing)?|publish event|publish now)$/i }) : confirmation;
+  if (await button.count() === 1 && await button.isVisible() && await button.isEnabled()) {
+    if (!isNewEvent(page) || !await check()) throw new Error('Browser job is no longer current');
+    await button.click();
+    await page.waitForURL(url => url.pathname === UPCOMING_PATH, { timeout: 10000 }).catch(() => {});
+    return { id: await publishedReceipt(page, listing) };
+  }
+  return {};
 }
 
 async function dashboardSnapshot(page) {
@@ -369,7 +425,13 @@ function createHostedOperator(env = process.env, dependencies = {}) {
           continue;
         }
         const result = await browserAction(page, step, check);
-        if (submitForm && result.startsWith('Action applied')) submitted = true;
+        if (submitForm && !submitted && result.startsWith('Action applied')) {
+          submitted = true;
+          stage = 'checking the Bandsintown save response';
+          const outcome = await inspectSubmission(page, job.listing, check, form);
+          if (outcome.id) return { status: 'verified', bandsintown_id: outcome.id };
+          if (outcome.issue) return review(outcome.issue);
+        }
         if (result === REVIEW_SIGN_IN) return review(result);
         history.push({ action: step.action, name: step.name, result });
       }
@@ -386,4 +448,4 @@ function createHostedOperator(env = process.env, dependencies = {}) {
   };
 }
 
-module.exports = { browserAction, createHostedOperator, dashboardUrl, eventId, setNewEventStartTime };
+module.exports = { browserAction, createHostedOperator, dashboardUrl, eventId, publishedReceipt, setNewEventStartTime };

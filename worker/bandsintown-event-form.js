@@ -164,43 +164,70 @@ async function chooseLocationPart(field, values, guard) {
   return words(await field.inputValue()) === words(match.label);
 }
 
-async function fillCustomLocation(page, listing, state, guard) {
-  const form = page.locator('#venueFormnameField').locator('xpath=ancestor::form[1]');
-  if (await form.count() !== 1 || !await form.isVisible()) return;
-  state.guidance = 'Use the Calendar venue, street, city, region, country, and postal code in the custom location form.';
+async function submitVenueFields(form, listing, guard, incomplete) {
   const country = /^[A-Z]{2}$/.test(listing.country) ?
     new Intl.DisplayNames('en', { type: 'region' }).of(listing.country) : listing.country;
-  if (!country || !await chooseLocationPart(form.locator('#venueFormCountryField'), [country, listing.country], guard)) return;
-  if (!await chooseLocationPart(form.locator('#venueFormRegionField'), [listing.region], guard)) return;
-  const values = { name: listing.venue, address: listing.address, city: listing.city, postal_code: listing.postcode };
+  if (!country || !await chooseLocationPart(form.locator('#venueFormCountryField'), [country, listing.country], guard)) return false;
+  const regionField = form.locator('#venueFormRegionField');
+  if (listing.region) {
+    await regionField.waitFor({ state: 'visible', ...TIMEOUT }).catch(() => {});
+    if (!await chooseLocationPart(regionField, [listing.region], guard)) return false;
+  }
+  const values = incomplete ? { venue_name: listing.venue, city: listing.city } :
+    { name: listing.venue, address: listing.address, city: listing.city, postal_code: listing.postcode };
+  if (incomplete && await form.locator('input[name="address"]:visible').count()) values.address = listing.address;
   for (const [name, value] of Object.entries(values)) {
     const field = form.locator('input[name="' + name + '"]');
-    if (!value || await field.count() !== 1 || !await field.isEditable()) return;
+    if (!value || await field.count() !== 1 || !await field.isEditable()) return false;
     if (await field.inputValue() !== value) {
       await guard();
       await field.fill(value, TIMEOUT);
       await field.blur();
     }
-    if (await field.inputValue() !== value) return;
+    if (await field.inputValue() !== value) return false;
   }
   const confirm = form.getByRole('button', { name: 'Submit', exact: true });
-  if (await confirm.count() !== 1 || !await confirm.isEnabled()) return;
+  if (await confirm.count() !== 1 || !await confirm.isVisible() || !await confirm.isEnabled()) return false;
   await guard();
   await confirm.click(TIMEOUT);
+  return true;
+}
+
+async function fillCustomLocation(page, listing, state, guard) {
+  const form = page.locator('#venueFormnameField').locator('xpath=ancestor::form[1]');
+  if (await form.count() !== 1 || !await form.isVisible()) return;
+  state.guidance = 'Use the Calendar venue, street, city, region, country, and postal code in the custom location form.';
+  if (!await submitVenueFields(form, listing, guard, false)) return;
   // The custom location action attaches the geocoded address to this form.
   await page.waitForURL(url => !url.pathname.endsWith('/add-location'), { timeout: 6500 }).catch(() => {});
   state.guidance = 'Read back the selected custom location on the event form.';
 }
 
+function onEventForm(page) {
+  const url = new URL(page.url());
+  return url.protocol === 'https:' && ['artists.bandsintown.com', 'www.artists.bandsintown.com', 'manager.bandsintown.com'].includes(url.hostname) && FORM_PATH.test(url.pathname);
+}
+
+async function submitLocationDialog(page, listing, isCurrent, verified) {
+  if (!(verified?.dateMatches && verified.timeMatches && verified.venueMatches && verified.notificationsOff) ||
+      !onEventForm(page) || new URL(page.url()).pathname.endsWith('/add-location')) return false;
+  // The capitalized ID belongs to the post-Save incomplete venue warning. Its
+  // Submit validates the location and resumes the original publication.
+  const field = page.locator('input#venueFormNameField[name="venue_name"]:visible, input#venueFormnameField[name="name"]:visible');
+  if (await field.count() !== 1) return false;
+  const form = field.locator('xpath=ancestor::form[1]');
+  if (await form.count() !== 1 || !await form.isVisible() || await form.locator('#venueField, input[name="start_time"]').count()) return false;
+  const guard = async () => {
+    if (!onEventForm(page) || !await field.isVisible() || !await isCurrent()) throw new Error('Browser job is no longer current');
+  };
+  return submitVenueFields(form, listing, guard, await field.getAttribute('name') === 'venue_name');
+}
+
 async function prepareEventForm(page, listing, isCurrent) {
   const state = { dateMatches: false, venueMatches: false };
-  const onForm = () => {
-    const url = new URL(page.url());
-    return url.protocol === 'https:' && ['artists.bandsintown.com', 'www.artists.bandsintown.com', 'manager.bandsintown.com'].includes(url.hostname) && FORM_PATH.test(url.pathname);
-  };
-  if (!onForm() || !listing) return state;
+  if (!onEventForm(page) || !listing) return state;
   const guard = async () => {
-    if (!onForm() || !await isCurrent()) throw new Error('Browser job is no longer current');
+    if (!onEventForm(page) || !await isCurrent()) throw new Error('Browser job is no longer current');
   };
   if (new URL(page.url()).pathname.endsWith('/add-location')) {
     await fillCustomLocation(page, listing, state, guard);
@@ -211,4 +238,4 @@ async function prepareEventForm(page, listing, isCurrent) {
   return state;
 }
 
-module.exports = { prepareEventForm, venueMatchesListing };
+module.exports = { prepareEventForm, submitLocationDialog, venueMatchesListing };
