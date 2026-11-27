@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { browserAction, createHostedOperator, dashboardUrl, eventId } = require('../worker/bandsintown-browser');
+const { browserAction, createHostedOperator, dashboardUrl, eventId, setNewEventStartTime } = require('../worker/bandsintown-browser');
 
 test('the hosted browser stays on the artist dashboard and only trusts Bandsintown event IDs', () => {
   assert.equal(dashboardUrl('https://artists.bandsintown.com/'), true);
@@ -32,50 +32,36 @@ test('dashboard writes require a current revision and never fill a login field',
   assert.match(login, /sign in as Nick Rains/i);
 });
 
-test('a blocked time-picker click uses its exact enabled option and rechecks the revision', async () => {
-  let current = true;
-  let dispatched = 0;
-  const locator = {
+test('new events fill only the show start time, verify it after blur, and preserve a matching time', async () => {
+  const job = { operation: 'upsert', listing: { date: '2026-11-27', time: '19:00' } };
+  let url = 'https://artists.bandsintown.com/artists/3251702/events/new/single-page';
+  let value = '';
+  let rejectChange = false;
+  const actions = [];
+  const input = {
     isVisible: async () => true,
-    isEnabled: async () => true,
-    click: async () => { throw Object.assign(new Error('Time option click timed out'), { name: 'TimeoutError' }); },
-    dispatchEvent: async name => { assert.equal(name, 'click'); dispatched++; },
+    isEditable: async () => true,
+    inputValue: async () => value,
+    fill: async next => { value = next; actions.push(next); },
+    press: async key => { actions.push(key); },
+    blur: async () => { if (rejectChange) value = ''; actions.push('blur'); },
   };
   const page = {
-    getByRole: role => role === 'option' ? { filter: () => ({ count: async () => 0 }) } : { count: async () => 1, nth: () => locator },
-    url: () => 'https://artists.bandsintown.com/artists/3251702/events/new',
+    url: () => url,
+    locator: selector => { assert.equal(selector, '.high-fields__start_time input[name="start_time"]'); return input; },
   };
-  const time = { action: 'click', role: 'button', name: '7:00 PM' };
-  assert.match(await browserAction(page, time, async () => current), /Verify the selected time/);
-  await assert.rejects(() => browserAction(page, time, async () => {
-    const previous = current;
-    current = false;
-    return previous;
-  }), /no longer current/);
-  await assert.rejects(() => browserAction(page, { ...time, name: 'Publish' }, async () => true), /click timed out/);
-  assert.equal(dispatched, 1);
-});
-
-test('a time button nested in a menu option activates the option itself', async () => {
-  let selected = false;
-  const button = {};
-  const option = {
-    filter({ has }) { assert.equal(has, button); return this; },
-    count: async () => 1,
-    isVisible: async () => true,
-    isEnabled: async () => true,
-    dispatchEvent: async name => { assert.equal(name, 'click'); selected = true; },
-  };
-  const page = {
-    getByRole: (role, { name, exact }) => {
-      assert.equal(name, '7:00 PM');
-      assert.equal(exact, true);
-      return role === 'option' ? option : button;
-    },
-    url: () => 'https://artists.bandsintown.com/artists/3251702/events/new',
-  };
-  assert.match(await browserAction(page, { action: 'click', role: 'button', name: '7:00 PM' }, async () => true), /Activated the time menu option/);
-  assert.equal(selected, true);
+  await assert.rejects(() => setNewEventStartTime(page, job, async () => false), /no longer current/);
+  assert.deepEqual(actions, []);
+  assert.equal(await setNewEventStartTime(page, job, async () => true), true);
+  assert.deepEqual(actions, ['7:00 PM', 'Escape', 'blur']);
+  value = '07:00 PM';
+  assert.equal(await setNewEventStartTime(page, job, async () => true), false);
+  assert.equal(actions.length, 3);
+  rejectChange = true;
+  value = '';
+  await assert.rejects(() => setNewEventStartTime(page, job, async () => true), /did not retain/);
+  url = 'https://artists.bandsintown.com/artists/3251702/events/123/edit';
+  assert.equal(await setNewEventStartTime(page, job, async () => true), false);
 });
 
 test('the hosted operator starts at Upcoming Events and verifies the saved event ID', async () => {
@@ -162,7 +148,9 @@ test('empty Upcoming Events opens Add Event and an incomplete model reply cannot
     unroute: async () => {},
     locator: selector => {
       if (selector.includes('password')) return { first: () => ({ isVisible: async () => false }) };
-      if (selector === 'body') return { ariaSnapshot: async () => openings ? '- textbox "Venue"' : '- heading "You have no upcoming events"' };
+      if (selector === 'body') return { ariaSnapshot: async () => openings ?
+        '- textbox "Venue"\n  - option "7:00 PM":\n    - button "7:00 PM"\n- button "Continue"' : '- heading "You have no upcoming events"' };
+      if (selector === '.bit-dropdown-options > ul') return { evaluateAll: async () => true };
       return { evaluateAll: async () => [] };
     },
     getByRole: (role, { name }) => {
@@ -178,6 +166,7 @@ test('empty Upcoming Events opens Add Event and an incomplete model reply cannot
       assert.equal(data.url, url);
       assert.equal(request.generationConfig.thinkingConfig.thinkingBudget, 0);
       assert.equal(openings, 1);
+      assert.equal(data.snapshot, '- textbox "Venue"\n- button "Continue"');
       return Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '{"action":"click"}' }] } }] });
     },
   });

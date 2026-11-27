@@ -1,3 +1,4 @@
+const { prepareEventForm } = require('./bandsintown-event-form');
 const DASHBOARD_HOSTS = new Set(['artists.bandsintown.com', 'www.artists.bandsintown.com', 'manager.bandsintown.com']);
 const ARTIST_PATH = '/artists/3251702';
 const UPCOMING_PATH = ARTIST_PATH + '/events/upcoming';
@@ -9,6 +10,10 @@ const CONTROL_ACTIONS = ['click', 'fill', 'select', 'press'];
 const ROLES = new Set(['button', 'link', 'textbox', 'searchbox', 'combobox', 'spinbutton', 'checkbox', 'radio',
   'option', 'tab', 'menuitem', 'menuitemcheckbox', 'gridcell', 'switch']);
 const REVIEW_SIGN_IN = 'Open the private Railway browser viewer. Sign in as Nick Rains, leave the artist dashboard tab open, then click Retry Bandsintown.';
+
+function isNewEvent(page) {
+  return isArtistPage(page.url()) && /^\/artists\/3251702\/events?\/new(?:\/|$)/.test(new URL(page.url()).pathname);
+}
 
 function dashboardUrl(value) {
   try {
@@ -38,7 +43,7 @@ const INSTRUCTIONS = [
   'Start in Nick Rains → Upcoming Events. For upsert with an ID, edit that exact event. Otherwise inspect Upcoming Events for the same artist, venue, and local date and time. Also check any pending or draft listings if shown. The empty state “You have no upcoming events” clears the upcoming-list check. If no draft control is visible, continue to Add Event. Do not open Past Events for a future show. Reuse an exact match. Send uncertain or promoter-controlled matches for review.',
   'On Upcoming Events, the header Add Event and empty-state Add Event both open the new event form. Use occurrence 1 if their exact roles and names match. In the form, prefer Single-Page Mode if offered.',
   'Use the venue-local date, show time, and time zone. Include doors, price, description, and ticket link where supplied. Never invent a venue, price, schedule, URL, or field. Set follower notifications off and report review if you cannot verify that SMS or email promotion will stay off.',
-  'The timeFields array contains the actual values of visible time inputs and selects. When the show start time already matches the Calendar (19:00 means 7:00 PM), continue to the next required field. A time printed on a closed picker can be its current value. Use a fill action with HH:MM only for an input whose type is time. If the time menu lists an option containing a button with the same time, choose the outer option.',
+  'The timeFields array contains the actual values of visible time inputs and selects. The new event form accepts the show start time as text, and the runner sets it from the Calendar. When start_time matches (19:00 means 7:00 PM), continue to the next required field. Leave the end, announcement, and presale times alone unless supplied for their respective purposes.',
   'For removal, delete only the exact stored listing ID on the expected artist account. If you cannot verify the ID or artist, report review.',
   'After a save or delete, inspect the result. Return verified only when the dashboard confirms it. Upserts also need the numeric saved event ID from the dashboard. If a click or save is uncertain, return review without retrying. If signed out, tell the owner to sign in through the hosted browser. Never fill or submit login fields.',
   'For action review, give the owner one concrete next action, with no login details, secrets, or unrelated account data.',
@@ -58,6 +63,57 @@ function review(issue) {
   return { status: 'review', issue };
 }
 
+async function setNewEventStartTime(page, job, check) {
+  const clock = job.listing?.time;
+  if (job.operation !== 'upsert' || job.bandsintown_id || !job.listing?.date || !CLOCK_VALUE.test(clock) || !isNewEvent(page)) return false;
+  const field = page.locator('.high-fields__start_time input[name="start_time"]');
+  if (!await field.isVisible() || !await field.isEditable()) return false;
+  const [hours, minutes] = clock.split(':');
+  const label = (Number(hours) % 12 || 12) + ':' + minutes + (Number(hours) < 12 ? ' AM' : ' PM');
+  const matches = value => {
+    const text = value.trim();
+    if (text === clock || text === clock + ':00') return true;
+    return text.replace(/^0(?=\d:)/, '').replace(/\s*([AP]M)$/i, ' $1').toUpperCase() === label;
+  };
+  if (matches(await field.inputValue())) return false;
+  if (!isNewEvent(page) || !await check()) throw new Error('Browser job is no longer current');
+  await field.fill(label);
+  await field.press('Escape');
+  await field.blur();
+  if (!matches(await field.inputValue())) throw new Error('Bandsintown did not retain the show start time');
+  return true;
+}
+
+async function preparePublication(page, listing, current) {
+  const title = page.locator('.event_title input[name="title"]');
+  if (listing.title && await title.isVisible() && await title.isEditable() && await title.inputValue() !== listing.title) {
+    await current();
+    await title.fill(listing.title);
+    await title.blur();
+  }
+  const notify = page.locator('input#flag_no_announce-toggle, input[type="checkbox"][name="flag_no_announce"]');
+  if (await notify.count() !== 1) return null;
+  if (await notify.isChecked()) {
+    await current();
+    const label = page.locator('label[for="flag_no_announce-toggle"]');
+    if (await label.isVisible()) await label.click();
+    else await notify.uncheck();
+  }
+  return !await notify.isChecked();
+}
+
+async function dashboardSnapshot(page) {
+  const snapshot = await page.locator('body').ariaSnapshot();
+  const timeOptions = /^([ \t]*)- option "(\d{1,2}:\d{2}\s*[AP]M)"[^\n]*(?:\n\1[ \t]+- button "\2"[^\n]*)?\n?/gmi;
+  if (!timeOptions.test(snapshot)) return snapshot;
+  // Bandsintown leaves every option in the accessibility tree when its menu is closed.
+  const allTimeMenusClosed = await page.locator('.bit-dropdown-options > ul').evaluateAll(menus => {
+    const clockMenus = menus.filter(menu => /^\d{1,2}:\d{2}\s*[AP]M$/i.test(menu.querySelector('[role="option"] button')?.textContent.trim()));
+    return clockMenus.length > 0 && clockMenus.every(menu => getComputedStyle(menu).overflowY === 'hidden');
+  });
+  return allTimeMenusClosed ? snapshot.replace(timeOptions, '') : snapshot;
+}
+
 async function browserAction(page, step, check) {
   if (!ROLES.has(step.role) || typeof step.name !== 'string' || step.name.length > 240) {
     return 'Choose an exact accessible role and name from the snapshot.';
@@ -66,15 +122,6 @@ async function browserAction(page, step, check) {
     return REVIEW_SIGN_IN;
   }
   const isCurrent = async () => isArtistPage(page.url()) && await check();
-  if (step.action === 'click' && TIME_LABEL.test(step.name) && ['button', 'option'].includes(step.role)) {
-    const name = { name: step.name, exact: true };
-    const choice = page.getByRole('option', name).filter({ has: page.getByRole('button', name) });
-    if (await choice.count() === 1 && await choice.isVisible() && await choice.isEnabled()) {
-      if (!await isCurrent()) throw new Error('Browser job is no longer current');
-      await choice.dispatchEvent('click');
-      return 'Activated the time menu option. Verify the selected time before proceeding.';
-    }
-  }
   const matches = page.getByRole(step.role, { name: step.name, exact: true });
   const count = await matches.count();
   const index = step.occurrence == null && count === 1 ? 0 : step.occurrence - 1;
@@ -91,16 +138,7 @@ async function browserAction(page, step, check) {
   if (!await isCurrent()) throw new Error('Browser job is no longer current');
   switch (step.action) {
     case 'click':
-      try {
-        await locator.click();
-      } catch (error) {
-        if (error.name !== 'TimeoutError' || !TIME_LABEL.test(step.name) ||
-            !['button', 'option', 'gridcell'].includes(step.role) ||
-            !await locator.isVisible() || !await locator.isEnabled()) throw error;
-        if (!await isCurrent()) throw new Error('Browser job is no longer current');
-        await locator.dispatchEvent('click');
-        return 'Activated the time option directly. Verify the selected time before proceeding.';
-      }
+      await locator.click();
       break;
     case 'fill':
       if (typeof step.value !== 'string' || step.value.length > 3500 ||
@@ -214,6 +252,8 @@ function createHostedOperator(env = process.env, dependencies = {}) {
       if (!isArtistPage(page.url()) || await page.locator('input[type=password]').first().isVisible()) return review(REVIEW_SIGN_IN);
       const history = [];
       const attempts = new Map();
+      let submitted = false;
+      let enteredForm = false;
       const data = { operation: job.operation, listing: job.listing, bandsintown_id: job.bandsintown_id };
       if (new URL(page.url()).pathname === UPCOMING_PATH) {
         const addEvent = page.getByRole('button', { name: ADD_EVENT }).or(page.getByRole('link', { name: ADD_EVENT })).first();
@@ -232,17 +272,45 @@ function createHostedOperator(env = process.env, dependencies = {}) {
       for (let i = 0; i < 36; i++) {
         if (!isArtistPage(page.url())) return review('Open Nick Rains → Events in the hosted browser and check for this show before retrying. The runner left the artist dashboard.');
         if (await page.locator('input[type=password]').first().isVisible()) return review(REVIEW_SIGN_IN);
-        const snapshot = (await page.locator('body').ariaSnapshot()).slice(0, 18000);
+        let form;
+        if (!submitted && job.operation === 'upsert' && !job.bandsintown_id && job.listing?.date && job.listing.venue && isNewEvent(page)) {
+          const url = new URL(page.url());
+          if (!enteredForm && /\/new\/?$/.test(url.pathname)) {
+            enteredForm = true;
+            if (url.searchParams.get('version') !== 'single-page') {
+              if (!await check()) throw new Error('Browser job is no longer current');
+              stage = 'opening the single-page event form';
+              url.searchParams.set('version', 'single-page');
+              url.searchParams.delete('step');
+              await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 15000 });
+              await page.locator('#eventStartDateField').first().waitFor({ state: 'visible', timeout: 7000 }).catch(() => {});
+              continue;
+            }
+          }
+          stage = 'entering the event date and venue';
+          const before = page.url();
+          form = await prepareEventForm(page, job.listing, check);
+          if (page.url() !== before) continue;
+          stage = 'setting the show start time';
+          await setNewEventStartTime(page, job, check);
+          stage = 'setting the event title and follower notifications';
+          form.notificationsOff = await preparePublication(page, job.listing, async () => {
+            if (!isNewEvent(page) || !await check()) throw new Error('Browser job is no longer current');
+          });
+        }
+        const snapshot = (await dashboardSnapshot(page)).slice(0, 18000);
         const links = await page.locator('a[href]').evaluateAll(anchors => anchors.map(anchor => anchor.href));
         const observed = Array.from(new Set([page.url(), ...links].map(eventId).filter(Boolean)));
         const { origin, pathname } = new URL(page.url());
         const timeFields = await page.locator('input,select').evaluateAll(controls => controls.flatMap(control => {
           const label = control.getAttribute('aria-label') || [...(control.labels || [])].map(node => node.textContent.trim()).join(' ') || control.placeholder || control.name;
-          if (!control.getClientRects().length || !(control.type === 'time' || /\btime\b/i.test(label))) return [];
-          return [{ label: String(label || '').slice(0, 60), type: control.type, value: control.value }];
+          if (!control.getClientRects().length || !(control.type === 'time' || /(?:^|_)time$/.test(control.name) || /\btime\b/i.test(label))) return [];
+          return [{ label: String(label || '').slice(0, 60), name: control.name, type: control.type, value: control.value }];
         }));
         stage = 'reading the next browser action';
-        const step = await nextStep({ job: data, snapshot, url: origin + pathname, listingIds: observed, timeFields, history: history.slice(-8) }, signal);
+        if (form) console.info('Bandsintown event form:', JSON.stringify({ ...form, path: pathname, startTime: timeFields.find(field => field.name === 'start_time')?.value }));
+        const step = await nextStep({ job: data, form, snapshot, url: origin + pathname, listingIds: observed, timeFields, history: history.slice(-8) }, signal);
+        console.info('Bandsintown action:', step.action, step.role || '', String(step.name || '').slice(0, 70));
         if (step.action === 'review') return review(String(step.issue || 'Verify the matching listing in Bandsintown, then retry.').slice(0, 250));
         const attempt = JSON.stringify([pathname, snapshot, step.action, step.role, step.name, step.occurrence, step.value, step.bandsintown_id]);
         const count = (attempts.get(attempt) || 0) + 1;
@@ -275,7 +343,13 @@ function createHostedOperator(env = process.env, dependencies = {}) {
         }
         const control = step.name.trim().replace(/\s+/g, ' ').slice(0, 64);
         stage = `${step.action} on “${control}”`;
+        const submitForm = step.action === 'click' && /^(?:save|publish)(?: event)?$/i.test(control) && isNewEvent(page);
+        if (submitForm && !submitted && form && !(form.dateMatches && form.venueMatches && form.notificationsOff)) {
+          history.push({ action: 'verify', name: control, result: 'Confirm the Calendar date, selected venue and disabled follower notifications on the event form before saving.' });
+          continue;
+        }
         const result = await browserAction(page, step, check);
+        if (submitForm && result.startsWith('Action applied')) submitted = true;
         if (result === REVIEW_SIGN_IN) return review(result);
         history.push({ action: step.action, name: step.name, result });
       }
@@ -292,4 +366,4 @@ function createHostedOperator(env = process.env, dependencies = {}) {
   };
 }
 
-module.exports = { browserAction, createHostedOperator, dashboardUrl, eventId };
+module.exports = { browserAction, createHostedOperator, dashboardUrl, eventId, setNewEventStartTime };
